@@ -1,0 +1,175 @@
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { supabase } from '../lib/supabase'
+import type { Entity, Profile } from '../types/db'
+
+type AuthStatus = 'loading' | 'signed-out' | 'no-assignment' | 'ready'
+
+interface AuthContextValue {
+  status: AuthStatus
+  session: Session | null
+  profile: Profile | null
+  /** All entities the signed-in user is authorised to view (owner sees every active entity). */
+  entities: Entity[]
+  /** Currently selected entity for scoping dashboard/report queries. */
+  activeEntityId: string | null
+  setActiveEntityId: (id: string) => void
+  /**
+   * Whether the signed-in employee has at least one interview assignment
+   * (has_interview_assignments() RPC — resolved from auth.uid() server-side,
+   * never a client-supplied employee id). Drives whether "My Interviews"
+   * shows in navigation. This is a UI convenience only: RLS and the
+   * get_my_interviews()/get_interview_detail() RPCs are what actually gate
+   * access to interview data, so a false value here never has to be trusted
+   * as a security control by itself, and a true value can't grant more than
+   * those checks already allow.
+   */
+  hasInterviewAssignments: boolean
+  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>
+  signOut: () => Promise<void>
+  refreshProfile: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextValue | undefined>(undefined)
+
+const LAST_ENTITY_KEY = 'ts-hr:last-entity-id'
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [entities, setEntities] = useState<Entity[]>([])
+  const [activeEntityId, setActiveEntityIdState] = useState<string | null>(null)
+  const [status, setStatus] = useState<AuthStatus>('loading')
+  const [hasInterviewAssignments, setHasInterviewAssignments] = useState(false)
+
+  async function loadProfileAndEntities(currentSession: Session) {
+    const userId = currentSession.user.id
+
+    const { data: profileRow, error: profileError } = await supabase
+      .from('profiles')
+      .select('id, full_name, role, entity_id, location_id, created_at')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (profileError || !profileRow) {
+      setProfile(null)
+      setEntities([])
+      setStatus('no-assignment')
+      return
+    }
+
+    setProfile(profileRow as Profile)
+
+    supabase
+      .rpc('has_interview_assignments')
+      .then(
+        ({ data }) => setHasInterviewAssignments(Boolean(data)),
+        () => setHasInterviewAssignments(false)
+      )
+
+    // Owner has entity_id = null and is authorised to view every entity; everyone
+    // else is scoped to exactly one entity by row-level security on `entities`.
+    const { data: entityRows } = await supabase
+      .from('entities')
+      .select('id, name, trade_license_no, emirate, default_currency, created_at')
+      .order('name', { ascending: true })
+
+    const authorisedEntities = entityRows ?? []
+    setEntities(authorisedEntities as Entity[])
+
+    const remembered = localStorage.getItem(LAST_ENTITY_KEY)
+    const stillAuthorised = authorisedEntities.some((e) => e.id === remembered)
+    const nextActiveEntity =
+      (stillAuthorised && remembered) ||
+      (profileRow as Profile).entity_id ||
+      authorisedEntities[0]?.id ||
+      null
+
+    setActiveEntityIdState(nextActiveEntity)
+    setStatus(authorisedEntities.length > 0 ? 'ready' : 'no-assignment')
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (cancelled) return
+      setSession(data.session)
+      if (data.session) {
+        await loadProfileAndEntities(data.session)
+      } else {
+        setStatus('signed-out')
+      }
+    })
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+      setSession(newSession)
+      if (newSession) {
+        setStatus('loading')
+        await loadProfileAndEntities(newSession)
+      } else {
+        setProfile(null)
+        setEntities([])
+        setActiveEntityIdState(null)
+        setHasInterviewAssignments(false)
+        localStorage.removeItem(LAST_ENTITY_KEY)
+        setStatus('signed-out')
+      }
+    })
+
+    return () => {
+      cancelled = true
+      listener.subscription.unsubscribe()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function setActiveEntityId(id: string) {
+    setActiveEntityIdState(id)
+    localStorage.setItem(LAST_ENTITY_KEY, id)
+  }
+
+  async function signInWithPassword(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    return { error: error?.message ?? null }
+  }
+
+  async function signOut() {
+    // Clear anything scope-sensitive before the network round trip completes
+    // so a slow connection can't briefly show stale, previously-authorised data.
+    setProfile(null)
+    setEntities([])
+    setActiveEntityIdState(null)
+    setHasInterviewAssignments(false)
+    localStorage.removeItem(LAST_ENTITY_KEY)
+    await supabase.auth.signOut()
+  }
+
+  async function refreshProfile() {
+    if (session) await loadProfileAndEntities(session)
+  }
+
+  const value = useMemo(
+    () => ({
+      status,
+      session,
+      profile,
+      entities,
+      activeEntityId,
+      setActiveEntityId,
+      hasInterviewAssignments,
+      signInWithPassword,
+      signOut,
+      refreshProfile,
+    }),
+    [status, session, profile, entities, activeEntityId, hasInterviewAssignments]
+  )
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
+}

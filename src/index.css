@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/*
+  Third State Cafe HR — design tokens
+  Re-themed to match the reference build at
+  third-state-hr.aishalzaabi.chatgpt.site (extracted from its live :root
+  custom properties + computed styles).
+*/
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-brand-blue: #2563eb; /* primary accent: active nav, links, primary actions */
+  --color-brand-blue-soft: #edf3ff;
+  --color-brand-blue-text: #1d4ed8; /* darker stop for text on blue-soft */
+  --color-brand-blue-dark: #164dc2; /* gradient end for brand mark / active nav pill */
+
+  --color-brand-action: #0f9f8f; /* teal: positive/active status */
+  --color-brand-action-soft: #e8f8f6;
+  --color-brand-action-text: #087f73; /* darker stop for text on action-soft */
+
+  --color-brand-warning: #d97706; /* amber: pending / due soon (icons, text) */
+  --color-brand-warning-soft: #fff6e8;
+  --color-brand-warning-solid: #b86505; /* amber: solid buttons */
+
+  --color-brand-risk: #dc2626; /* red: expired / destructive — not in reference, kept consistent with its soft-pill style */
+  --color-brand-risk-soft: #fef2f2;
+  --color-brand-risk-text: #b91c1c; /* darker stop for text on risk-soft */
+
+  --color-ink: #1c2733; /* primary text */
+  --color-muted: #64748b; /* secondary text / metadata */
+  --color-muted-strong: #455569; /* inactive nav labels */
+  --color-surface: #ffffff;
+  --color-surface-alt: #f5f7fa;
+  --color-border: #e3e8ef;
+
+  --shadow-card: 0 10px 30px rgba(28, 39, 51, 0.05);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+  }
+
+  body {
+    @apply bg-surface-alt text-ink antialiased;
+  }
+
+  ::selection {
+    @apply bg-brand-blue/20;
+  }
+}
