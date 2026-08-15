@@ -16,6 +16,7 @@ import MyProfile from './pages/MyProfile'
 import Schedules from './pages/Schedules'
 import Leave from './pages/Leave'
 import Reports from './pages/Reports'
+import { EnvironmentBanner } from './components/EnvironmentBanner'
 
 function Shell({ children }: { children: ReactNode }) {
   return (
@@ -28,6 +29,9 @@ function Shell({ children }: { children: ReactNode }) {
 function App() {
   return (
     <BrowserRouter>
+      {/* Renders nothing unless VITE_APP_ENV === 'uat'. Placed outside
+          AuthProvider/ProtectedRoute — purely visual, touches no auth logic. */}
+      <EnvironmentBanner />
       <AuthProvider>
         <Routes>
           <Route path="/sign-in" element={<SignIn />} />
