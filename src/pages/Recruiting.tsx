@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Navigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -61,7 +62,29 @@ function money(n: number | null | undefined, currency: string) {
 // (candidates/requisitions ALL policy includes location_manager scoped to
 // their own location; offers is owner/entity_admin only since compensation
 // is compensation-adjacent).
+// Recruiting admin module is owner/entity_admin/location_manager only (see
+// RLS notes above). A plain employee -- including one assigned as an
+// interviewer -- has no underlying table access here (candidates_access /
+// requisitions_select exclude the 'employee' role entirely), so this was
+// previously "safe" in the sense that no data could leak; but the page
+// itself rendered its full admin shell (including the New Requisition
+// action) for anyone who navigated here directly, which is a defense-in-
+// depth gap. Gate it the same way Payroll.tsx gates PayrollManager vs
+// MyPay: a hook-free wrapper decides, before any data fetching, whether to
+// render the admin module at all. Their real destination is My Interviews.
 export default function Recruiting() {
+  const { profile } = useAuth()
+  const canAccessRecruitingModule =
+    profile?.role === 'owner' || profile?.role === 'entity_admin' || profile?.role === 'location_manager'
+
+  if (!canAccessRecruitingModule) {
+    return <Navigate to="/my-interviews" replace />
+  }
+
+  return <RecruitingAdmin />
+}
+
+function RecruitingAdmin() {
   const { profile, activeEntityId, entities } = useAuth()
   const canManageOffers = profile?.role === 'owner' || profile?.role === 'entity_admin'
   const currency = entities.find((e) => e.id === activeEntityId)?.default_currency || 'AED'
