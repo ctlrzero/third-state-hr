@@ -1,59 +1,89 @@
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { AuthProvider } from './auth/AuthContext'
+import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppShell } from './components/AppShell'
+import { AccessDenied, Skeleton } from './components/ui'
+import { EnvironmentBanner } from './components/EnvironmentBanner'
+import { canAccessRoute } from './lib/nav'
 import SignIn from './pages/SignIn'
 import NoAssignment from './pages/NoAssignment'
-import Dashboard from './pages/Dashboard'
-import EmployeeDirectory from './pages/EmployeeDirectory'
-import EmployeeProfile from './pages/EmployeeProfile'
-import Documents from './pages/Documents'
-import Payroll from './pages/Payroll'
-import Recruiting from './pages/Recruiting'
-import MyInterviews from './pages/MyInterviews'
-import MyProfile from './pages/MyProfile'
-import Schedules from './pages/Schedules'
-import Leave from './pages/Leave'
-import Reports from './pages/Reports'
-import { EnvironmentBanner } from './components/EnvironmentBanner'
 
-function Shell({ children }: { children: ReactNode }) {
+// Every authenticated page is its own chunk so the entry bundle only carries
+// the shell, auth and router.
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const EmployeeDirectory = lazy(() => import('./pages/EmployeeDirectory'))
+const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'))
+const Documents = lazy(() => import('./pages/Documents'))
+const Payroll = lazy(() => import('./pages/Payroll'))
+const Recruiting = lazy(() => import('./pages/Recruiting'))
+const MyInterviews = lazy(() => import('./pages/MyInterviews'))
+const MyProfile = lazy(() => import('./pages/MyProfile'))
+const Schedules = lazy(() => import('./pages/Schedules'))
+const Leave = lazy(() => import('./pages/Leave'))
+const Reports = lazy(() => import('./pages/Reports'))
+const Clock = lazy(() => import('./pages/Clock'))
+const Attendance = lazy(() => import('./pages/Attendance'))
+const Workflows = lazy(() => import('./pages/Workflows'))
+const Admin = lazy(() => import('./pages/Admin'))
+const Notifications = lazy(() => import('./pages/Notifications'))
+
+/**
+ * Role gate for deep links. The page component (and therefore its data
+ * queries) never mounts for an unauthorised role — the user just sees a
+ * generic access message. RLS/RPC checks remain the real security boundary.
+ */
+function RoleGate({ route, children }: { route: string; children: ReactNode }) {
+  const { profile } = useAuth()
+  if (!canAccessRoute(profile?.role, route)) return <AccessDenied />
+  return <>{children}</>
+}
+
+function Shell({ route, children }: { route: string; children: ReactNode }) {
   return (
     <ProtectedRoute>
-      <AppShell>{children}</AppShell>
+      <AppShell>
+        <RoleGate route={route}>
+          <Suspense fallback={<Skeleton rows={4} className="h-20" />}>{children}</Suspense>
+        </RoleGate>
+      </AppShell>
     </ProtectedRoute>
   )
 }
 
+const ROUTES: { path: string; element: ReactNode }[] = [
+  { path: '/', element: <Dashboard /> },
+  { path: '/employees', element: <EmployeeDirectory /> },
+  { path: '/employees/:id', element: <EmployeeProfile /> },
+  { path: '/me', element: <MyProfile /> },
+  // get_my_interviews()/get_interview_detail() resolve identity from
+  // auth.uid() and RLS scopes every table, so direct navigation is safe.
+  { path: '/my-interviews', element: <MyInterviews /> },
+  { path: '/documents', element: <Documents /> },
+  { path: '/recruiting', element: <Recruiting /> },
+  { path: '/schedules', element: <Schedules /> },
+  { path: '/clock', element: <Clock /> },
+  { path: '/attendance', element: <Attendance /> },
+  { path: '/leave', element: <Leave /> },
+  { path: '/payroll', element: <Payroll /> },
+  { path: '/reports', element: <Reports /> },
+  { path: '/workflows', element: <Workflows /> },
+  { path: '/admin', element: <Admin /> },
+  { path: '/notifications', element: <Notifications /> },
+]
+
 function App() {
   return (
     <BrowserRouter>
-      {/* Renders nothing unless VITE_APP_ENV === 'uat'. Placed outside
-          AuthProvider/ProtectedRoute — purely visual, touches no auth logic. */}
+      {/* Renders nothing unless VITE_APP_ENV === 'uat'. */}
       <EnvironmentBanner />
       <AuthProvider>
         <Routes>
           <Route path="/sign-in" element={<SignIn />} />
           <Route path="/no-assignment" element={<NoAssignment />} />
-
-          <Route path="/" element={<Shell><Dashboard /></Shell>} />
-          <Route path="/employees" element={<Shell><EmployeeDirectory /></Shell>} />
-          <Route path="/employees/:id" element={<Shell><EmployeeProfile /></Shell>} />
-          <Route path="/me" element={<Shell><MyProfile /></Shell>} />
-          {/* Direct navigation here (even without the nav link visible) is
-              still safe: get_my_interviews()/get_interview_detail() resolve
-              identity from auth.uid() and RLS scopes every underlying table,
-              so an unassigned employee just sees an empty list, not an error
-              that leaks the existence of other interviews. */}
-          <Route path="/my-interviews" element={<Shell><MyInterviews /></Shell>} />
-          <Route path="/documents" element={<Shell><Documents /></Shell>} />
-          <Route path="/recruiting" element={<Shell><Recruiting /></Shell>} />
-          <Route path="/schedules" element={<Shell><Schedules /></Shell>} />
-          <Route path="/leave" element={<Shell><Leave /></Shell>} />
-          <Route path="/payroll" element={<Shell><Payroll /></Shell>} />
-          <Route path="/reports" element={<Shell><Reports /></Shell>} />
-
+          {ROUTES.map((r) => (
+            <Route key={r.path} path={r.path} element={<Shell route={r.path}>{r.element}</Shell>} />
+          ))}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
