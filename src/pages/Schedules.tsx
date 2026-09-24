@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type {
-  AttendanceException,
-  AttendanceRecord,
   Employee,
   Location,
   Position,
@@ -252,7 +251,16 @@ function ScheduleAdmin() {
         onError={setError}
       />
 
-      <AttendanceExceptionsPanel locations={locations} onError={setError} />
+      <Link
+        to="/attendance"
+        className="card flex min-h-11 items-center justify-between gap-3 transition hover:border-brand-blue/40"
+      >
+        <span>
+          <span className="block text-sm font-semibold text-ink">Attendance exceptions & corrections</span>
+          <span className="block text-sm text-muted">Review missing clock-outs, late clock-ins and payable time in Attendance.</span>
+        </span>
+        <span className="btn-secondary">Open Attendance</span>
+      </Link>
 
       {loading ? (
         <div className="space-y-2">
@@ -882,284 +890,6 @@ function NewShiftModal({
 }
 
 // ---------------------------------------------------------------------------
-// Attendance (Phase 2.7)
-// ---------------------------------------------------------------------------
-
-function AttendanceWidget({
-  onError,
-  onNotice,
-}: {
-  onError: (message: string) => void
-  onNotice: (message: string) => void
-}) {
-  const [openRecord, setOpenRecord] = useState<AttendanceRecord | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-
-  async function load() {
-    setLoading(true)
-    // RLS-scoped to the caller's own attendance_records — this is not the
-    // access boundary, just presentation of "do I currently have an open
-    // clock-in".
-    const { data } = await supabase
-      .from('attendance_records')
-      .select('*')
-      .is('clock_out_at', null)
-      .order('clock_in_at', { ascending: false })
-      .limit(1)
-    setOpenRecord(((data ?? [])[0] as unknown as AttendanceRecord) ?? null)
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    load()
-  }, [])
-
-  async function handleClockIn() {
-    setBusy(true)
-    const { data, error } = await supabase.rpc('clock_in')
-    setBusy(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    const shiftId = (data as { shift_id?: string | null } | null)?.shift_id
-    onNotice(shiftId ? 'Clocked in — matched to your shift today.' : 'Clocked in. No matching shift was found for today.')
-    load()
-  }
-
-  async function handleClockOut() {
-    setBusy(true)
-    const { error } = await supabase.rpc('clock_out')
-    setBusy(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    onNotice('Clocked out.')
-    load()
-  }
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-border bg-surface p-4 shadow-card">
-      <div>
-        <h2 className="text-sm font-semibold text-ink">Attendance</h2>
-        <p className="text-xs text-muted">
-          {loading
-            ? 'Checking your status…'
-            : openRecord
-              ? `Clocked in at ${new Date(openRecord.clock_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              : 'Not currently clocked in.'}
-        </p>
-      </div>
-      {!loading && (
-        <button
-          onClick={openRecord ? handleClockOut : handleClockIn}
-          disabled={busy}
-          className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
-            openRecord ? 'bg-brand-risk hover:opacity-90' : 'bg-brand-blue hover:bg-brand-blue-dark'
-          }`}
-        >
-          {busy ? 'Working…' : openRecord ? 'Clock out' : 'Clock in'}
-        </button>
-      )}
-    </div>
-  )
-}
-
-const EXCEPTION_LABEL: Record<AttendanceException['exception_type'], string> = {
-  missing_clock_out: 'Missing clock-out',
-  unmatched_shift: 'Shift never clocked',
-  no_shift_match: 'No matching shift',
-}
-
-function AttendanceExceptionsPanel({
-  locations,
-  onError,
-}: {
-  locations: Pick<Location, 'id' | 'name'>[]
-  onError: (message: string) => void
-}) {
-  const [locationId, setLocationId] = useState(locations[0]?.id ?? '')
-  const [periodStart, setPeriodStart] = useState(addDaysIso(todayIso(), -7))
-  const [periodEnd, setPeriodEnd] = useState(todayIso())
-  const [exceptions, setExceptions] = useState<AttendanceException[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [correctingId, setCorrectingId] = useState<string | null>(null)
-  const [correctIn, setCorrectIn] = useState('')
-  const [correctOut, setCorrectOut] = useState('')
-  const [correctReason, setCorrectReason] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if (!locationId && locations[0]) setLocationId(locations[0].id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locations])
-
-  async function handleLoad() {
-    if (!locationId) return
-    setLoading(true)
-    const { data, error } = await supabase.rpc('get_attendance_exceptions', {
-      p_location_id: locationId,
-      p_period_start: periodStart,
-      p_period_end: periodEnd,
-    })
-    setLoading(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    setExceptions((data ?? []) as unknown as AttendanceException[])
-  }
-
-  function startCorrection(exc: AttendanceException) {
-    setCorrectingId(exc.record_id)
-    setCorrectIn(exc.clock_in_at ? exc.clock_in_at.slice(0, 16) : '')
-    setCorrectOut(exc.clock_out_at ? exc.clock_out_at.slice(0, 16) : '')
-    setCorrectReason('')
-  }
-
-  async function handleSubmitCorrection() {
-    if (!correctingId || !correctIn || !correctReason.trim()) return
-    setSubmitting(true)
-    const { error } = await supabase.rpc('correct_attendance_record', {
-      p_record_id: correctingId,
-      p_new_clock_in_at: new Date(correctIn).toISOString(),
-      p_new_clock_out_at: correctOut ? new Date(correctOut).toISOString() : null,
-      p_reason: correctReason.trim(),
-    })
-    setSubmitting(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    setCorrectingId(null)
-    handleLoad()
-  }
-
-  return (
-    <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-      <h2 className="mb-1 text-sm font-semibold text-ink">Attendance exceptions</h2>
-      <p className="mb-3 text-xs text-muted">
-        Missing clock-outs, shifts nobody clocked against, and clock-ins with no matching shift.
-      </p>
-      <div className="mb-3 flex flex-wrap items-end gap-2">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Branch</label>
-          <select
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          >
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink">From</label>
-          <input
-            type="date"
-            value={periodStart}
-            onChange={(e) => setPeriodStart(e.target.value)}
-            className="rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink">To</label>
-          <input
-            type="date"
-            value={periodEnd}
-            onChange={(e) => setPeriodEnd(e.target.value)}
-            className="rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          />
-        </div>
-        <button
-          onClick={handleLoad}
-          disabled={loading || !locationId}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-alt disabled:opacity-60"
-        >
-          {loading ? 'Loading…' : 'Load exceptions'}
-        </button>
-      </div>
-
-      {exceptions === null ? (
-        <p className="text-sm text-muted">Choose a branch and period, then load exceptions.</p>
-      ) : exceptions.length === 0 ? (
-        <p className="text-sm text-muted">No attendance exceptions in this window.</p>
-      ) : (
-        <ul className="space-y-2">
-          {exceptions.map((exc, i) => (
-            <li key={`${exc.exception_type}-${exc.record_id ?? exc.shift_id ?? i}`} className="rounded-lg bg-surface-alt px-3 py-2 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-ink">
-                  {exc.employee_name} · {exc.shift_date}
-                  {exc.clock_in_at ? ` · in ${new Date(exc.clock_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                  {exc.clock_out_at ? ` – out ${new Date(exc.clock_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                </span>
-                <span className="flex items-center gap-2">
-                  <StatusBadge status={EXCEPTION_LABEL[exc.exception_type]} tone="warning" />
-                  {exc.record_id && (
-                    <button onClick={() => startCorrection(exc)} className="font-medium text-brand-blue hover:underline">
-                      Correct
-                    </button>
-                  )}
-                </span>
-              </div>
-
-              {correctingId === exc.record_id && (
-                <div className="mt-2 space-y-2 border-t border-border pt-2">
-                  <div className="flex flex-wrap gap-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-ink">Corrected clock-in</label>
-                      <input
-                        type="datetime-local"
-                        value={correctIn}
-                        onChange={(e) => setCorrectIn(e.target.value)}
-                        className="rounded-lg border border-border px-2 py-1 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-ink">Corrected clock-out (optional)</label>
-                      <input
-                        type="datetime-local"
-                        value={correctOut}
-                        onChange={(e) => setCorrectOut(e.target.value)}
-                        className="rounded-lg border border-border px-2 py-1 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                      />
-                    </div>
-                  </div>
-                  <input
-                    value={correctReason}
-                    onChange={(e) => setCorrectReason(e.target.value)}
-                    placeholder="Reason for this correction (required)"
-                    className="w-full rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setCorrectingId(null)} className="rounded-lg border border-border px-3 py-1 text-xs text-ink hover:bg-surface">
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSubmitCorrection}
-                      disabled={submitting || !correctReason.trim()}
-                      className="rounded-lg bg-brand-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
-                    >
-                      {submitting ? 'Saving…' : 'Save correction'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Staff self-service
 // ---------------------------------------------------------------------------
 
@@ -1331,7 +1061,13 @@ function MySchedule() {
         </p>
       )}
 
-      <AttendanceWidget onError={setError} onNotice={setNotice} />
+      <Link to="/clock" className="card flex items-center justify-between gap-3 transition hover:border-brand-blue/40">
+        <span>
+          <span className="block text-sm font-semibold text-ink">Clock in / out</span>
+          <span className="block text-sm text-muted">Start and finish your shift on the Clock screen.</span>
+        </span>
+        <span className="btn-primary">Open Clock</span>
+      </Link>
 
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
         <h2 className="mb-3 text-sm font-semibold text-ink">Upcoming shifts</h2>
