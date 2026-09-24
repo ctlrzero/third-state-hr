@@ -5,7 +5,7 @@ type Tone = 'neutral' | 'info' | 'warning' | 'risk' | 'success'
 // pattern (bg #e8f8f6 / text #087f73, radius 999px).
 const TONE_CLASSES: Record<Tone, string> = {
   neutral: 'bg-surface-alt text-muted',
-  info: 'bg-brand-blue-soft text-brand-blue-text',
+  info: 'bg-brand-info-soft text-brand-info-text',
   warning: 'bg-brand-warning-soft text-brand-warning-solid',
   risk: 'bg-brand-risk-soft text-brand-risk-text',
   success: 'bg-brand-action-soft text-brand-action-text',
