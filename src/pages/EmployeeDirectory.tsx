@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
+import { ChangeRequestQueue } from '../components/ChangeRequestQueue'
 import type { Employee, EmployeeStatus, Location } from '../types/db'
 
 const STATUS_FILTERS: { value: EmployeeStatus | 'all'; label: string }[] = [
@@ -21,7 +22,8 @@ const STATUS_FILTERS: { value: EmployeeStatus | 'all'; label: string }[] = [
 // can see this exact same component and API response with nothing to hide,
 // because the query itself never asks for restricted columns.
 export default function EmployeeDirectory() {
-  const { activeEntityId } = useAuth()
+  const { activeEntityId, profile } = useAuth()
+  const isAdmin = profile?.role === 'owner' || profile?.role === 'entity_admin'
   const [employees, setEmployees] = useState<Employee[]>([])
   const [locations, setLocations] = useState<Pick<Location, 'id' | 'name'>[]>([])
   const [loading, setLoading] = useState(true)
@@ -88,19 +90,32 @@ export default function EmployeeDirectory() {
             {loading ? 'Loading…' : `${filtered.length} of ${employees.length} employees`}
           </p>
         </div>
+        {isAdmin && (
+          <Link to="/admin?tab=import" className="btn-secondary">
+            Import employees
+          </Link>
+        )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <ChangeRequestQueue />
+
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="sr-only" htmlFor="dir-search">
+          Search by name or email
+        </label>
         <input
+          id="dir-search"
+          type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name or email"
-          className="w-full flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 sm:w-64 sm:flex-none"
+          className="w-full flex-1 min-h-11 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 sm:w-64 sm:flex-none"
         />
         <select
+          aria-label="Filter by status"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as EmployeeStatus | 'all')}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          className="min-h-11 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
         >
           {STATUS_FILTERS.map((f) => (
             <option key={f.value} value={f.value}>
@@ -109,9 +124,10 @@ export default function EmployeeDirectory() {
           ))}
         </select>
         <select
+          aria-label="Filter by branch"
           value={locationFilter}
           onChange={(e) => setLocationFilter(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          className="min-h-11 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
         >
           <option value="all">All branches</option>
           {locations.map((loc) => (

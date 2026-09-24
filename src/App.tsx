@@ -12,6 +12,7 @@ import NoAssignment from './pages/NoAssignment'
 // Every authenticated page is its own chunk so the entry bundle only carries
 // the shell, auth and router.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
+const StaffHome = lazy(() => import('./pages/StaffHome'))
 const EmployeeDirectory = lazy(() => import('./pages/EmployeeDirectory'))
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'))
 const Documents = lazy(() => import('./pages/Documents'))
@@ -39,6 +40,12 @@ function RoleGate({ route, children }: { route: string; children: ReactNode }) {
   return <>{children}</>
 }
 
+/** Staff get a personal home; everyone else the entity dashboard. */
+function Home() {
+  const { profile } = useAuth()
+  return profile?.role === 'staff' ? <StaffHome /> : <Dashboard />
+}
+
 function Shell({ route, children }: { route: string; children: ReactNode }) {
   return (
     <ProtectedRoute>
@@ -52,7 +59,7 @@ function Shell({ route, children }: { route: string; children: ReactNode }) {
 }
 
 const ROUTES: { path: string; element: ReactNode }[] = [
-  { path: '/', element: <Dashboard /> },
+  { path: '/', element: <Home /> },
   { path: '/employees', element: <EmployeeDirectory /> },
   { path: '/employees/:id', element: <EmployeeProfile /> },
   { path: '/me', element: <MyProfile /> },
