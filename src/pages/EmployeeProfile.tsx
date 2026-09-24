@@ -8,8 +8,9 @@ import { Alert, Drawer, Field, Modal, NotAvailable, Skeleton, TabPanel, Tabs, ty
 import { expiryStatus } from '../lib/documents'
 import {
   CHANGE_FIELD_LABEL,
-  EDITABLE_FIELDS,
+  allowedStatusMoves,
   decideEmployeeChangeRequest,
+  editableFieldsFor,
   diffEmployeeChanges,
   getEmployeeCompleteness,
   listEmployeeAudit,
@@ -36,13 +37,6 @@ const EXPIRY_TONE: Record<string, 'neutral' | 'warning' | 'risk' | 'success'> = 
 }
 
 
-// Allowed lifecycle moves. Server (set_employee_status) is authoritative.
-const NEXT_STATUSES: Record<EmployeeStatus, EmployeeStatus[]> = {
-  candidate: ['pre_boarding', 'inactive'],
-  pre_boarding: ['active', 'inactive'],
-  active: ['inactive'],
-  inactive: ['active'],
-}
 const STATUS_ACTION_LABEL: Record<EmployeeStatus, string> = {
   candidate: 'Move to candidate',
   pre_boarding: 'Start pre-boarding',
@@ -158,6 +152,7 @@ export default function EmployeeProfile() {
   }
 
   const status = (employee.employment_status ?? 'candidate') as EmployeeStatus
+  const canEdit = editableFieldsFor(profile?.role).length > 0
 
   return (
     <div className="space-y-5">
@@ -187,12 +182,12 @@ export default function EmployeeProfile() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={status} />
-            {isAdmin && (
+            {canEdit && (
               <>
                 <button className="btn-secondary" onClick={() => setEditing(true)}>
                   Edit details
                 </button>
-                {NEXT_STATUSES[status].map((s) => (
+                {(allowedStatusMoves(profile?.role, status) as EmployeeStatus[]).map((s) => (
                   <button key={s} className={s === 'inactive' ? 'btn-secondary text-brand-risk' : 'btn-primary'} onClick={() => setStatusTarget(s)}>
                     {STATUS_ACTION_LABEL[s]}
                   </button>
@@ -255,6 +250,7 @@ export default function EmployeeProfile() {
       {editing && (
         <EditDrawer
           employee={employee}
+          role={profile?.role}
           onClose={() => setEditing(false)}
           onDone={() => {
             setEditing(false)
@@ -704,11 +700,11 @@ function StatusModal({
   const [reason, setReason] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const needsReason = target === 'inactive'
+  const needsReason = target === 'inactive' || employee.employment_status === 'inactive'
   const [unavailable, setUnavailable] = useState(false)
 
   async function submit() {
-    if (needsReason && !reason.trim()) return setErr('A reason is required to inactivate an employee.')
+    if (needsReason && !reason.trim()) return setErr('A reason is required for this change.')
     setSaving(true)
     const res = await setEmployeeStatus(employee.id, target, reason.trim() || null)
     setSaving(false)
@@ -747,8 +743,31 @@ function StatusModal({
   )
 }
 
-function EditDrawer({ employee, onClose, onDone }: { employee: FullEmployee; onClose: () => void; onDone: () => void }) {
+function EditDrawer({
+  employee,
+  role,
+  onClose,
+  onDone,
+}: {
+  employee: FullEmployee
+  role: string | undefined
+  onClose: () => void
+  onDone: () => void
+}) {
+  const EDITABLE_FIELDS = editableFieldsFor(role)
   const record = employee as unknown as Record<string, unknown>
+  const [lookups, setLookups] = useState<Record<string, { value: string; label: string }[]>>({})
+  useEffect(() => {
+    Promise.all([
+      supabase.from('positions').select('id, title').eq('entity_id', employee.entity_id).order('title'),
+      supabase.from('locations').select('id, name').eq('entity_id', employee.entity_id).order('name'),
+    ]).then(([pos, loc]) =>
+      setLookups({
+        position_id: ((pos.data ?? []) as { id: string; title: string }[]).map((p) => ({ value: p.id, label: p.title })),
+        home_location_id: ((loc.data ?? []) as { id: string; name: string }[]).map((l) => ({ value: l.id, label: l.name })),
+      })
+    )
+  }, [employee.entity_id])
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(EDITABLE_FIELDS.map((f) => [f.key, record[f.key] == null ? '' : String(record[f.key])]))
   )
@@ -761,7 +780,7 @@ function EditDrawer({ employee, onClose, onDone }: { employee: FullEmployee; onC
 
   function review() {
     const e: Record<string, string> = {}
-    if (!draft.full_name?.trim()) e.full_name = 'Full name is required.'
+    if ('full_name' in draft && !draft.full_name.trim()) e.full_name = 'Full name is required.'
     if (draft.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) e.email = 'Enter a valid email.'
     setFieldError(e)
     if (Object.keys(e).length) return
@@ -786,6 +805,7 @@ function EditDrawer({ employee, onClose, onDone }: { employee: FullEmployee; onC
     const def = EDITABLE_FIELDS.find((f) => f.key === k)
     if (def?.type === 'date') return fmtDate(String(v))
     if (def?.type === 'select') return humanize(String(v))
+    if (def?.type === 'lookup') return lookups[k]?.find((o) => o.value === v)?.label ?? String(v)
     return String(v)
   }
 
@@ -811,7 +831,18 @@ function EditDrawer({ employee, onClose, onDone }: { employee: FullEmployee; onC
         {EDITABLE_FIELDS.map((f, i) => (
           <Field key={f.key} label={f.label} error={fieldError[f.key]} required={f.key === 'full_name'}>
             {(p) =>
-              f.type === 'select' ? (
+              f.type === 'lookup' ? (
+                <select {...p} className="input" value={draft[f.key]} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}>
+                  <option value="">Not set</option>
+                  {(lookups[f.key] ?? []).map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              ) : f.type === 'textarea' ? (
+                <textarea {...p} rows={3} className="input" value={draft[f.key]} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })} />
+              ) : f.type === 'select' ? (
                 <select {...p} className="input" value={draft[f.key]} onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}>
                   <option value="">Not set</option>
                   {f.options!.map((o) => (

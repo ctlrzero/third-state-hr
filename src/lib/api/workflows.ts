@@ -44,10 +44,15 @@ export interface CreateWorkflowRuleInput {
   action_type: string
   action_target_role: UserRole | null
   action_message_template: string
+  /** Owner must pass the target entity; entity_admin may pass null (own). */
+  entity_id: string | null
 }
 
-export const getWorkflowRules = (module: string | null = null) =>
-  callRpc<WorkflowRule[]>('get_workflow_rules', { p_module: module })
+/** Owner: p_entity_id null = all entities. Entity admin: null or own. */
+export const getWorkflowRules = (module: string | null = null, entityId: string | null = null) =>
+  callRpc<WorkflowRule[]>('get_workflow_rules', { p_module: module, p_entity_id: entityId })
+
+export const getWorkflowTriggerCatalog = () => callRpc<Record<string, Record<string, string[]>>>('workflow_trigger_catalog')
 
 export const createWorkflowRule = (i: CreateWorkflowRuleInput) =>
   callRpc<string>('create_workflow_rule', {
@@ -60,6 +65,7 @@ export const createWorkflowRule = (i: CreateWorkflowRuleInput) =>
     p_action_type: i.action_type,
     p_action_target_role: i.action_target_role,
     p_action_message_template: i.action_message_template,
+    p_entity_id: i.entity_id,
   })
 
 export const activateWorkflowRule = (ruleId: string) => callRpc<null>('activate_workflow_rule', { p_rule_id: ruleId })
@@ -70,5 +76,5 @@ export const deactivateWorkflowRule = (ruleId: string) =>
 export const testWorkflowRule = (ruleId: string, sampleEvent: Record<string, unknown>) =>
   callRpc<'matched' | 'skipped' | string>('test_workflow_rule', { p_rule_id: ruleId, p_sample_event: sampleEvent })
 
-export const getWorkflowRuns = (ruleId: string | null, limit = 50) =>
-  callRpc<WorkflowRun[]>('get_workflow_runs', { p_rule_id: ruleId, p_limit: limit })
+export const getWorkflowRuns = (ruleId: string | null, limit = 50, entityId: string | null = null) =>
+  callRpc<WorkflowRun[]>('get_workflow_runs', { p_rule_id: ruleId, p_limit: limit, p_entity_id: entityId })

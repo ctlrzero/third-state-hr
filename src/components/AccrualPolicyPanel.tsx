@@ -16,7 +16,16 @@ const ACCRUAL_ROUNDING_LABEL: Record<string, string> = {
 // always resets to false — and only an Owner can approve one via
 // approve_leave_accrual_policy(). Running accrual for a period is always a
 // separate, deliberate action (run_leave_accrual()); there's no scheduler.
-export function AccrualPolicyPanel({ leaveTypes, isOwner }: { leaveTypes: LeaveType[]; isOwner: boolean }) {
+export function AccrualPolicyPanel({
+  leaveTypes,
+  isOwner,
+  entityId,
+}: {
+  leaveTypes: LeaveType[]
+  isOwner: boolean
+  /** Owner sees every entity under RLS — pass the switcher's entity to scope the list. */
+  entityId?: string | null
+}) {
   const [policies, setPolicies] = useState<LeaveAccrualPolicy[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -27,10 +36,9 @@ export function AccrualPolicyPanel({ leaveTypes, isOwner }: { leaveTypes: LeaveT
 
   async function load() {
     setLoading(true)
-    const { data, error: fetchError } = await supabase
-      .from('leave_accrual_policies')
-      .select('*, leave_types(id, name)')
-      .order('created_at', { ascending: false })
+    let q = supabase.from('leave_accrual_policies').select('*, leave_types(id, name)').order('created_at', { ascending: false })
+    if (entityId) q = q.eq('entity_id', entityId)
+    const { data, error: fetchError } = await q
     if (fetchError) setError(fetchError.message)
     else setPolicies((data ?? []) as unknown as LeaveAccrualPolicy[])
     setLoading(false)
@@ -39,7 +47,7 @@ export function AccrualPolicyPanel({ leaveTypes, isOwner }: { leaveTypes: LeaveT
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [entityId])
 
   async function handleApprove(policyId: string) {
     setBusyId(policyId)

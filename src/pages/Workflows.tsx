@@ -19,6 +19,7 @@ import {
   createWorkflowRule,
   deactivateWorkflowRule,
   getWorkflowRules,
+  getWorkflowTriggerCatalog,
   getWorkflowRuns,
   testWorkflowRule,
   type WorkflowRule,
@@ -26,14 +27,18 @@ import {
 } from '../lib/api/workflows'
 import {
   MODULE_LABEL,
-  OPERATORS,
   ROLE_LABEL,
   TARGET_ROLES,
+  effectiveTriggers,
   findTrigger,
   modulesWithTriggers,
+  operatorsFor,
   triggersFor,
+  type LiveCatalog,
+  type TriggerDef,
   type WorkflowModule,
 } from '../lib/workflowCatalog'
+import { useAuth } from '../auth/AuthContext'
 import { buildWorkflowSummary, validateWorkflowDraft } from '../lib/workflowSummary'
 import { fmtDateTime } from '../lib/format'
 import type { UserRole } from '../types/db'
@@ -41,6 +46,9 @@ import type { UserRole } from '../types/db'
 type TabKey = 'rules' | 'runs'
 
 export default function Workflows() {
+  const { activeEntityId, entities } = useAuth()
+  const entityName = entities.find((e) => e.id === activeEntityId)?.name ?? 'this entity'
+  const [triggers, setTriggers] = useState<TriggerDef[]>(effectiveTriggers(null))
   const [tab, setTab] = useState<TabKey>('rules')
   const [rules, setRules] = useState<WorkflowRule[] | null>(null)
   const [runs, setRuns] = useState<WorkflowRun[] | null>(null)
@@ -52,18 +60,28 @@ export default function Workflows() {
   const [toggling, setToggling] = useState<WorkflowRule | null>(null)
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => {
+    getWorkflowTriggerCatalog().then((r) => {
+      if (r.data && !r.error) setTriggers(effectiveTriggers(r.data as LiveCatalog))
+    })
+  }, [])
+
+  // Always scoped to the entity picked in the header switcher (the owner has
+  // no home entity); switching clears the previous entity's rows first.
   const loadRules = useCallback(async () => {
-    const res = await getWorkflowRules(null)
+    setRules(null)
+    const res = await getWorkflowRules(null, activeEntityId)
     if (res.notAvailable) setUnavailable(true)
     else if (res.error) setError(res.error)
     setRules(res.data ?? [])
-  }, [])
+  }, [activeEntityId])
 
   const loadRuns = useCallback(async () => {
-    const res = await getWorkflowRuns(null, 100)
+    setRuns(null)
+    const res = await getWorkflowRuns(null, 100, activeEntityId)
     if (res.error) setError(res.error)
     setRuns(res.data ?? [])
-  }, [])
+  }, [activeEntityId])
 
   useEffect(() => {
     loadRules()
@@ -109,7 +127,7 @@ export default function Workflows() {
     <div className="space-y-5">
       <PageHeader
         title="Workflows"
-        description="Automatic notifications when something happens in HR. Rules only notify — they never change records."
+        description={`Automatic notifications for ${entityName}. Rules only notify — they never change records.`}
         actions={
           <button className="btn-primary" onClick={() => setBuilderOpen(true)}>
             New rule
@@ -195,6 +213,8 @@ export default function Workflows() {
 
       {builderOpen && (
         <RuleBuilder
+          triggers={triggers}
+          entityId={activeEntityId}
           onClose={() => setBuilderOpen(false)}
           onCreated={(name) => {
             setBuilderOpen(false)
@@ -228,13 +248,23 @@ export default function Workflows() {
   )
 }
 
-function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (name: string) => void }) {
-  const modules = modulesWithTriggers()
+function RuleBuilder({
+  triggers,
+  entityId,
+  onClose,
+  onCreated,
+}: {
+  triggers: TriggerDef[]
+  entityId: string | null
+  onClose: () => void
+  onCreated: (name: string) => void
+}) {
+  const modules = modulesWithTriggers(triggers)
   const [name, setName] = useState('')
   const [module, setModule] = useState<WorkflowModule>(modules[0])
-  const [triggerEvent, setTriggerEvent] = useState(triggersFor(modules[0])[0]?.event ?? '')
+  const [triggerEvent, setTriggerEvent] = useState(triggersFor(modules[0], triggers)[0]?.event ?? '')
   const [useCondition, setUseCondition] = useState(false)
-  const [field, setField] = useState(triggersFor(modules[0])[0]?.fields[0]?.key ?? '')
+  const [field, setField] = useState(triggersFor(modules[0], triggers)[0]?.fields[0]?.key ?? '')
   const [operator, setOperator] = useState('gt')
   const [value, setValue] = useState('')
   const [actionType, setActionType] = useState<'notify_role' | 'notify_employee'>('notify_role')
@@ -244,10 +274,10 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
 
-  const trigger = findTrigger(module, triggerEvent)
+  const trigger = triggers.find((t) => t.module === module && t.event === triggerEvent)
   const fields = trigger?.fields ?? []
   const fieldDef = fields.find((f) => f.key === field)
-  const operators = OPERATORS.filter((o) => !(o.numericOnly && fieldDef?.kind === 'text'))
+  const operators = operatorsFor(fieldDef?.kind)
 
   const draft = {
     name,
@@ -265,14 +295,15 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
 
   function changeModule(m: WorkflowModule) {
     setModule(m)
-    const first = triggersFor(m)[0]
+    const first = triggersFor(m, triggers)[0]
     setTriggerEvent(first?.event ?? '')
     setField(first?.fields[0]?.key ?? '')
   }
 
   function changeTrigger(ev: string) {
     setTriggerEvent(ev)
-    setField(findTrigger(module, ev)?.fields[0]?.key ?? '')
+    setField(triggers.find((t) => t.module === module && t.event === ev)?.fields[0]?.key ?? '')
+    setValue('')
   }
 
   async function save() {
@@ -290,6 +321,7 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
       action_type: actionType,
       action_target_role: draft.action_target_role,
       action_message_template: message.trim(),
+      entity_id: entityId,
     })
     setSaving(false)
     if (res.error || res.notAvailable) {
@@ -352,7 +384,7 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
           <Field label="Trigger" error={errs.trigger}>
             {(p) => (
               <select {...p} className="input" value={triggerEvent} onChange={(e) => changeTrigger(e.target.value)}>
-                {triggersFor(module).map((t) => (
+                {triggersFor(module, triggers).map((t) => (
                   <option key={t.event} value={t.event}>
                     {t.label}
                   </option>
@@ -360,9 +392,6 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
               </select>
             )}
           </Field>
-          {trigger?.isNew && (
-            <p className="text-xs text-muted">This trigger is new — if it isn't switched on yet for your workspace, rules will save but won't fire.</p>
-          )}
         </fieldset>
 
         <fieldset className={step}>
@@ -375,7 +404,17 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Field">
                 {(p) => (
-                  <select {...p} className="input" value={field} onChange={(e) => setField(e.target.value)}>
+                  <select
+                    {...p}
+                    className="input"
+                    value={field}
+                    onChange={(e) => {
+                      const next = fields.find((f) => f.key === e.target.value)
+                      setField(e.target.value)
+                      setValue('')
+                      setOperator(operatorsFor(next?.kind)[0].value)
+                    }}
+                  >
                     {fields.map((f) => (
                       <option key={f.key} value={f.key}>
                         {f.label}
@@ -396,15 +435,27 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
                 )}
               </Field>
               <Field label="Value" error={errs.condition}>
-                {(p) => (
-                  <input
-                    {...p}
-                    className="input"
-                    inputMode={fieldDef?.kind === 'number' ? 'decimal' : undefined}
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                  />
-                )}
+                {(p) =>
+                  fieldDef?.options ? (
+                    <select {...p} className="input" value={value} onChange={(e) => setValue(e.target.value)}>
+                      <option value="">Choose…</option>
+                      {fieldDef.options.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      {...p}
+                      className="input"
+                      type={fieldDef?.kind === 'date' ? 'date' : 'text'}
+                      inputMode={fieldDef?.kind === 'number' ? 'decimal' : undefined}
+                      value={value}
+                      onChange={(e) => setValue(e.target.value)}
+                    />
+                  )
+                }
               </Field>
             </div>
           )}
@@ -446,8 +497,12 @@ function RuleBuilder({ onClose, onCreated }: { onClose: () => void; onCreated: (
 }
 
 function TestPanel({ rule, onClose }: { rule: WorkflowRule; onClose: () => void }) {
+  // Only the rule's own condition field affects the result, so only ask for that.
   const trigger = findTrigger(rule.module, rule.trigger_event)
-  const fields = trigger?.fields ?? (rule.condition_field ? [{ key: rule.condition_field, label: rule.condition_field, phrase: '', kind: 'text' as const }] : [])
+  const known = trigger?.fields.find((f) => f.key === rule.condition_field)
+  const fields = rule.condition_field
+    ? [known ?? { key: rule.condition_field, label: rule.condition_field.replace(/_/g, ' '), phrase: '', kind: 'text' as const }]
+    : []
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(fields.map((f) => [f.key, f.key === rule.condition_field ? (rule.condition_value ?? '') : '']))
   )

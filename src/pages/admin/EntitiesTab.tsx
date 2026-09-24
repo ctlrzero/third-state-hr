@@ -18,7 +18,9 @@ import { useAuth } from '../../auth/AuthContext'
 
 const EMIRATES = ['Abu Dhabi', 'Dubai', 'Sharjah', 'Ajman', 'Umm Al Quwain', 'Ras Al Khaimah', 'Fujairah']
 
-const DEP_LABEL: Record<keyof DependencySummary, string> = {
+type DepKey = 'active_employees' | 'future_shifts' | 'open_leave_requests' | 'draft_payroll_runs'
+
+const DEP_LABEL: Record<DepKey, string> = {
   active_employees: 'Active employees',
   future_shifts: 'Future shifts',
   open_leave_requests: 'Open leave requests',
@@ -195,7 +197,7 @@ function InactivateConfirm({
       }
     })
   }, [entityId, locationId])
-  const blocking = summary ? Object.values(summary).some((n) => Number(n) > 0) : false
+  const blocking = summary ? (Object.keys(DEP_LABEL) as DepKey[]).some((k) => Number(summary[k]) > 0) : false
   return (
     <Modal
       open
@@ -219,7 +221,7 @@ function InactivateConfirm({
       {summary && (
         <>
           <dl className="grid grid-cols-2 gap-2">
-            {(Object.keys(DEP_LABEL) as (keyof DependencySummary)[]).map((k) => (
+            {(Object.keys(DEP_LABEL) as DepKey[]).map((k) => (
               <div key={k} className={`rounded-lg p-2 ${Number(summary[k]) > 0 ? 'bg-brand-warning-soft' : 'bg-surface-alt'}`}>
                 <dt className="text-xs text-muted">{DEP_LABEL[k]}</dt>
                 <dd className="text-lg font-semibold">{summary[k] ?? 0}</dd>

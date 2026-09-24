@@ -29,14 +29,15 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
   const [granting, setGranting] = useState(false)
   const [revoking, setRevoking] = useState<UserAccessRow | null>(null)
   const [search, setSearch] = useState('')
+  const [allEntities, setAllEntities] = useState(false)
 
   const load = useCallback(async () => {
     setRows(null)
-    const res = await adminListUserAccess(activeEntityId)
+    const res = await adminListUserAccess(isOwner && allEntities ? null : activeEntityId)
     if (res.notAvailable) setUnavailable(true)
     else if (res.error) setError(res.error)
     setRows(res.data ?? [])
-  }, [activeEntityId])
+  }, [activeEntityId, isOwner, allEntities])
 
   useEffect(() => {
     load()
@@ -85,9 +86,17 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
             {(p) => <input {...p} type="search" className="input" value={search} onChange={(e) => setSearch(e.target.value)} />}
           </Field>
         </div>
-        <button className="btn-primary" onClick={() => setGranting(true)}>
-          Grant access
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          {isOwner && (
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input type="checkbox" className="h-5 w-5 accent-brand-blue" checked={allEntities} onChange={(e) => setAllEntities(e.target.checked)} />
+              Show all entities
+            </label>
+          )}
+          <button className="btn-primary" onClick={() => setGranting(true)}>
+            Grant access
+          </button>
+        </div>
       </div>
       {error && (
         <Alert tone="error" onDismiss={() => setError(null)}>
@@ -171,7 +180,7 @@ function GrantDrawer({
   const [locationId, setLocationId] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [employees, setEmployees] = useState<{ id: string; full_name: string; email: string | null }[]>([])
-  const [errors, setErrors] = useState<{ email?: string; entity?: string; location?: string }>({})
+  const [errors, setErrors] = useState<{ email?: string; entity?: string; location?: string; employee?: string }>({})
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
 
@@ -186,15 +195,20 @@ function GrantDrawer({
       .then(({ data }) => setEmployees((data ?? []) as typeof employees))
   }, [entityId])
 
+  // Scope rules (API contract §3): owner → nothing; entity_admin → entity;
+  // location_manager → entity + branch; staff → entity + linked employee.
+  const activeEntities = entities.filter((e) => e.is_active !== false)
   const branchOptions = locations.filter((l) => l.entity_id === entityId && l.is_active !== false)
   const needsEntity = role !== 'owner'
   const needsBranch = role === 'location_manager'
+  const needsEmployee = role === 'staff'
 
   async function submit() {
     const e: typeof errors = {}
     if (!EMAIL_RE.test(email.trim())) e.email = 'Enter a valid email address.'
     if (needsEntity && !entityId) e.entity = 'Choose an entity.'
     if (needsBranch && !locationId) e.location = 'Location managers need a branch.'
+    if (needsEmployee && !employeeId) e.employee = 'Staff access must be linked to their employee record.'
     setErrors(e)
     if (Object.keys(e).length) return
     setSaving(true)
@@ -203,8 +217,8 @@ function GrantDrawer({
       email.trim().toLowerCase(),
       role,
       needsEntity ? entityId : null,
-      role === 'owner' || !locationId ? null : locationId,
-      employeeId || null
+      needsBranch ? locationId : null,
+      needsEmployee ? employeeId : null
     )
     setSaving(false)
     if (res.notAvailable) return setServerError('Granting access is not available yet.')
@@ -248,7 +262,7 @@ function GrantDrawer({
           <Field label="Entity" error={errors.entity} required>
             {(p) => (
               <select {...p} className="input" value={entityId} onChange={(e) => setEntityId(e.target.value)} disabled={!isOwner}>
-                {entities.map((en) => (
+                {activeEntities.map((en) => (
                   <option key={en.id} value={en.id}>
                     {en.name}
                   </option>
@@ -257,11 +271,11 @@ function GrantDrawer({
             )}
           </Field>
         )}
-        {needsEntity && (
-          <Field label={needsBranch ? 'Branch' : 'Branch (optional)'} error={errors.location} required={needsBranch}>
+        {needsBranch && (
+          <Field label="Branch" error={errors.location} required>
             {(p) => (
               <select {...p} className="input" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-                <option value="">{needsBranch ? 'Choose a branch' : 'No specific branch'}</option>
+                <option value="">Choose a branch</option>
                 {branchOptions.map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
@@ -271,11 +285,11 @@ function GrantDrawer({
             )}
           </Field>
         )}
-        {needsEntity && (
-          <Field label="Linked employee (optional)" hint="Links sign-in to an employee record for self-service.">
+        {needsEmployee && (
+          <Field label="Linked employee" error={errors.employee} required hint="Only employees without a login are listed.">
             {(p) => (
               <select {...p} className="input" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-                <option value="">None</option>
+                <option value="">Choose an employee</option>
                 {employees.map((em) => (
                   <option key={em.id} value={em.id}>
                     {em.full_name}

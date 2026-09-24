@@ -49,6 +49,8 @@ export interface LocationInput {
 }
 
 export interface DependencySummary {
+  entity_id?: string | null
+  location_id?: string | null
   active_employees: number
   future_shifts: number
   open_leave_requests: number
@@ -107,8 +109,10 @@ export async function listPositions(entityId: string) {
   return { data: (data ?? []) as { id: string; title: string; department: string | null }[], error: error?.message ?? null }
 }
 
-export async function listRetentionPolicies(): Promise<ApiResult<RetentionPolicy[]>> {
-  const { data, error } = await supabase.from('data_retention_policies').select('*').order('created_at', { ascending: false })
+export async function listRetentionPolicies(entityId?: string | null): Promise<ApiResult<RetentionPolicy[]>> {
+  let q = supabase.from('data_retention_policies').select('*').order('created_at', { ascending: false })
+  if (entityId) q = q.eq('entity_id', entityId)
+  const { data, error } = await q
   return { data: (data ?? []) as RetentionPolicy[], error: error?.message ?? null, notAvailable: false }
 }
 
@@ -141,6 +145,7 @@ export const getEntityDependencySummary = (entityId: string | null, locationId: 
 
 // ---------- users & access ----------
 
+/** Owner: null = every entity. Entity admin: own entity (null or own id). */
 export const adminListUserAccess = (entityId: string | null) =>
   callRpc<UserAccessRow[]>('admin_list_user_access', { p_entity_id: entityId })
 
@@ -168,13 +173,16 @@ export const proposeDataRetentionPolicy = (
   tableName: string,
   retentionYears: number,
   disposalMethod: string,
-  legalBasis: string | null
+  legalBasis: string | null,
+  /** Owner must pass the target entity; entity_admin may pass null (own). */
+  entityId: string | null
 ) =>
   callRpc<string>('propose_data_retention_policy', {
     p_table_name: tableName,
     p_retention_years: retentionYears,
     p_disposal_method: disposalMethod,
     p_legal_basis: legalBasis,
+    p_entity_id: entityId,
   })
 
 export const approveDataRetentionPolicy = (policyId: string) =>

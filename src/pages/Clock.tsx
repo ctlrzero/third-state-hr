@@ -17,9 +17,18 @@ import { addDays, fmtDayShort, fmtMinutes, fmtTime, todayDubai } from '../lib/fo
 // derived from what the server says (get_my_clock_status), never from an
 // optimistic local guess — a success message and captured time are shown
 // only after clock_in()/clock_out() return and the status is re-read.
+const ATTENDANCE_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'risk'> = {
+  scheduled: 'info',
+  in_progress: 'warning',
+  completed: 'success',
+  missed: 'risk',
+  unscheduled: 'neutral',
+}
+
 export default function Clock() {
   const [status, setStatus] = useState<ClockStatus | null>(null)
   const [statusUnavailable, setStatusUnavailable] = useState(false)
+  const [notLinked, setNotLinked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const inFlight = useRef(false)
@@ -31,6 +40,7 @@ export default function Clock() {
   const loadStatus = useCallback(async () => {
     const res = await getMyClockStatus()
     if (res.notAvailable) setStatusUnavailable(true)
+    else if (res.error && /no employee record/i.test(res.error)) setNotLinked(true)
     else if (res.error) setError(res.error)
     else setStatus(res.data)
     setLoading(false)
@@ -41,8 +51,9 @@ export default function Clock() {
     const today = todayDubai()
     const res = await getMyAttendance(addDays(today, -30), today)
     if (res.notAvailable) setHistoryUnavailable(true)
+    else if (res.error && /no employee record/i.test(res.error)) setHistory([])
     else if (res.error) setError(res.error)
-    else setHistory(res.data ?? [])
+    else setHistory([...(res.data ?? [])].sort((a, b) => b.business_date.localeCompare(a.business_date)))
   }, [])
 
   useEffect(() => {
@@ -61,17 +72,28 @@ export default function Clock() {
     setError(null)
     setSuccess(null)
     const action = model.action
-    const res = action === 'clock_in' ? await clockIn() : await clockOut()
-    if (res.error || res.notAvailable) {
-      setError(res.error ?? 'Clocking is not available yet.')
+    if (action === 'clock_in') {
+      const res = await clockIn()
+      if (res.error || !res.data) setError(res.error ?? 'Clock-in did not complete. Please try again.')
+      else
+        setSuccess(
+          res.data.already_clocked_in
+            ? `You were already clocked in since ${fmtTime(res.data.clock_in_at)}.`
+            : `Clocked in at ${fmtTime(res.data.clock_in_at)}. Saved.`
+        )
     } else {
-      const fresh = await loadStatus()
-      const at = action === 'clock_in' ? fresh?.attendance?.clock_in_at : fresh?.attendance?.clock_out_at
-      setSuccess(
-        `${action === 'clock_in' ? 'Clocked in' : 'Clocked out'}${at ? ` at ${fmtTime(at)}` : ''}. Saved.`
-      )
-      loadHistory()
+      const res = await clockOut()
+      if (res.error || !res.data) setError(res.error ?? 'Clock-out did not complete. Please try again.')
+      else
+        setSuccess(
+          res.data.already_clocked_out
+            ? `You were already clocked out at ${fmtTime(res.data.clock_out_at)}.`
+            : `Clocked out at ${fmtTime(res.data.clock_out_at)}. Saved.`
+        )
     }
+    // Always re-read server state so the button reflects the truth.
+    await loadStatus()
+    loadHistory()
     setSaving(false)
     inFlight.current = false
   }
@@ -82,7 +104,12 @@ export default function Clock() {
     <div className="mx-auto max-w-lg space-y-5">
       <PageHeader title="Clock in / out" description={fmtDayShort(todayDubai())} />
 
-      {statusUnavailable ? (
+      {notLinked ? (
+        <EmptyState
+          title="Your login isn't linked to an employee record"
+          description="Clocking in needs an employee record. Ask your Entity Admin to link your account in Admin → Users & access."
+        />
+      ) : statusUnavailable ? (
         <NotAvailable feature="Clock in / out" />
       ) : (
         <section className="card space-y-4" aria-labelledby="today-heading">
@@ -167,7 +194,7 @@ export default function Clock() {
         <h2 id="history-heading" className="text-base font-semibold text-ink">
           My last 30 days
         </h2>
-        {historyUnavailable ? (
+        {notLinked ? null : historyUnavailable ? (
           <NotAvailable feature="Attendance history" />
         ) : history === null ? (
           <Skeleton rows={3} />
@@ -176,12 +203,13 @@ export default function Clock() {
         ) : (
           <ul className="space-y-2">
             {history.map((r) => (
-              <li key={r.id} className="card flex flex-wrap items-center justify-between gap-2 py-3">
+              <li key={r.attendance_id ?? `${r.shift_id}-${r.business_date}`} className="card flex flex-wrap items-center justify-between gap-2 py-3">
                 <div>
-                  <p className="font-medium text-ink">{fmtDayShort(r.shift_date ?? r.clock_in_at)}</p>
+                  <p className="font-medium text-ink">{fmtDayShort(r.business_date)}</p>
                   <p className="text-sm text-muted">
                     {r.planned_start ? `Planned ${fmtTime(r.planned_start)}–${fmtTime(r.planned_end)} · ` : ''}
-                    Actual {fmtTime(r.clock_in_at)}–{fmtTime(r.clock_out_at)}
+                    {r.clock_in_at ? `Actual ${fmtTime(r.clock_in_at)}–${fmtTime(r.clock_out_at)}` : 'No clock-in'}
+                    {r.location_name ? ` · ${r.location_name}` : ''}
                   </p>
                   {r.corrected && (
                     <p className="text-xs text-brand-info-text">Corrected{r.correction_reason ? `: ${r.correction_reason}` : ''}</p>
@@ -190,7 +218,7 @@ export default function Clock() {
                 <div className="text-right text-sm">
                   <p className="font-semibold text-ink">{fmtMinutes(r.worked_minutes)}</p>
                   {r.late_minutes ? <p className="text-brand-warning-solid">{r.late_minutes}m late</p> : null}
-                  {r.status && <StatusBadge status={r.status} />}
+                  {r.status && <StatusBadge status={r.status} tone={ATTENDANCE_TONE[r.status]} />}
                 </div>
               </li>
             ))}

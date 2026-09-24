@@ -86,7 +86,8 @@ const MANAGEMENT_NAV: NavItem[] = [
   { label: 'Reports', to: '/reports', icon: 'reports', roles: MANAGERS },
   { label: 'Workflows', to: '/workflows', icon: 'workflows', roles: ADMINS },
   { label: 'Admin', to: '/admin', icon: 'admin', roles: ADMINS },
-  { label: 'My clock', to: '/clock', icon: 'clock', roles: MANAGERS },
+  // The owner has no employee record, so no personal clock.
+  { label: 'My clock', to: '/clock', icon: 'clock', roles: ['entity_admin', 'location_manager'] },
   { label: 'My Interviews', to: '/my-interviews', icon: 'interviews', roles: MANAGERS, requires: 'interviewAssignment' },
   { label: 'Notifications', to: '/notifications', icon: 'notifications', roles: MANAGERS },
 ]

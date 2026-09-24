@@ -6,39 +6,56 @@ import type { AttendanceException } from '../../types/db'
 
 export type ClockState = 'not_started' | 'clocked_in' | 'clocked_out' | 'no_shift'
 
+// Shapes per docs/API_CONTRACT.md §1 (verified against the live DB).
 export interface ClockStatusShift {
   id: string
   shift_date: string
   start_time: string
   end_time: string
-  location_name?: string | null
-  position_title?: string | null
+  planned_start: string | null
+  planned_end: string | null
+  location_id: string | null
+  location_name: string | null
+  position_title: string | null
+  status: string | null
 }
 
 export interface ClockStatusAttendance {
   id: string
+  shift_id: string | null
   clock_in_at: string
   clock_out_at: string | null
+  worked_minutes: number | null
+  late_minutes: number | null
+  corrected: boolean | null
 }
 
 export interface ClockStatus {
+  state: ClockState
+  business_date: string
+  server_time: string
   today_shift: ClockStatusShift | null
   attendance: ClockStatusAttendance | null
-  state: ClockState
 }
 
+export type MyAttendanceStatus = 'scheduled' | 'in_progress' | 'completed' | 'missed' | 'unscheduled'
+
+/** get_my_attendance row. attendance_id is null for a scheduled/missed shift with no clock-in. */
 export interface MyAttendanceRow {
-  id: string
-  shift_date?: string | null
-  planned_start?: string | null
-  planned_end?: string | null
+  attendance_id: string | null
+  shift_id: string | null
+  business_date: string
+  location_id: string | null
+  location_name: string | null
+  planned_start: string | null
+  planned_end: string | null
   clock_in_at: string | null
   clock_out_at: string | null
-  worked_minutes?: number | null
-  late_minutes?: number | null
-  status?: string | null
-  corrected?: boolean | null
-  correction_reason?: string | null
+  worked_minutes: number | null
+  late_minutes: number | null
+  status: MyAttendanceStatus | string
+  corrected: boolean | null
+  correction_reason: string | null
 }
 
 export interface OverviewRow {
@@ -80,8 +97,11 @@ export const getMyClockStatus = () => callRpc<ClockStatus>('get_my_clock_status'
 export const getMyAttendance = (periodStart: string, periodEnd: string) =>
   callRpc<MyAttendanceRow[]>('get_my_attendance', { p_period_start: periodStart, p_period_end: periodEnd })
 
-export const clockIn = () => callRpc<{ id: string; shift_id: string | null; clock_in_at?: string }>('clock_in')
-export const clockOut = () => callRpc<{ id?: string; clock_out_at?: string } | null>('clock_out')
+// Both are idempotent: a repeat tap returns the existing record with
+// already_clocked_in / already_clocked_out = true.
+export const clockIn = () =>
+  callRpc<{ id: string; shift_id: string | null; clock_in_at: string; already_clocked_in: boolean }>('clock_in')
+export const clockOut = () => callRpc<{ id: string; clock_out_at: string; already_clocked_out: boolean }>('clock_out')
 
 export const getLocationAttendanceOverview = (locationId: string, periodStart: string, periodEnd: string) =>
   callRpc<OverviewRow[]>('get_location_attendance_overview', {
@@ -97,6 +117,7 @@ export const getAttendanceExceptions = (locationId: string, periodStart: string,
     p_period_end: periodEnd,
   })
 
+/** NULL for either timestamp means "keep the current value" (server-side). */
 export const correctAttendanceRecord = (
   recordId: string,
   newClockInAt: string | null,

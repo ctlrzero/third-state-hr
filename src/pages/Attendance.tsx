@@ -78,7 +78,7 @@ interface RecordLite {
 // caller's entity (entity_admin) or location (location_manager); the
 // location picker is just whatever `locations` RLS returns.
 export default function Attendance() {
-  const { activeEntityId } = useAuth()
+  const { activeEntityId, profile } = useAuth()
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([])
   const [locationId, setLocationId] = useState('')
   const [periodEnd, setPeriodEnd] = useState(todayDubai())
@@ -105,14 +105,21 @@ export default function Attendance() {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   useEffect(() => {
+    // Switching entity must never leave the previous entity's rows on screen.
+    setOverview([])
+    setExceptions([])
+    setPayables([])
+    setAdjustments([])
     let q = supabase.from('locations').select('id, name').order('name')
     if (activeEntityId) q = q.eq('entity_id', activeEntityId)
+    // A location manager can only act on their own branch (RPCs enforce it).
+    if (profile?.role === 'location_manager' && profile.location_id) q = q.eq('id', profile.location_id)
     q.then(({ data }) => {
       const locs = (data ?? []) as { id: string; name: string }[]
       setLocations(locs)
       setLocationId((cur) => (cur && locs.some((l) => l.id === cur) ? cur : (locs[0]?.id ?? '')))
     })
-  }, [activeEntityId])
+  }, [activeEntityId, profile?.role, profile?.location_id])
 
   const load = useCallback(async () => {
     if (!locationId) return
@@ -273,9 +280,11 @@ export default function Attendance() {
         title="Attendance"
         description="Planned shifts vs actual clock-ins, exceptions and payable time."
         actions={
-          <Link to="/clock" className="btn-secondary">
-            My clock
-          </Link>
+          profile?.role !== 'owner' ? (
+            <Link to="/clock" className="btn-secondary">
+              My clock
+            </Link>
+          ) : undefined
         }
       />
 
@@ -512,13 +521,15 @@ function CorrectionDrawer({
 
   const newInIso = fromDubaiLocalInput(newIn)
   const newOutIso = fromDubaiLocalInput(newOut)
-  const changedIn = newInIso !== (actualIn ? new Date(actualIn).toISOString() : null)
-  const changedOut = newOutIso !== (actualOut ? new Date(actualOut).toISOString() : null)
+  const changedIn = Boolean(newInIso) && newInIso !== (actualIn ? new Date(actualIn).toISOString() : null)
+  const changedOut = Boolean(newOutIso) && newOutIso !== (actualOut ? new Date(actualOut).toISOString() : null)
 
   function validate() {
     const e: typeof errors = {}
     if (!newInIso) e.in = 'Clock-in time is required.'
     if (newInIso && newOutIso && newOutIso <= newInIso) e.out = 'Clock-out must be after clock-in.'
+    if ((newInIso && newInIso > new Date().toISOString()) || (newOutIso && newOutIso > new Date().toISOString()))
+      e.out = 'Times cannot be in the future.'
     if (!reason.trim()) e.reason = 'A reason is required for every correction.'
     if (!changedIn && !changedOut) e.in = 'Change at least one time.'
     setErrors(e)
@@ -529,7 +540,13 @@ function CorrectionDrawer({
     if (!exception.record_id) return
     setSaving(true)
     setServerError(null)
-    const res = await correctAttendanceRecord(exception.record_id, newInIso, newOutIso, reason.trim())
+    // NULL = keep the current value (API contract), so only send what changed.
+    const res = await correctAttendanceRecord(
+      exception.record_id,
+      changedIn ? newInIso : null,
+      changedOut ? newOutIso : null,
+      reason.trim()
+    )
     setSaving(false)
     if (res.error || res.notAvailable) {
       setServerError(res.error ?? 'Corrections are not available yet.')
@@ -593,7 +610,7 @@ function CorrectionDrawer({
         <Field label="New clock-in (Dubai time)" error={errors.in} required>
           {(p) => <input {...p} type="datetime-local" className="input" value={newIn} onChange={(e) => setNewIn(e.target.value)} data-autofocus />}
         </Field>
-        <Field label="New clock-out (Dubai time)" error={errors.out} hint="Leave empty if the employee is still on shift.">
+        <Field label="New clock-out (Dubai time)" error={errors.out} hint="Clearing this keeps the current clock-out. You cannot correct your own record.">
           {(p) => <input {...p} type="datetime-local" className="input" value={newOut} onChange={(e) => setNewOut(e.target.value)} />}
         </Field>
         <Field label="Reason" error={errors.reason} required hint="Recorded in the audit trail and shown to the employee.">
@@ -621,13 +638,13 @@ function CorrectionDrawer({
           <div className="flex justify-between gap-3">
             <dt className="text-muted">Clock-in</dt>
             <dd>
-              {fmtDateTime(actualIn)} → <strong>{fmtDateTime(newInIso)}</strong>
+              {fmtDateTime(actualIn)} → <strong>{changedIn ? fmtDateTime(newInIso) : 'unchanged'}</strong>
             </dd>
           </div>
           <div className="flex justify-between gap-3">
             <dt className="text-muted">Clock-out</dt>
             <dd>
-              {fmtDateTime(actualOut)} → <strong>{fmtDateTime(newOutIso)}</strong>
+              {fmtDateTime(actualOut)} → <strong>{changedOut ? fmtDateTime(newOutIso) : 'unchanged'}</strong>
             </dd>
           </div>
           <div className="flex justify-between gap-3">

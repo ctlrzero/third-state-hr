@@ -60,15 +60,15 @@ export function PoliciesTab({ isOwner, activeEntityId }: { isOwner: boolean; act
             </ul>
           </div>
         )}
-        <AccrualPolicyPanel leaveTypes={leaveTypes} isOwner={isOwner} />
+        <AccrualPolicyPanel leaveTypes={leaveTypes} isOwner={isOwner} entityId={activeEntityId} />
       </section>
-      <RetentionSection isOwner={isOwner} />
+      <RetentionSection isOwner={isOwner} entityId={activeEntityId} />
       <SelfApprovalSection isOwner={isOwner} />
     </div>
   )
 }
 
-function RetentionSection({ isOwner }: { isOwner: boolean }) {
+function RetentionSection({ isOwner, entityId }: { isOwner: boolean; entityId: string | null }) {
   const [rows, setRows] = useState<RetentionPolicy[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -76,10 +76,11 @@ function RetentionSection({ isOwner }: { isOwner: boolean }) {
   const [busyId, setBusyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const res = await listRetentionPolicies()
+    setRows(null)
+    const res = await listRetentionPolicies(entityId)
     if (res.error) setError(res.error)
     setRows(res.data ?? [])
-  }, [])
+  }, [entityId])
   useEffect(() => {
     load()
   }, [load])
@@ -144,6 +145,7 @@ function RetentionSection({ isOwner }: { isOwner: boolean }) {
       )}
       {proposing && (
         <ProposeRetentionDrawer
+          entityId={entityId}
           onClose={() => setProposing(false)}
           onDone={() => {
             setProposing(false)
@@ -156,7 +158,7 @@ function RetentionSection({ isOwner }: { isOwner: boolean }) {
   )
 }
 
-function ProposeRetentionDrawer({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function ProposeRetentionDrawer({ entityId, onClose, onDone }: { entityId: string | null; onClose: () => void; onDone: () => void }) {
   const [table, setTable] = useState(RETENTION_TABLES[0].value)
   const [years, setYears] = useState('5')
   const [method, setMethod] = useState('manual_review')
@@ -170,7 +172,7 @@ function ProposeRetentionDrawer({ onClose, onDone }: { onClose: () => void; onDo
     if (!Number.isInteger(y) || y < 1 || y > 50) return setErr('Enter whole years between 1 and 50.')
     setErr(null)
     setSaving(true)
-    const res = await proposeDataRetentionPolicy(table, y, method, basis.trim() || null)
+    const res = await proposeDataRetentionPolicy(table, y, method, basis.trim() || null, entityId)
     setSaving(false)
     if (res.error || res.notAvailable) return setServerError(res.error ?? 'Not available yet.')
     onDone()

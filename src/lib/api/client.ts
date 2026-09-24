@@ -29,8 +29,11 @@ export function isMissingFunction(err: PgError | null | undefined): boolean {
 /** Turn a raw Postgres/PostgREST error into something safe to show a user. */
 export function friendlyError(err: PgError | null | undefined): string {
   if (!err) return 'Something went wrong. Please try again.'
-  if (err.code === '42501') return 'You do not have permission to do that.'
-  if (err.message && err.message.length < 300) return err.message
+  const msg = err.message ?? ''
+  // Raw Postgres privilege errors are not user-friendly; RPC-raised 42501s carry a readable message.
+  if (err.code === '42501' && (!msg || /^permission denied/i.test(msg))) return 'You do not have permission to do that.'
+  if (err.code === 'P0002' && !msg) return 'Not found.'
+  if (msg && msg.length < 300) return msg
   return 'Something went wrong. Please try again.'
 }
 
