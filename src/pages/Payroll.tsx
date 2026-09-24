@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
+import MyPayslips from './MyPayslips'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type {
@@ -97,7 +98,8 @@ export default function Payroll() {
   if (isManager) {
     return <PayrollManager activeEntityId={activeEntityId} currency={currency} />
   }
-  return <MyPay currency={currency} />
+  // Staff: own published payslips with PDF download (get_my_payslips).
+  return <MyPayslips />
 }
 
 // ---------------------------------------------------------------------------
@@ -1172,106 +1174,6 @@ function DeductionsSection({
         </form>
       )}
       {error && <p className="mt-2 text-xs text-brand-risk-text">{error}</p>}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Staff: My Pay
-// ---------------------------------------------------------------------------
-
-function MyPay({ currency }: { currency: string }) {
-  const [payslips, setPayslips] = useState<(Payslip & { payroll_runs?: Pick<PayrollRun, 'period_start' | 'period_end' | 'status'> | null })[]>([])
-  const [deductions, setDeductions] = useState<PayslipDeduction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<string | null>(null)
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      const [payslipRes, dedRes] = await Promise.all([
-        supabase
-          .from('payslips')
-          .select('id, payroll_run_id, employee_id, base_pay, overtime_pay, holiday_pay, tips_share, total_deductions, net_pay, generated_at, payroll_runs(period_start, period_end, status)')
-          .order('generated_at', { ascending: false }),
-        supabase.from('payslip_deductions').select('id, payroll_run_id, employee_id, deduction_type, amount, notes, created_at'),
-      ])
-      setPayslips((payslipRes.data ?? []) as unknown as typeof payslips)
-      setDeductions((dedRes.data ?? []) as unknown as PayslipDeduction[])
-      setLoading(false)
-    }
-    load()
-  }, [])
-
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-[14px] bg-surface" />
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
-        <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My pay</h1>
-      </div>
-
-      {payslips.length === 0 ? (
-        <EmptyState title="No payslips yet" description="Your payslips will show up here once payroll has been run for a period you were paid in." />
-      ) : (
-        <ul className="space-y-3">
-          {payslips.map((p) => {
-            const myDeductions = deductions.filter((d) => d.payroll_run_id === p.payroll_run_id && d.employee_id === p.employee_id)
-            const isOpen = expanded === p.id
-            return (
-              <li key={p.id} className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-ink">
-                      {p.payroll_runs?.period_start} – {p.payroll_runs?.period_end}
-                    </p>
-                    {p.payroll_runs?.status && <StatusBadge status={p.payroll_runs.status} />}
-                  </div>
-                  <p className="text-lg font-semibold text-ink">{money(p.net_pay, currency)}</p>
-                </div>
-                <button onClick={() => setExpanded(isOpen ? null : p.id)} className="mt-2 text-xs font-medium text-brand-blue hover:underline">
-                  {isOpen ? 'Hide breakdown' : 'View breakdown'}
-                </button>
-                {isOpen && (
-                  <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm sm:grid-cols-4">
-                    <div>
-                      <dt className="text-xs text-muted">Base pay</dt>
-                      <dd className="text-ink">{money(p.base_pay, currency)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Overtime</dt>
-                      <dd className="text-ink">{money(p.overtime_pay, currency)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Holiday</dt>
-                      <dd className="text-ink">{money(p.holiday_pay, currency)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Tips</dt>
-                      <dd className="text-ink">{money(p.tips_share, currency)}</dd>
-                    </div>
-                    {myDeductions.map((d) => (
-                      <div key={d.id}>
-                        <dt className="text-xs text-muted">{deductionTypeLabel(d.deduction_type)}</dt>
-                        <dd className="text-brand-risk-text">-{money(d.amount, currency)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
     </div>
   )
 }
