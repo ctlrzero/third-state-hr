@@ -87,3 +87,10 @@ export function diffEmployeeChanges(
   }
   return out
 }
+
+export const CHANGE_FIELD_LABEL: Record<string, string> = {
+  phone: 'Phone number',
+  email: 'Email address',
+  emergency_contact_name: 'Emergency contact name',
+  emergency_contact_phone: 'Emergency contact phone',
+}
