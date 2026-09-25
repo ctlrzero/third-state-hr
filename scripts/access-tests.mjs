@@ -69,6 +69,11 @@ async function expectNoRows(name, client, table, rowFilter = (q) => q) {
 async function expectRpcDenied(name, client, fn, args = {}) {
   const { data, error } = await client.rpc(fn, args)
   if (error) return record(name, true, `denied: ${error.code ?? ''} ${error.message}`)
+  // The payroll mutation RPCs report refusals in-band as
+  // {ok:false, code:'NOT_AUTHORIZED'} (HTTP 200) rather than raising.
+  if (data && typeof data === 'object' && !Array.isArray(data) && data.ok === false && data.code === 'NOT_AUTHORIZED') {
+    return record(name, true, `denied in-band: ${data.code}`)
+  }
   const empty = data == null || (Array.isArray(data) && data.length === 0)
   return record(name, empty, empty ? 'empty result' : `returned data: ${JSON.stringify(data).slice(0, 120)}`)
 }
