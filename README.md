@@ -1379,13 +1379,16 @@ directory and dashboard screens simply never `select` those columns.
 ## Local setup
 
 ```bash
-npm install
+npm ci
 cp .env.example .env   # already has the TS-HR project URL + anon/publishable key
 npm run dev
 ```
 
-Sign in with an existing TS-HR account (e.g. the owner account, aisha@thirdstate.ae). There's
-no self-service sign-up — accounts are provisioned via `profiles` by an owner/admin.
+For testing, sign in with one of the UAT personas (`uat.*@example.com`) — see
+[`docs/TESTING.md`](docs/TESTING.md) for the persona table, per-role UAT scripts, the automated
+suites (`npm test`, `npm run test:access`, `supabase/tests/*.sql`) and the pre-go-live checklist.
+There's no self-service sign-up — access is granted from **Admin → Users & access**. The RPC
+contract the frontend is built against is in [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md).
 
 ## Build
 

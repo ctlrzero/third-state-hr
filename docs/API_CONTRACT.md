@@ -181,6 +181,7 @@ LM own). Draft (`is_published=false`) shifts are never visible to staff. Also:
 | `get_wps_export_readiness` | `p_payroll_run_id` | O, EA scoped | `TABLE(employee_id, employee_name, missing_labor_card_no, missing_bank_iban, missing_bank_name, net_pay)` |
 | `get_my_payslips` **[new]** | – | self (any role with an employee record) | `TABLE(payslip_id, payroll_run_id, period_start, period_end, run_status, version int, is_revision, superseded, published_at, currency, gross_pay, total_deductions, net_pay)` |
 | `get_my_payslip` **[new]** | `p_payslip_id` | self, published only | `jsonb` (below) |
+| `get_payroll_payslip` **[new, W4]** | `p_payslip_id` | O (any entity), EA (own entity); any run status | same `jsonb` as `get_my_payslip` (`published_at` null until approved); audited `payslip_viewed` with `viewer_role` |
 
 Published = run status `approved` or `paid`. LM has no payroll RPC access. Published payslips (and their
 deductions/timesheets/tips) are immutable at the DB level (trigger); corrections go through
@@ -212,6 +213,8 @@ No bank or identity-document numbers are returned.
 | `export_audit_log` | same filters (no limit/5000 cap) | O, EA | same table; the export itself is audited per entity |
 | `propose_data_retention_policy` **[additive]** | `p_table_name, p_retention_years, p_disposal_method 'manual_review'|'soft_delete'|'hard_delete', p_legal_basis, p_entity_id uuid = null` | O (**must pass p_entity_id**), EA (own) | `uuid` |
 | `approve_data_retention_policy` **[fixed]** | `p_policy_id` | O only, any entity | `void` |
+
+`data_retention_policies` is read directly (PostgREST select, **[fixed W4]**): O reads every entity, EA own entity, LM/S none; SELECT granted to `authenticated` (was missing, so reads failed with 42501). Writes only via the two RPCs above.
 | `entity_admin_self_approval_enabled` / `set_entity_admin_self_approval(p_enabled)` | – | read: authenticated; set: O | `boolean` / `void` |
 
 ## 10. Notifications
