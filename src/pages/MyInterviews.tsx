@@ -4,6 +4,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type { CandidateFileRef, InterviewRecommendation, MyInterviewDetail, MyInterviewRow } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { fmtDateTime } from '../lib/format'
 
 const COMPETENCIES: { key: string; label: string }[] = [
   { key: 'communication', label: 'Communication' },
@@ -86,7 +87,7 @@ export default function MyInterviews() {
                 <StatusBadge status={row.state} tone={STATE_TONE[row.state]} />
               </div>
               <p className="mt-2 text-xs text-muted">
-                {new Date(row.scheduled_at).toLocaleString()} · {row.format.replace('_', ' ')}
+                {fmtDateTime(row.scheduled_at)} · {row.format.replace('_', ' ')}
                 {row.meeting_location ? ` · ${row.meeting_location}` : ''}
               </p>
               <button
@@ -271,7 +272,7 @@ function InterviewDetailDrawer({
                 <div className="mb-4 grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <p className="text-xs text-muted">When</p>
-                    <p className="text-ink">{new Date(detail.scheduled_at).toLocaleString()}</p>
+                    <p className="text-ink">{fmtDateTime(detail.scheduled_at)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted">Format</p>
@@ -434,7 +435,7 @@ function InterviewDetailDrawer({
                     )}
 
                     {readOnly && detail.feedback?.submitted_at && (
-                      <p className="text-xs text-muted">Submitted {new Date(detail.feedback.submitted_at).toLocaleString()}</p>
+                      <p className="text-xs text-muted">Submitted {fmtDateTime(detail.feedback.submitted_at)}</p>
                     )}
                   </div>
                 </div>

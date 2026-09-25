@@ -19,6 +19,7 @@ import type {
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
+import { fmtDateTime } from '../lib/format'
 
 const REQ_STATUSES: { value: RequisitionStatus; label: string }[] = [
   { value: 'draft', label: 'Draft' },
@@ -1337,7 +1338,7 @@ function InterviewRow({
     <li className="rounded-lg bg-surface-alt px-3 py-2 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-ink">
-                    {new Date(iv.scheduled_at).toLocaleString()} · {interviewer?.full_name ?? 'Unassigned'}
+                    {fmtDateTime(iv.scheduled_at)} · {interviewer?.full_name ?? 'Unassigned'}
                   </span>
                   <span className="flex items-center gap-1">
                     {cancelled ? (
@@ -1381,7 +1382,7 @@ function InterviewRow({
                 )}
                 {rescheduledFrom && (
                   <p className="mt-1 text-muted">
-                    Rescheduled from {new Date(rescheduledFrom.scheduled_at).toLocaleString()}
+                    Rescheduled from {fmtDateTime(rescheduledFrom.scheduled_at)}
                   </p>
                 )}
                 {alreadyRescheduled && <p className="mt-1 text-muted">Rescheduled — see the follow-up interview below.</p>}

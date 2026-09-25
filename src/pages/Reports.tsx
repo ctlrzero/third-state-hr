@@ -5,6 +5,7 @@ import { EmptyState } from '../components/EmptyState'
 import { StatusBadge } from '../components/StatusBadge'
 import type { Employee, Location } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { fmtDateTime } from '../lib/format'
 
 interface Metrics {
   activeEmployees: number
@@ -575,7 +576,7 @@ function AuditLogViewer({
                 </span>
                 <span className="flex items-center gap-2 text-muted">
                   <StatusBadge status={r.action ?? 'unknown'} tone="neutral" />
-                  {new Date(r.changed_at).toLocaleString()}
+                  {fmtDateTime(r.changed_at)}
                 </span>
               </li>
             ))}

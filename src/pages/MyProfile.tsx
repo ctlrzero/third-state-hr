@@ -288,7 +288,7 @@ export default function MyProfile() {
                   </span>
                   <StatusBadge status={r.status} />
                 </div>
-                <p className="mt-1 text-muted">Requested {new Date(r.requested_at).toLocaleDateString()}</p>
+                <p className="mt-1 text-muted">Requested {fmtDate(r.requested_at)}</p>
                 {r.status !== 'pending' && r.decision_reason && (
                   <p className="mt-1 text-muted">Note: {r.decision_reason}</p>
                 )}
