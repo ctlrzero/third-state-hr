@@ -200,7 +200,18 @@ begin
   select count(*) into v_n from public.locations where id = v_loc and entity_id = 'a0000000-0000-4000-8000-000000000001';
   perform pg_temp.ok(v_n = 1, 'branch created in own entity');
 
-  -- Employee lifecycle pre_boarding -> active
+  -- Employee lifecycle pre_boarding -> active: refused until key documents are approved and in date
+  v_code := pg_temp.expect_error($$select public.set_employee_status('a0000000-0000-4000-8000-000000000035', 'active', 'e2e: first day')$$,
+                                 'activate without key documents');
+  perform pg_temp.ok(v_code = '22023', 'activation without key documents -> 22023');
+  reset role;
+  set local session_replication_role = replica;   -- fixture docs only; skips the upload/review triggers
+  insert into public.employee_documents(employee_id, doc_type, expiry_date, review_status, storage_path, reviewed_by, reviewed_at)
+  select 'a0000000-0000-4000-8000-000000000035', d::public.document_type, current_date + 365, 'approved', 'e2e/' || d,
+         '81b68580-a490-4115-be98-70285a51ba99'::uuid, now()
+    from unnest(array['passport', 'visa', 'emirates_id', 'contract']) d;
+  set local session_replication_role = origin;
+  perform pg_temp.login('81b68580-a490-4115-be98-70285a51ba99');
   perform public.set_employee_status('a0000000-0000-4000-8000-000000000035', 'active', 'e2e: first day');
   select count(*) into v_n from public.employees where id = 'a0000000-0000-4000-8000-000000000035' and employment_status = 'active';
   perform pg_temp.ok(v_n = 1, 'new starter is active');

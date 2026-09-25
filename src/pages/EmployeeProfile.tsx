@@ -238,6 +238,7 @@ export default function EmployeeProfile() {
         <StatusModal
           employee={employee}
           target={statusTarget}
+          completeness={completeness}
           onClose={() => setStatusTarget(null)}
           onDone={(msg) => {
             setStatusTarget(null)
@@ -688,11 +689,13 @@ function AuditTab({ employeeId, isOwner }: { employeeId: string; isOwner: boolea
 function StatusModal({
   employee,
   target,
+  completeness,
   onClose,
   onDone,
 }: {
   employee: FullEmployee
   target: EmployeeStatus
+  completeness: Completeness | null
   onClose: () => void
   onDone: (msg: string) => void
 }) {
@@ -700,8 +703,13 @@ function StatusModal({
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const needsReason = target === 'inactive' || employee.employment_status === 'inactive'
+  // Activation is refused server-side until every key document is approved and unexpired.
+  const missingKeyDocs =
+    target === 'active' ? (completeness?.missing ?? []).filter((m) => m.endsWith('_document')) : []
+  const blocked = missingKeyDocs.length > 0
 
   async function submit() {
+    if (blocked) return
     if (needsReason && !reason.trim()) return setErr('A reason is required for this change.')
     setSaving(true)
     const res = await setEmployeeStatus(employee.id, target, reason.trim() || null)
@@ -720,7 +728,7 @@ function StatusModal({
           <button className="btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button className={target === 'inactive' ? 'btn-danger' : 'btn-primary'} onClick={submit} disabled={saving}>
+          <button className={target === 'inactive' ? 'btn-danger' : 'btn-primary'} onClick={submit} disabled={saving || blocked}>
             {saving ? 'Saving…' : STATUS_ACTION_LABEL[target]}
           </button>
         </>
@@ -731,6 +739,12 @@ function StatusModal({
       </p>
       {target === 'inactive' && (
         <p className="text-muted">They will no longer be able to clock in or be scheduled. Records and history are kept.</p>
+      )}
+      {blocked && (
+        <Alert tone="warning">
+          Key documents must be approved and in date before activation. Missing:{' '}
+          {missingKeyDocs.map((m) => humanize(m.replace(/_document$/, ''))).join(', ')}. Add them on the Documents tab.
+        </Alert>
       )}
       <Field label={needsReason ? 'Reason' : 'Note (optional)'} error={err} required={needsReason}>
         {(p) => <textarea {...p} rows={3} className="input" value={reason} onChange={(e) => setReason(e.target.value)} data-autofocus />}
