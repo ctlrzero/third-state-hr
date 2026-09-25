@@ -1,17 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { fmtDayShort, fmtTime } from '../lib/format'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { expiryStatus } from '../lib/documents'
 import type { EmployeeChangeRequest, Location, Position, Shift } from '../types/db'
 
-function fmtDate(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-}
-function fmtTime(t: string) {
-  return t.slice(0, 5)
-}
+// UAE-readable dates / 24h times (Asia/Dubai) shared across the app.
+const fmtDate = (d: string) => fmtDayShort(d)
 
 type SelfEmployee = {
   id: string

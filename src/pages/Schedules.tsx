@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { fmtDayShort, fmtTime } from '../lib/format'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -39,13 +40,8 @@ const SWAP_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success
   cancelled: 'neutral',
 }
 
-function fmtTime(t: string) {
-  return t.slice(0, 5)
-}
-
-function fmtDate(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-}
+// UAE-readable dates / 24h times (Asia/Dubai) shared across the app.
+const fmtDate = (d: string) => fmtDayShort(d)
 
 // Schedules: shifts + shift_swap_requests. Admin (owner/entity_admin/
 // location_manager) get a roster: create/cancel shifts, resolve swap

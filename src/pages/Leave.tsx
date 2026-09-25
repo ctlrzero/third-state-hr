@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { fmtDate as fmtDateUae } from '../lib/format'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
@@ -13,9 +14,8 @@ const LEAVE_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'succes
   cancelled: 'neutral',
 }
 
-function fmtDate(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
+// UAE-readable dates (Asia/Dubai) shared across the app.
+const fmtDate = (d: string) => fmtDateUae(d)
 
 // Leave: leave_requests + leave_types + leave_balances. Admin
 // (owner/entity_admin/location_manager) get a decision queue for pending
