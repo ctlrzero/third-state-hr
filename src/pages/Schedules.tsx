@@ -294,7 +294,7 @@ function ScheduleAdmin() {
                   </td>
                   <td data-label="Branch" className="px-4 py-3 text-muted">{s.locations?.name ?? '—'}</td>
                   <td data-label="Role" className="px-4 py-3 text-muted">{s.positions?.title ?? '—'}</td>
-                  <td data-label="Assigned to" className="px-4 py-3 text-muted">{s.employees?.full_name ?? '—'}</td>
+                  <td data-label="Assigned to" className="px-4 py-3 text-muted">{s.employees?.full_name ?? employees.find((e) => e.id === s.employee_id)?.full_name ?? (s.employee_id ? 'Unknown employee' : 'Open shift')}</td>
                   <td data-label="Status" className="px-4 py-3">
                     <span className="flex items-center gap-1.5">
                       <StatusBadge status={s.status} tone={SHIFT_STATUS_TONE[s.status]} />
