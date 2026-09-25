@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 import { EmptyState } from '../components/EmptyState'
 import { StatusBadge } from '../components/StatusBadge'
 import type { Employee, Location } from '../types/db'
+import { EntityEyebrow } from '../components/EntityEyebrow'
 
 interface Metrics {
   activeEmployees: number
@@ -53,7 +54,7 @@ export default function Reports() {
     return (
       <div className="space-y-5">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+          <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Reports</h1>
         </div>
         <EmptyState title="Not available" description="Reports & audit is an owner/admin/manager view." />
@@ -114,7 +115,7 @@ function ReportsView({ role, activeEntityId }: { role: string | undefined; activ
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+        <EntityEyebrow />
         <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Reports & audit</h1>
       </div>
 

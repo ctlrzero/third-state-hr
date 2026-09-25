@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { ChangeRequestQueue } from '../components/ChangeRequestQueue'
 import type { Employee, EmployeeStatus, Location } from '../types/db'
+import { EntityEyebrow } from '../components/EntityEyebrow'
 
 const STATUS_FILTERS: { value: EmployeeStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All statuses' },
@@ -84,7 +85,7 @@ export default function EmployeeDirectory() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+          <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">People</h1>
           <p className="text-xs text-muted">
             {loading ? 'Loading…' : `${filtered.length} of ${employees.length} employees`}

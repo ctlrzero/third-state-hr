@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { expiryStatus } from '../lib/documents'
 import type { EmployeeChangeRequest, Location, Position, Shift } from '../types/db'
+import { EntityEyebrow } from '../components/EntityEyebrow'
 
 // UAE-readable dates / 24h times (Asia/Dubai) shared across the app.
 const fmtDate = (d: string) => fmtDayShort(d)
@@ -144,7 +145,7 @@ export default function MyProfile() {
     return (
       <div className="space-y-5">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+          <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My profile</h1>
         </div>
         <EmptyState
@@ -158,7 +159,7 @@ export default function MyProfile() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+        <EntityEyebrow />
         <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My profile</h1>
       </div>
 

@@ -19,6 +19,7 @@ import type {
   TipDistributionRule,
   TipsPool,
 } from '../types/db'
+import { EntityEyebrow } from '../components/EntityEyebrow'
 
 const TIP_RULES: { value: TipDistributionRule; label: string }[] = [
   { value: 'equal', label: 'Split equally' },
@@ -157,7 +158,7 @@ function PayrollManager({ activeEntityId, currency }: { activeEntityId: string |
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+          <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Payroll</h1>
           <p className="text-xs text-muted">{loading ? 'Loading…' : `${runs.length} payroll run${runs.length === 1 ? '' : 's'}`}</p>
         </div>

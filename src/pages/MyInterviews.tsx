@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type { CandidateFileRef, InterviewRecommendation, MyInterviewDetail, MyInterviewRow } from '../types/db'
+import { EntityEyebrow } from '../components/EntityEyebrow'
 
 const COMPETENCIES: { key: string; label: string }[] = [
   { key: 'communication', label: 'Communication' },
@@ -56,7 +57,7 @@ export default function MyInterviews() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+        <EntityEyebrow />
         <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My interviews</h1>
         <p className="text-xs text-muted">Interviews you've been assigned to conduct.</p>
       </div>

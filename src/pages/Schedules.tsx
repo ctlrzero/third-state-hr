@@ -14,6 +14,7 @@ import type {
   ShiftStatus,
   ShiftSwapRequest,
 } from '../types/db'
+import { EntityEyebrow } from '../components/EntityEyebrow'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -164,7 +165,7 @@ function ScheduleAdmin() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+          <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Schedules</h1>
           <p className="text-xs text-muted">{loading ? 'Loading…' : `${visibleShifts.length} shifts`}</p>
         </div>
@@ -1046,7 +1047,7 @@ function MySchedule() {
   return (
     <div className="space-y-5">
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
+        <EntityEyebrow />
         <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My schedule</h1>
       </div>
 
