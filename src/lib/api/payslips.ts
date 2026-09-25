@@ -71,3 +71,7 @@ export interface MyPayslipDetail {
 
 export const getMyPayslips = () => callRpc<MyPayslipListRow[]>('get_my_payslips')
 export const getMyPayslip = (payslipId: string) => callRpc<MyPayslipDetail>('get_my_payslip', { p_payslip_id: payslipId })
+
+/** Owner / Entity Admin (own entity): one payslip from the payroll run screen, any run status. Audited. */
+export const getPayrollPayslip = (payslipId: string) =>
+  callRpc<MyPayslipDetail>('get_payroll_payslip', { p_payslip_id: payslipId })

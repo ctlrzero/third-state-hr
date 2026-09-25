@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import MyPayslips from './MyPayslips'
-import { adminPayslipDetail, buildPayslipPdf, payslipFilename } from '../lib/payslipPdf'
+import { buildPayslipPdf, payslipFilename } from '../lib/payslipPdf'
+import { getPayrollPayslip } from '../lib/api/payslips'
 import { downloadBytes } from '../lib/pdf'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
@@ -402,7 +403,6 @@ function PayrollRunDetail({
   onBack: () => void
   onNotice: (msg: string) => void
 }) {
-  const { entities } = useAuth()
   const [run, setRun] = useState<PayrollRun | null>(null)
   const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'full_name'>[]>([])
   const [locations, setLocations] = useState<Pick<Location, 'id' | 'name'>[]>([])
@@ -442,24 +442,17 @@ function PayrollRunDetail({
     onBack()
   }
 
-  function downloadAdminPayslip(p: Payslip) {
-    if (!run) return
-    const entity = entities.find((e) => e.id === summary.entity_id)
-    const ts = timesheets.find((t) => t.employee_id === p.employee_id)
-    const detail = adminPayslipDetail({
-      payslip: p,
-      run,
-      currency,
-      employer: {
-        entity_id: summary.entity_id,
-        name: entity?.name ?? 'Employer',
-        trade_license_no: entity?.trade_license_no ?? null,
-        emirate: entity?.emirate ?? null,
-      },
-      deductions: deductions.filter((d) => d.employee_id === p.employee_id),
-      hours: ts ? { regular_hours: ts.regular_hours, overtime_hours: ts.overtime_hours, holiday_hours: ts.holiday_hours } : null,
-    })
-    downloadBytes(buildPayslipPdf(detail), payslipFilename(detail))
+  async function downloadAdminPayslip(p: Payslip) {
+    // Same document as the staff PDF: get_payroll_payslip returns the
+    // get_my_payslip shape (real version, position, branch, pay basis) and
+    // audits the view. Owner: any entity; Entity Admin: own entity only.
+    setError(null)
+    const res = await getPayrollPayslip(p.id)
+    if (res.error || !res.data) {
+      setError(res.error ?? 'Could not load the payslip.')
+      return
+    }
+    downloadBytes(buildPayslipPdf(res.data), payslipFilename(res.data))
   }
 
   async function load() {
@@ -736,7 +729,7 @@ function PayrollRunDetail({
                     <td data-label="" className="py-2 pr-3 text-right">
                       <button
                         type="button"
-                        onClick={() => downloadAdminPayslip(p)}
+                        onClick={() => void downloadAdminPayslip(p)}
                         disabled={!run || (run.status !== 'approved' && run.status !== 'paid')}
                         title={run && run.status !== 'approved' && run.status !== 'paid' ? 'Available once the run is approved' : undefined}
                         aria-label={`Download payslip PDF for ${p.employees?.full_name ?? 'employee'}`}

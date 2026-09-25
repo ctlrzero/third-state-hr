@@ -64,6 +64,11 @@ insert into results select * from pg_temp.chk('LM: record_timesheet_entry', (sel
 insert into results select * from pg_temp.chk('LM: record_payslip_deduction', (select sub::text from personas where k='lm_a'), 'deny', $$nullif(public.record_payslip_deduction('a0000000-0000-4000-8000-000000000202','a0000000-0000-4000-8000-000000000031','other',1,'x')->>'ok', 'false')$$);
 insert into results select * from pg_temp.chk('LM: create_payroll_revision', (select sub::text from personas where k='lm_a'), 'deny', $$public.create_payroll_revision('f9d3862d-78f8-43bc-a62e-6d2ac12a2495')$$);
 insert into results select * from pg_temp.chk('LM: get_owner_dashboard_kpis', (select sub::text from personas where k='lm_a'), 'deny', $$public.get_owner_dashboard_kpis(null)$$);
+insert into results select * from pg_temp.chk('LM: get_payroll_payslip', (select sub::text from personas where k='lm_a'), 'deny', $$public.get_payroll_payslip('db483dd6-a0c7-4301-bbf2-3b1505efac5f')$$);
+insert into results select * from pg_temp.chk('LM: data_retention_policies', (select sub::text from personas where k='lm_a'), 'zero', 'select * from public.data_retention_policies');
+insert into results select * from pg_temp.chk('staff A: get_payroll_payslip', (select sub::text from personas where k='st_a'), 'deny', $$public.get_payroll_payslip('06d18772-7843-4fab-b305-cc49f9be5116')$$);
+insert into results select * from pg_temp.chk('staff A: data_retention_policies', (select sub::text from personas where k='st_a'), 'zero', 'select * from public.data_retention_policies');
+insert into results select * from pg_temp.chk('ea_b: get_payroll_payslip(A)', (select sub::text from personas where k='ea_b'), 'deny', $$public.get_payroll_payslip('06d18772-7843-4fab-b305-cc49f9be5116')$$);
 
 -- ---------------------------------------------------------------- staff
 insert into results select * from pg_temp.chk('staff A: other employees', (select sub::text from personas where k='st_a'), 'zero', $$select * from public.employees where id <> 'a0000000-0000-4000-8000-000000000031'$$);
@@ -127,13 +132,14 @@ insert into results
 select r.* from (values ('employees'), ('profiles'), ('shifts'), ('leave_requests'), ('attendance_records'), ('payslips'),
                         ('payroll_runs'), ('employee_compensation'), ('employee_identity_documents'), ('employee_documents'),
                         ('entities'), ('locations'), ('audit_log'), ('notifications'), ('workflow_rules'), ('access_grants'),
-                        ('offers'), ('candidates'), ('leave_balances')) t(tbl),
+                        ('offers'), ('candidates'), ('leave_balances'), ('data_retention_policies')) t(tbl),
      lateral pg_temp.chk('anon: ' || t.tbl, 'anon', 'zero', format('select * from public.%I', t.tbl)) r;
 insert into results select * from pg_temp.chk('anon: get_my_clock_status', 'anon', 'deny', $$public.get_my_clock_status()$$);
 insert into results select * from pg_temp.chk('anon: clock_in', 'anon', 'deny', $$public.clock_in()$$);
 insert into results select * from pg_temp.chk('anon: get_my_payslips', 'anon', 'deny', $$(select json_agg(x) from public.get_my_payslips() x)$$);
 insert into results select * from pg_temp.chk('anon: get_owner_dashboard_kpis', 'anon', 'deny', $$public.get_owner_dashboard_kpis(null)$$);
 insert into results select * from pg_temp.chk('anon: workflow_trigger_catalog', 'anon', 'deny', $$public.workflow_trigger_catalog()$$);
+insert into results select * from pg_temp.chk('anon: get_payroll_payslip', 'anon', 'deny', $$public.get_payroll_payslip('06d18772-7843-4fab-b305-cc49f9be5116')$$);
 
 select count(*) filter (where pass) as passed, count(*) as total,
        coalesce(json_agg(json_build_object('test', test, 'detail', detail)) filter (where not pass), '[]') as failures

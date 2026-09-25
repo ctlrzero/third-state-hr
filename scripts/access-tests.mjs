@@ -113,6 +113,8 @@ async function main() {
     p_payroll_run_id: FIXTURE.draftRunA, p_employee_id: EMP.a, p_deduction_type: 'other', p_amount: 1, p_notes: 'x' })
   await expectRpcDenied('LM: create_payroll_revision', lm, 'create_payroll_revision', { p_source_run_id: FIXTURE.draftRunA })
   await expectRpcDenied('LM: get_owner_dashboard_kpis', lm, 'get_owner_dashboard_kpis', { p_entity_id: null })
+  await expectRpcDenied('LM: get_payroll_payslip', lm, 'get_payroll_payslip', { p_payslip_id: 'db483dd6-a0c7-4301-bbf2-3b1505efac5f' })
+  await expectNoRows('LM: data_retention_policies', lm, 'data_retention_policies')
 
   // ------------------------------------------------ staff: only own rows
   const sa = S['employee.a'].client
@@ -194,13 +196,14 @@ async function main() {
   const anon = newClient()
   for (const t of ['employees', 'profiles', 'shifts', 'leave_requests', 'attendance_records', 'payslips',
     'payroll_runs', 'employee_compensation', 'employee_identity_documents', 'employee_documents', 'entities',
-    'locations', 'audit_log', 'notifications', 'workflow_rules', 'access_grants', 'offers']) {
+    'locations', 'audit_log', 'notifications', 'workflow_rules', 'access_grants', 'offers', 'data_retention_policies']) {
     await expectNoRows(`anon: ${t}`, anon, t)
   }
   for (const [fn, args] of [
     ['get_my_clock_status', {}], ['clock_in', {}], ['get_my_payslips', {}],
     ['get_owner_dashboard_kpis', { p_entity_id: null }], ['get_workflow_rules', { p_module: null, p_entity_id: null }],
     ['admin_list_user_access', { p_entity_id: null }], ['workflow_trigger_catalog', {}],
+    ['get_payroll_payslip', { p_payslip_id: 'db483dd6-a0c7-4301-bbf2-3b1505efac5f' }],
   ]) {
     await expectRpcDenied(`anon: rpc ${fn}`, anon, fn, args)
   }
