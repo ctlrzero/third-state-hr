@@ -437,46 +437,58 @@ function ManagerRegister({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by employee or type"
-          className="w-full flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 sm:w-64 sm:flex-none"
-        />
-        <select
-          value={reviewFilter}
-          onChange={(e) => setReviewFilter(e.target.value as DocumentReviewStatus | 'all' | 'current')}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {REVIEW_FILTERS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          <option value="all">All document types</option>
-          {docTypes.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={expiryFilter}
-          onChange={(e) => setExpiryFilter(e.target.value as ExpiryStatus | 'all')}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          <option value="all">All expiry statuses</option>
-          <option value="current">Current</option>
-          <option value="expiring">Expiring soon</option>
-          <option value="expired">Expired</option>
-          <option value="non_expiring">No expiry set</option>
-        </select>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted w-full sm:w-64">
+          Search
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by employee or type"
+            className="w-full flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20 sm:w-64 sm:flex-none"
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          Review status
+          <select
+            value={reviewFilter}
+            onChange={(e) => setReviewFilter(e.target.value as DocumentReviewStatus | 'all' | 'current')}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          >
+            {REVIEW_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          Document type
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          >
+            <option value="all">All document types</option>
+            {docTypes.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          Expiry
+          <select
+            value={expiryFilter}
+            onChange={(e) => setExpiryFilter(e.target.value as ExpiryStatus | 'all')}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          >
+            <option value="all">All expiry statuses</option>
+            <option value="current">Current</option>
+            <option value="expiring">Expiring soon</option>
+            <option value="expired">Expired</option>
+            <option value="non_expiring">No expiry set</option>
+          </select>
+        </label>
       </div>
 
       {loading ? (
@@ -804,8 +816,8 @@ function ReviewDrawer({
               </div>
             ) : (
               <div className="space-y-2">
-                <label className="block text-sm font-medium text-ink">Rejection reason (required)</label>
-                <textarea
+                <label htmlFor="documents-rejection-reason-require-1" className="block text-sm font-medium text-ink">Rejection reason (required)</label>
+                <textarea id="documents-rejection-reason-require-1"
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
                   rows={2}
@@ -939,8 +951,8 @@ function UploadDocumentModal({
         <h2 className="mb-4 text-base font-semibold text-ink">Upload document</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Employee</label>
-            <select
+            <label htmlFor="documents-employee-2" className="mb-1 block text-sm font-medium text-ink">Employee</label>
+            <select id="documents-employee-2"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               required
@@ -954,8 +966,8 @@ function UploadDocumentModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Document type</label>
-            <select
+            <label htmlFor="documents-document-type-3" className="mb-1 block text-sm font-medium text-ink">Document type</label>
+            <select id="documents-document-type-3"
               value={docType}
               onChange={(e) => setDocType(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -968,8 +980,8 @@ function UploadDocumentModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Expiry date (optional)</label>
-            <input
+            <label htmlFor="documents-expiry-date-optional-4" className="mb-1 block text-sm font-medium text-ink">Expiry date (optional)</label>
+            <input id="documents-expiry-date-optional-4"
               type="date"
               value={expiryDate}
               onChange={(e) => setExpiryDate(e.target.value)}
@@ -977,8 +989,8 @@ function UploadDocumentModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">File</label>
-            <input
+            <label htmlFor="documents-file-5" className="mb-1 block text-sm font-medium text-ink">File</label>
+            <input id="documents-file-5"
               type="file"
               required
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -986,8 +998,8 @@ function UploadDocumentModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
-            <textarea
+            <label htmlFor="documents-notes-optional-6" className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
+            <textarea id="documents-notes-optional-6"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
@@ -1102,8 +1114,8 @@ function RenewalModal({
         </p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">New expiry date (optional)</label>
-            <input
+            <label htmlFor="documents-new-expiry-date-optional-7" className="mb-1 block text-sm font-medium text-ink">New expiry date (optional)</label>
+            <input id="documents-new-expiry-date-optional-7"
               type="date"
               value={expiryDate}
               onChange={(e) => setExpiryDate(e.target.value)}
@@ -1111,8 +1123,8 @@ function RenewalModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">File</label>
-            <input
+            <label htmlFor="documents-file-8" className="mb-1 block text-sm font-medium text-ink">File</label>
+            <input id="documents-file-8"
               type="file"
               required
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -1120,8 +1132,8 @@ function RenewalModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
-            <textarea
+            <label htmlFor="documents-notes-optional-9" className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
+            <textarea id="documents-notes-optional-9"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={2}

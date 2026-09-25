@@ -375,16 +375,16 @@ function RequestChangeModal({
         <p className="mb-4 text-xs text-muted">{label}</p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Current value</label>
-            <input
+            <label htmlFor="myprofile-current-value-1" className="mb-1 block text-sm font-medium text-ink">Current value</label>
+            <input id="myprofile-current-value-1"
               value={currentValue ?? ''}
               disabled
               className="w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-muted"
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">New value</label>
-            <input
+            <label htmlFor="myprofile-new-value-2" className="mb-1 block text-sm font-medium text-ink">New value</label>
+            <input id="myprofile-new-value-2"
               value={newValue}
               onChange={(e) => setNewValue(e.target.value)}
               autoFocus
@@ -392,8 +392,8 @@ function RequestChangeModal({
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Reason (optional)</label>
-            <textarea
+            <label htmlFor="myprofile-reason-optional-3" className="mb-1 block text-sm font-medium text-ink">Reason (optional)</label>
+            <textarea id="myprofile-reason-optional-3"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}

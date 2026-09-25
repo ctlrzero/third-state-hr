@@ -222,18 +222,21 @@ function ScheduleAdmin() {
         </div>
       )}
 
-      <select
-        value={locationFilter}
-        onChange={(e) => setLocationFilter(e.target.value)}
-        className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-      >
-        <option value="all">All branches</option>
-        {locations.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.name}
-          </option>
-        ))}
-      </select>
+      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted w-full sm:w-56">
+        Branch
+        <select
+          value={locationFilter}
+          onChange={(e) => setLocationFilter(e.target.value)}
+          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+        >
+          <option value="all">All branches</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <RecurringTemplatesPanel
         templates={templates}
@@ -272,7 +275,7 @@ function ScheduleAdmin() {
         <EmptyState title="No shifts in this window" description="Create a shift to start building the roster." />
       ) : (
         <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-card">
-          <table className="w-full text-left text-sm">
+          <table className="table-stack w-full text-left text-sm">
             <thead className="border-b border-border bg-surface-alt text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Date</th>
@@ -287,20 +290,20 @@ function ScheduleAdmin() {
             <tbody className="divide-y divide-border">
               {visibleShifts.map((s) => (
                 <tr key={s.id}>
-                  <td className="px-4 py-3 text-ink">{fmtDate(s.shift_date)}</td>
-                  <td className="px-4 py-3 text-muted">
+                  <td data-label="Date" className="px-4 py-3 text-ink">{fmtDate(s.shift_date)}</td>
+                  <td data-label="Time" className="px-4 py-3 text-muted">
                     {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
                   </td>
-                  <td className="px-4 py-3 text-muted">{s.locations?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted">{s.positions?.title ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted">{s.employees?.full_name ?? '—'}</td>
-                  <td className="px-4 py-3">
+                  <td data-label="Branch" className="px-4 py-3 text-muted">{s.locations?.name ?? '—'}</td>
+                  <td data-label="Role" className="px-4 py-3 text-muted">{s.positions?.title ?? '—'}</td>
+                  <td data-label="Assigned to" className="px-4 py-3 text-muted">{s.employees?.full_name ?? '—'}</td>
+                  <td data-label="Status" className="px-4 py-3">
                     <span className="flex items-center gap-1.5">
                       <StatusBadge status={s.status} tone={SHIFT_STATUS_TONE[s.status]} />
                       {!s.is_published && <StatusBadge status="draft" />}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td data-label="Actions" className="px-4 py-3 text-right">
                     {s.status !== 'cancelled' && (
                       <button onClick={() => handleCancelShift(s.id)} className="text-xs font-medium text-brand-risk hover:underline">
                         Cancel
@@ -466,8 +469,8 @@ function RecurringTemplatesPanel({
 
       <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Branch</label>
-          <select
+          <label htmlFor="schedules-branch-1" className="mb-1 block text-xs font-medium text-ink">Branch</label>
+          <select id="schedules-branch-1"
             value={genLocationId}
             onChange={(e) => setGenLocationId(e.target.value)}
             className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -480,8 +483,8 @@ function RecurringTemplatesPanel({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Period start</label>
-          <input
+          <label htmlFor="schedules-period-start-2" className="mb-1 block text-xs font-medium text-ink">Period start</label>
+          <input id="schedules-period-start-2"
             type="date"
             value={periodStart}
             onChange={(e) => setPeriodStart(e.target.value)}
@@ -489,8 +492,8 @@ function RecurringTemplatesPanel({
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Period end</label>
-          <input
+          <label htmlFor="schedules-period-end-3" className="mb-1 block text-xs font-medium text-ink">Period end</label>
+          <input id="schedules-period-end-3"
             type="date"
             value={periodEnd}
             onChange={(e) => setPeriodEnd(e.target.value)}
@@ -579,8 +582,8 @@ function NewTemplateModal({
         <h2 className="mb-4 text-base font-semibold text-ink">New recurring template</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Branch</label>
-            <select
+            <label htmlFor="schedules-branch-4" className="mb-1 block text-sm font-medium text-ink">Branch</label>
+            <select id="schedules-branch-4"
               value={locationId}
               onChange={(e) => {
                 setLocationId(e.target.value)
@@ -596,8 +599,8 @@ function NewTemplateModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Employee</label>
-            <select
+            <label htmlFor="schedules-employee-5" className="mb-1 block text-sm font-medium text-ink">Employee</label>
+            <select id="schedules-employee-5"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -611,8 +614,8 @@ function NewTemplateModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Day of week</label>
-            <select
+            <label htmlFor="schedules-day-of-week-6" className="mb-1 block text-sm font-medium text-ink">Day of week</label>
+            <select id="schedules-day-of-week-6"
               value={dayOfWeek}
               onChange={(e) => setDayOfWeek(Number(e.target.value))}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -626,8 +629,8 @@ function NewTemplateModal({
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Start</label>
-              <input
+              <label htmlFor="schedules-start-7" className="mb-1 block text-sm font-medium text-ink">Start</label>
+              <input id="schedules-start-7"
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
@@ -635,8 +638,8 @@ function NewTemplateModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">End</label>
-              <input
+              <label htmlFor="schedules-end-8" className="mb-1 block text-sm font-medium text-ink">End</label>
+              <input id="schedules-end-8"
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
@@ -644,8 +647,8 @@ function NewTemplateModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Break (min)</label>
-              <input
+              <label htmlFor="schedules-break-min-9" className="mb-1 block text-sm font-medium text-ink">Break (min)</label>
+              <input id="schedules-break-min-9"
                 type="number"
                 min={0}
                 value={breakMinutes}
@@ -655,8 +658,8 @@ function NewTemplateModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
-            <select
+            <label htmlFor="schedules-role-optional-10" className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
+            <select id="schedules-role-optional-10"
               value={positionId}
               onChange={(e) => setPositionId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -671,8 +674,8 @@ function NewTemplateModal({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Effective from</label>
-              <input
+              <label htmlFor="schedules-effective-from-11" className="mb-1 block text-sm font-medium text-ink">Effective from</label>
+              <input id="schedules-effective-from-11"
                 type="date"
                 value={effectiveStart}
                 onChange={(e) => setEffectiveStart(e.target.value)}
@@ -680,8 +683,8 @@ function NewTemplateModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Effective to (optional)</label>
-              <input
+              <label htmlFor="schedules-effective-to-optional-12" className="mb-1 block text-sm font-medium text-ink">Effective to (optional)</label>
+              <input id="schedules-effective-to-optional-12"
                 type="date"
                 value={effectiveEnd}
                 onChange={(e) => setEffectiveEnd(e.target.value)}
@@ -781,8 +784,8 @@ function NewShiftModal({
         <h2 className="mb-4 text-base font-semibold text-ink">New shift</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Branch</label>
-            <select
+            <label htmlFor="schedules-branch-13" className="mb-1 block text-sm font-medium text-ink">Branch</label>
+            <select id="schedules-branch-13"
               value={locationId}
               onChange={(e) => {
                 setLocationId(e.target.value)
@@ -799,8 +802,8 @@ function NewShiftModal({
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-1">
-              <label className="mb-1 block text-sm font-medium text-ink">Date</label>
-              <input
+              <label htmlFor="schedules-date-14" className="mb-1 block text-sm font-medium text-ink">Date</label>
+              <input id="schedules-date-14"
                 type="date"
                 value={shiftDate}
                 onChange={(e) => setShiftDate(e.target.value)}
@@ -808,8 +811,8 @@ function NewShiftModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Start</label>
-              <input
+              <label htmlFor="schedules-start-15" className="mb-1 block text-sm font-medium text-ink">Start</label>
+              <input id="schedules-start-15"
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
@@ -817,8 +820,8 @@ function NewShiftModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">End</label>
-              <input
+              <label htmlFor="schedules-end-16" className="mb-1 block text-sm font-medium text-ink">End</label>
+              <input id="schedules-end-16"
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
@@ -827,8 +830,8 @@ function NewShiftModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
-            <select
+            <label htmlFor="schedules-role-optional-17" className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
+            <select id="schedules-role-optional-17"
               value={positionId}
               onChange={(e) => setPositionId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -842,8 +845,8 @@ function NewShiftModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Assign to (optional — leave blank to post as open)</label>
-            <select
+            <label htmlFor="schedules-assign-to-optional-leave-18" className="mb-1 block text-sm font-medium text-ink">Assign to (optional — leave blank to post as open)</label>
+            <select id="schedules-assign-to-optional-leave-18"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -857,8 +860,8 @@ function NewShiftModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
-            <input
+            <label htmlFor="schedules-notes-optional-19" className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
+            <input id="schedules-notes-optional-19"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1097,12 +1100,15 @@ function MySchedule() {
                   </div>
                   {swapNoteFor === s.id && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <input
-                        value={swapNote}
-                        onChange={(e) => setSwapNote(e.target.value)}
-                        placeholder="Note for whoever picks this up (optional)"
-                        className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                      />
+                      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted flex-1">
+                        Note for whoever picks this up (optional)
+                        <input
+                          value={swapNote}
+                          onChange={(e) => setSwapNote(e.target.value)}
+                          placeholder="Note for whoever picks this up (optional)"
+                          className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                        />
+                      </label>
                       <button
                         onClick={() => handleRequestSwap(s.id)}
                         disabled={busyId === s.id}

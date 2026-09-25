@@ -182,18 +182,21 @@ function RecruitingAdmin() {
         </p>
       )}
 
-      <select
-        value={statusFilter}
-        onChange={(e) => setStatusFilter(e.target.value as RequisitionStatus | 'all')}
-        className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-      >
-        <option value="all">All statuses</option>
-        {REQ_STATUSES.map((s) => (
-          <option key={s.value} value={s.value}>
-            {s.label}
-          </option>
-        ))}
-      </select>
+      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted w-full sm:w-56">
+        Status
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as RequisitionStatus | 'all')}
+          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+        >
+          <option value="all">All statuses</option>
+          {REQ_STATUSES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {loading ? (
         <div className="space-y-2">
@@ -300,8 +303,8 @@ function NewRequisitionModal({
         <h2 className="mb-4 text-base font-semibold text-ink">New requisition</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Position</label>
-            <select
+            <label htmlFor="recruiting-position-1" className="mb-1 block text-sm font-medium text-ink">Position</label>
+            <select id="recruiting-position-1"
               value={positionId}
               onChange={(e) => setPositionId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -314,8 +317,8 @@ function NewRequisitionModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Location</label>
-            <select
+            <label htmlFor="recruiting-location-2" className="mb-1 block text-sm font-medium text-ink">Location</label>
+            <select id="recruiting-location-2"
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -328,8 +331,8 @@ function NewRequisitionModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Headcount</label>
-            <input
+            <label htmlFor="recruiting-headcount-3" className="mb-1 block text-sm font-medium text-ink">Headcount</label>
+            <input id="recruiting-headcount-3"
               type="number"
               min="1"
               value={headcount}
@@ -454,6 +457,7 @@ function RequisitionDetail({
           </p>
         </div>
         <select
+          aria-label="Requisition status"
           value={requisition.status}
           onChange={(e) => handleStatusChange(e.target.value as RequisitionStatus)}
           className="rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -493,7 +497,7 @@ function RequisitionDetail({
           <p className="text-sm text-muted">No candidates in this pipeline yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="table-stack w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Candidate</th>
@@ -505,12 +509,12 @@ function RequisitionDetail({
               <tbody className="divide-y divide-border">
                 {applications.map((app) => (
                   <tr key={app.id}>
-                    <td className="py-2 pr-3 font-medium text-ink">{app.candidates?.full_name ?? '—'}</td>
-                    <td className="py-2 pr-3 capitalize text-muted">{app.candidates?.source?.replace('_', ' ')}</td>
-                    <td className="py-2 pr-3">
+                    <td data-label="Candidate" className="py-2 pr-3 font-medium text-ink">{app.candidates?.full_name ?? '—'}</td>
+                    <td data-label="Source" className="py-2 pr-3 capitalize text-muted">{app.candidates?.source?.replace('_', ' ')}</td>
+                    <td data-label="Stage" className="py-2 pr-3">
                       <StatusBadge status={app.stage} />
                     </td>
-                    <td className="py-2 pr-3 text-right">
+                    <td data-label="Actions" className="py-2 pr-3 text-right">
                       <button
                         onClick={() => setSelectedApplicationId(app.id)}
                         className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
@@ -600,8 +604,8 @@ function InterviewStagesSection({
       )}
       <form onSubmit={handleAdd} className="flex items-end gap-2">
         <div className="flex-1">
-          <label className="mb-1 block text-xs font-medium text-ink">Add stage</label>
-          <input
+          <label htmlFor="recruiting-add-stage-4" className="mb-1 block text-xs font-medium text-ink">Add stage</label>
+          <input id="recruiting-add-stage-4"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Trial shift"
@@ -690,8 +694,8 @@ function AddCandidateModal({
         <h2 className="mb-4 text-base font-semibold text-ink">Add candidate</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Full name</label>
-            <input
+            <label htmlFor="recruiting-full-name-5" className="mb-1 block text-sm font-medium text-ink">Full name</label>
+            <input id="recruiting-full-name-5"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
               required
@@ -700,8 +704,8 @@ function AddCandidateModal({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Email</label>
-              <input
+              <label htmlFor="recruiting-email-6" className="mb-1 block text-sm font-medium text-ink">Email</label>
+              <input id="recruiting-email-6"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -709,8 +713,8 @@ function AddCandidateModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Phone</label>
-              <input
+              <label htmlFor="recruiting-phone-7" className="mb-1 block text-sm font-medium text-ink">Phone</label>
+              <input id="recruiting-phone-7"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -718,8 +722,8 @@ function AddCandidateModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Source</label>
-            <select
+            <label htmlFor="recruiting-source-8" className="mb-1 block text-sm font-medium text-ink">Source</label>
+            <select id="recruiting-source-8"
               value={source}
               onChange={(e) => setSource(e.target.value as CandidateSource)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -866,6 +870,7 @@ function ApplicationDrawer({
           </div>
           {application.stage !== 'rejected' && (
             <input
+              aria-label="Rejection reason"
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}
               placeholder="Reason (required to move to Rejected)"
@@ -1145,6 +1150,7 @@ function InterviewsList({
                 {closingRoundStageId === groupStageId && (
                   <div className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2 text-xs">
                     <input
+                      aria-label="Reason for closing the round"
                       value={closeRoundReason}
                       onChange={(e) => setCloseRoundReason(e.target.value)}
                       placeholder="Reason (required, audited) — e.g. a panelist never submitted"
@@ -1209,8 +1215,8 @@ function InterviewsList({
       ) : (
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Stage</label>
-            <select
+            <label htmlFor="recruiting-stage-9" className="mb-1 block text-xs font-medium text-ink">Stage</label>
+            <select id="recruiting-stage-9"
               value={stageId}
               onChange={(e) => setStageId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1223,8 +1229,8 @@ function InterviewsList({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Interviewer</label>
-            <select
+            <label htmlFor="recruiting-interviewer-10" className="mb-1 block text-xs font-medium text-ink">Interviewer</label>
+            <select id="recruiting-interviewer-10"
               value={interviewerAuthId}
               onChange={(e) => setInterviewerAuthId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1237,8 +1243,8 @@ function InterviewsList({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">When</label>
-            <input
+            <label htmlFor="recruiting-when-11" className="mb-1 block text-xs font-medium text-ink">When</label>
+            <input id="recruiting-when-11"
               type="datetime-local"
               value={scheduledAt}
               onChange={(e) => setScheduledAt(e.target.value)}
@@ -1381,8 +1387,8 @@ function InterviewRow({
                 {reschedulingId === iv.id && (
                   <div className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-border bg-surface p-2">
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-ink">New date/time</label>
-                      <input
+                      <label htmlFor="recruiting-new-date-time-12" className="mb-1 block text-xs font-medium text-ink">New date/time</label>
+                      <input id="recruiting-new-date-time-12"
                         type="datetime-local"
                         value={rescheduleAt}
                         onChange={(e) => setRescheduleAt(e.target.value)}
@@ -1390,8 +1396,8 @@ function InterviewRow({
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-xs font-medium text-ink">Interviewer</label>
-                      <select
+                      <label htmlFor="recruiting-interviewer-13" className="mb-1 block text-xs font-medium text-ink">Interviewer</label>
+                      <select id="recruiting-interviewer-13"
                         value={rescheduleInterviewerAuthId}
                         onChange={(e) => setRescheduleInterviewerAuthId(e.target.value)}
                         className="rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1404,6 +1410,7 @@ function InterviewRow({
                       </select>
                     </div>
                     <input
+                      aria-label="Reason for rescheduling"
                       value={rescheduleReason}
                       onChange={(e) => setRescheduleReason(e.target.value)}
                       placeholder="Reason (optional)"
@@ -1425,6 +1432,7 @@ function InterviewRow({
                 {cancellingId === iv.id && (
                   <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface p-2">
                     <input
+                      aria-label="Cancellation reason"
                       value={cancelReason}
                       onChange={(e) => setCancelReason(e.target.value)}
                       placeholder="Cancellation reason (required)"
@@ -1483,6 +1491,7 @@ function InterviewRow({
                     {reopeningId === iv.id && (
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <input
+                          aria-label="Reason for reopening"
                           value={reopenReason}
                           onChange={(e) => setReopenReason(e.target.value)}
                           placeholder="Reason for reopening (required, audited)"
@@ -1613,8 +1622,8 @@ function OfferSection({
       {!offer ? (
         <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Proposed salary</label>
-            <input
+            <label htmlFor="recruiting-proposed-salary-14" className="mb-1 block text-xs font-medium text-ink">Proposed salary</label>
+            <input id="recruiting-proposed-salary-14"
               type="number"
               min="0"
               step="0.01"
@@ -1624,8 +1633,8 @@ function OfferSection({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Start date</label>
-            <input
+            <label htmlFor="recruiting-start-date-15" className="mb-1 block text-xs font-medium text-ink">Start date</label>
+            <input id="recruiting-start-date-15"
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
@@ -1655,6 +1664,7 @@ function OfferSection({
           {offer.status === 'sent' && (
             <div className="space-y-2">
               <input
+                aria-label="Reason for declining or rescinding"
                 value={declineReason}
                 onChange={(e) => setDeclineReason(e.target.value)}
                 placeholder="Reason (required if declining/rescinding)"

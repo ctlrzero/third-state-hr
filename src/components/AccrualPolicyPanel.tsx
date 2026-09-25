@@ -145,12 +145,15 @@ export function AccrualPolicyPanel({
                 {!p.is_approved && !isOwner && <span className="text-muted">Awaiting Owner approval.</span>}
                 {p.is_approved && (
                   <>
-                    <input
-                      value={runPeriodKey[p.id] ?? ''}
-                      onChange={(e) => setRunPeriodKey((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                      placeholder={p.frequency === 'monthly' ? 'e.g. 2026-08' : 'e.g. 2026'}
-                      className="w-28 rounded-lg border border-border px-2 py-1 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                    />
+                    <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+                      Period to run
+                      <input
+                        value={runPeriodKey[p.id] ?? ''}
+                        onChange={(e) => setRunPeriodKey((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                        placeholder={p.frequency === 'monthly' ? 'e.g. 2026-08' : 'e.g. 2026'}
+                        className="w-28 rounded-lg border border-border px-2 py-1 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                      />
+                    </label>
                     <button
                       onClick={() => handleRun(p)}
                       disabled={busyId === p.id}
@@ -236,8 +239,8 @@ function ConfigureAccrualPolicyModal({
         <h2 className="mb-4 text-base font-semibold text-ink">Configure accrual policy</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Leave type</label>
-            <select
+            <label htmlFor="accrual-leave-type-1" className="mb-1 block text-sm font-medium text-ink">Leave type</label>
+            <select id="accrual-leave-type-1"
               value={leaveTypeId}
               onChange={(e) => setLeaveTypeId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -251,8 +254,8 @@ function ConfigureAccrualPolicyModal({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Frequency</label>
-              <select
+              <label htmlFor="accrual-frequency-2" className="mb-1 block text-sm font-medium text-ink">Frequency</label>
+              <select id="accrual-frequency-2"
                 value={frequency}
                 onChange={(e) => setFrequency(e.target.value as 'monthly' | 'annual')}
                 className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -262,8 +265,8 @@ function ConfigureAccrualPolicyModal({
               </select>
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Days per period</label>
-              <input
+              <label htmlFor="accrual-days-per-period-3" className="mb-1 block text-sm font-medium text-ink">Days per period</label>
+              <input id="accrual-days-per-period-3"
                 type="number"
                 step="0.01"
                 min={0.01}
@@ -274,8 +277,8 @@ function ConfigureAccrualPolicyModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Rounding</label>
-            <select
+            <label htmlFor="accrual-rounding-4" className="mb-1 block text-sm font-medium text-ink">Rounding</label>
+            <select id="accrual-rounding-4"
               value={rounding}
               onChange={(e) => setRounding(e.target.value as 'none' | 'nearest_half_day' | 'nearest_day')}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -287,8 +290,8 @@ function ConfigureAccrualPolicyModal({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Max balance (optional)</label>
-              <input
+              <label htmlFor="accrual-max-balance-optional-5" className="mb-1 block text-sm font-medium text-ink">Max balance (optional)</label>
+              <input id="accrual-max-balance-optional-5"
                 type="number"
                 value={maxBalanceDays}
                 onChange={(e) => setMaxBalanceDays(e.target.value)}
@@ -296,8 +299,8 @@ function ConfigureAccrualPolicyModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Carry-forward cap (optional)</label>
-              <input
+              <label htmlFor="accrual-carry-forward-cap-option-6" className="mb-1 block text-sm font-medium text-ink">Carry-forward cap (optional)</label>
+              <input id="accrual-carry-forward-cap-option-6"
                 type="number"
                 value={carryForwardCapDays}
                 onChange={(e) => setCarryForwardCapDays(e.target.value)}
@@ -307,8 +310,8 @@ function ConfigureAccrualPolicyModal({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Probation (days)</label>
-              <input
+              <label htmlFor="accrual-probation-days-7" className="mb-1 block text-sm font-medium text-ink">Probation (days)</label>
+              <input id="accrual-probation-days-7"
                 type="number"
                 min={0}
                 value={probationDays}
@@ -317,8 +320,8 @@ function ConfigureAccrualPolicyModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Effective from</label>
-              <input
+              <label htmlFor="accrual-effective-from-8" className="mb-1 block text-sm font-medium text-ink">Effective from</label>
+              <input id="accrual-effective-from-8"
                 type="date"
                 value={policyStartDate}
                 onChange={(e) => setPolicyStartDate(e.target.value)}

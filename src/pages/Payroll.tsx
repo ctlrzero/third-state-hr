@@ -322,8 +322,8 @@ function NewRunModal({
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Period start</label>
-              <input
+              <label htmlFor="payroll-period-start-1" className="mb-1 block text-sm font-medium text-ink">Period start</label>
+              <input id="payroll-period-start-1"
                 type="date"
                 required
                 value={periodStart}
@@ -332,8 +332,8 @@ function NewRunModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Period end</label>
-              <input
+              <label htmlFor="payroll-period-end-2" className="mb-1 block text-sm font-medium text-ink">Period end</label>
+              <input id="payroll-period-end-2"
                 type="date"
                 required
                 value={periodEnd}
@@ -343,8 +343,8 @@ function NewRunModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Tip distribution rule</label>
-            <select
+            <label htmlFor="payroll-tip-distribution-rule-3" className="mb-1 block text-sm font-medium text-ink">Tip distribution rule</label>
+            <select id="payroll-tip-distribution-rule-3"
               value={tipRule}
               onChange={(e) => setTipRule(e.target.value as TipDistributionRule)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -685,7 +685,7 @@ function PayrollRunDetail({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="table-stack w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Employee</th>
@@ -700,22 +700,22 @@ function PayrollRunDetail({
               <tbody className="divide-y divide-border">
                 {payslips.map((p) => (
                   <tr key={p.id}>
-                    <td className="py-2 pr-3 font-medium text-ink">{p.employees?.full_name ?? '—'}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.base_pay, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.overtime_pay, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.holiday_pay, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.tips_share, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.total_deductions, currency)}</td>
-                    <td className="py-2 pr-3 font-semibold text-ink">{money(p.net_pay, currency)}</td>
+                    <td data-label="Employee" className="py-2 pr-3 font-medium text-ink">{p.employees?.full_name ?? '—'}</td>
+                    <td data-label="Base" className="py-2 pr-3 text-muted">{money(p.base_pay, currency)}</td>
+                    <td data-label="Overtime" className="py-2 pr-3 text-muted">{money(p.overtime_pay, currency)}</td>
+                    <td data-label="Holiday" className="py-2 pr-3 text-muted">{money(p.holiday_pay, currency)}</td>
+                    <td data-label="Tips" className="py-2 pr-3 text-muted">{money(p.tips_share, currency)}</td>
+                    <td data-label="Deductions" className="py-2 pr-3 text-muted">{money(p.total_deductions, currency)}</td>
+                    <td data-label="Net pay" className="py-2 pr-3 font-semibold text-ink">{money(p.net_pay, currency)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t border-border font-semibold text-ink">
-                  <td className="py-2 pr-3" colSpan={6}>
+                  <td data-label="" className="py-2 pr-3 max-md:hidden" colSpan={6}>
                     Total net pay
                   </td>
-                  <td className="py-2 pr-3">{money(totalNet, currency)}</td>
+                  <td data-label="Total net pay" className="py-2 pr-3">{money(totalNet, currency)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -805,7 +805,7 @@ function TimesheetSection({
         <p className="mb-3 text-sm text-muted">No hours recorded for this run yet.</p>
       ) : (
         <div className="mb-3 overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="table-stack w-full text-left text-sm">
             <thead className="border-b border-border text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="py-2 pr-3 font-medium">Employee</th>
@@ -818,12 +818,12 @@ function TimesheetSection({
             <tbody className="divide-y divide-border">
               {entries.map((t) => (
                 <tr key={t.id}>
-                  <td className="py-2 pr-3 font-medium text-ink">{t.employees?.full_name ?? '—'}</td>
-                  <td className="py-2 pr-3 text-muted">{t.regular_hours}</td>
-                  <td className="py-2 pr-3 text-muted">{t.overtime_hours}</td>
-                  <td className="py-2 pr-3 text-muted">{t.holiday_hours}</td>
+                  <td data-label="Employee" className="py-2 pr-3 font-medium text-ink">{t.employees?.full_name ?? '—'}</td>
+                  <td data-label="Regular" className="py-2 pr-3 text-muted">{t.regular_hours}</td>
+                  <td data-label="Overtime" className="py-2 pr-3 text-muted">{t.overtime_hours}</td>
+                  <td data-label="Holiday" className="py-2 pr-3 text-muted">{t.holiday_hours}</td>
                   {editable && (
-                    <td className="py-2 pr-3 text-right">
+                    <td data-label="Actions" className="py-2 pr-3 text-right">
                       <button onClick={() => handleDelete(t.id)} className="text-xs font-medium text-brand-risk-text hover:underline">
                         Remove
                       </button>
@@ -839,8 +839,8 @@ function TimesheetSection({
       {editable && availableEmployees.length > 0 && (
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Employee</label>
-            <select
+            <label htmlFor="payroll-employee-4" className="mb-1 block text-xs font-medium text-ink">Employee</label>
+            <select id="payroll-employee-4"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -854,8 +854,8 @@ function TimesheetSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Regular hrs</label>
-            <input
+            <label htmlFor="payroll-regular-hrs-5" className="mb-1 block text-xs font-medium text-ink">Regular hrs</label>
+            <input id="payroll-regular-hrs-5"
               type="number"
               min="0"
               step="0.25"
@@ -865,8 +865,8 @@ function TimesheetSection({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Overtime hrs</label>
-            <input
+            <label htmlFor="payroll-overtime-hrs-6" className="mb-1 block text-xs font-medium text-ink">Overtime hrs</label>
+            <input id="payroll-overtime-hrs-6"
               type="number"
               min="0"
               step="0.25"
@@ -876,8 +876,8 @@ function TimesheetSection({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Holiday hrs</label>
-            <input
+            <label htmlFor="payroll-holiday-hrs-7" className="mb-1 block text-xs font-medium text-ink">Holiday hrs</label>
+            <input id="payroll-holiday-hrs-7"
               type="number"
               min="0"
               step="0.25"
@@ -992,8 +992,8 @@ function TipsPoolSection({
       {editable && availableLocations.length > 0 && (
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Location</label>
-            <select
+            <label htmlFor="payroll-location-8" className="mb-1 block text-xs font-medium text-ink">Location</label>
+            <select id="payroll-location-8"
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1007,8 +1007,8 @@ function TipsPoolSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Pool total</label>
-            <input
+            <label htmlFor="payroll-pool-total-9" className="mb-1 block text-xs font-medium text-ink">Pool total</label>
+            <input id="payroll-pool-total-9"
               type="number"
               min="0"
               step="0.01"
@@ -1126,8 +1126,8 @@ function DeductionsSection({
       {editable && (
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Employee</label>
-            <select
+            <label htmlFor="payroll-employee-10" className="mb-1 block text-xs font-medium text-ink">Employee</label>
+            <select id="payroll-employee-10"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1141,8 +1141,8 @@ function DeductionsSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Type</label>
-            <select
+            <label htmlFor="payroll-type-11" className="mb-1 block text-xs font-medium text-ink">Type</label>
+            <select id="payroll-type-11"
               value={deductionType}
               onChange={(e) => setDeductionType(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1155,8 +1155,8 @@ function DeductionsSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Amount</label>
-            <input
+            <label htmlFor="payroll-amount-12" className="mb-1 block text-xs font-medium text-ink">Amount</label>
+            <input id="payroll-amount-12"
               type="number"
               min="0"
               step="0.01"

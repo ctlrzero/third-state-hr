@@ -206,13 +206,16 @@ function LeaveAdmin() {
                     </div>
                     {overridingId === r.id && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-surface px-3 py-2">
-                        <input
-                          type="text"
-                          value={overrideReason}
-                          onChange={(e) => setOverrideReason(e.target.value)}
-                          placeholder="Reason for overriding the balance check (required)"
-                          className="min-w-[220px] flex-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                        />
+                        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted flex-1">
+                          Override reason (required)
+                          <input
+                            type="text"
+                            value={overrideReason}
+                            onChange={(e) => setOverrideReason(e.target.value)}
+                            placeholder="Reason for overriding the balance check (required)"
+                            className="min-w-[220px] flex-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                          />
+                        </label>
                         <button
                           onClick={() => handleDecide(r.id, 'approve', true, overrideReason)}
                           disabled={busyId === r.id || overrideReason.trim().length === 0}
@@ -510,8 +513,8 @@ function RequestLeaveModal({
         <h2 className="mb-4 text-base font-semibold text-ink">Request leave</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Leave type</label>
-            <select
+            <label htmlFor="leave-leave-type-1" className="mb-1 block text-sm font-medium text-ink">Leave type</label>
+            <select id="leave-leave-type-1"
               value={leaveTypeId}
               onChange={(e) => setLeaveTypeId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -525,8 +528,8 @@ function RequestLeaveModal({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Start date</label>
-              <input
+              <label htmlFor="leave-start-date-2" className="mb-1 block text-sm font-medium text-ink">Start date</label>
+              <input id="leave-start-date-2"
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
@@ -534,8 +537,8 @@ function RequestLeaveModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">End date</label>
-              <input
+              <label htmlFor="leave-end-date-3" className="mb-1 block text-sm font-medium text-ink">End date</label>
+              <input id="leave-end-date-3"
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
@@ -545,8 +548,8 @@ function RequestLeaveModal({
           </div>
           {days > 0 && <p className="text-xs text-muted">{days} day{days === 1 ? '' : 's'} requested.</p>}
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Reason (optional)</label>
-            <textarea
+            <label htmlFor="leave-reason-optional-4" className="mb-1 block text-sm font-medium text-ink">Reason (optional)</label>
+            <textarea id="leave-reason-optional-4"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={2}

@@ -411,111 +411,138 @@ function AuditLogViewer({
       </div>
 
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <select
-          value={moduleFilter}
-          onChange={(e) => handleModuleChange(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {MODULE_FILTERS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={tableFilter}
-          onChange={(e) => setTableFilter(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          {TABLE_FILTERS.filter((f) => {
-            const mod = MODULE_FILTERS.find((m) => m.value === moduleFilter)
-            return !mod || mod.tables.length === 0 || f.value === '' || mod.tables.includes(f.value)
-          }).map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
-            </option>
-          ))}
-        </select>
-        <input
-          value={actionFilter}
-          onChange={(e) => setActionFilter(e.target.value)}
-          placeholder="Action (exact, e.g. document_approved)"
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        />
-        {role !== 'staff' && role !== 'location_manager' && (
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          Module
           <select
-            value={actorId}
-            onChange={(e) => setActorId(e.target.value)}
+            value={moduleFilter}
+            onChange={(e) => handleModuleChange(e.target.value)}
             className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
           >
-            <option value="">All actors</option>
-            {employees
-              .filter((e) => e.auth_user_id)
-              .map((e) => (
-                <option key={e.id} value={e.auth_user_id ?? ''}>
+            {MODULE_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          Record type
+          <select
+            value={tableFilter}
+            onChange={(e) => setTableFilter(e.target.value)}
+            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          >
+            {TABLE_FILTERS.filter((f) => {
+              const mod = MODULE_FILTERS.find((m) => m.value === moduleFilter)
+              return !mod || mod.tables.length === 0 || f.value === '' || mod.tables.includes(f.value)
+            }).map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          Action
+          <input
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            placeholder="e.g. document_approved"
+            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          />
+        </label>
+        {role !== 'staff' && role !== 'location_manager' && (
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+            Actor
+            <select
+              value={actorId}
+              onChange={(e) => setActorId(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+            >
+              <option value="">All actors</option>
+              {employees
+                .filter((e) => e.auth_user_id)
+                .map((e) => (
+                  <option key={e.id} value={e.auth_user_id ?? ''}>
+                    {e.full_name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          From
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            aria-label="From date"
+            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          />
+        </label>
+        <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+          To
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            aria-label="To date"
+            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          />
+        </label>
+        {role !== 'staff' && role !== 'location_manager' && (
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+            Employee
+            <select
+              value={employeeId}
+              onChange={(e) => setEmployeeId(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+            >
+              <option value="">All employees</option>
+              {employees.map((e) => (
+                <option key={e.id} value={e.id}>
                   {e.full_name}
                 </option>
               ))}
-          </select>
-        )}
-        <input
-          type="date"
-          value={dateFrom}
-          onChange={(e) => setDateFrom(e.target.value)}
-          aria-label="From date"
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        />
-        <input
-          type="date"
-          value={dateTo}
-          onChange={(e) => setDateTo(e.target.value)}
-          aria-label="To date"
-          className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        />
-        {role !== 'staff' && role !== 'location_manager' && (
-          <select
-            value={employeeId}
-            onChange={(e) => setEmployeeId(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          >
-            <option value="">All employees</option>
-            {employees.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.full_name}
-              </option>
-            ))}
-          </select>
+            </select>
+          </label>
         )}
         {canNarrowEntityOrLocation && locations.length > 0 && (
-          <select
-            value={locationFilter}
-            onChange={(e) => setLocationFilter(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          >
-            <option value="">All branches</option>
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+            Branch
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+            >
+              <option value="">All branches</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
         {isOwner && entities.length > 1 && (
-          <select
-            value={entityFilter}
-            onChange={(e) => {
-              setEntityFilter(e.target.value)
-              setLocationFilter('')
-            }}
-            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          >
-            <option value="">All entities</option>
-            {entities.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </select>
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted">
+            Entity
+            <select
+              value={entityFilter}
+              onChange={(e) => {
+                setEntityFilter(e.target.value)
+                setLocationFilter('')
+              }}
+              className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+            >
+              <option value="">All entities</option>
+              {entities.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
       </div>
 
