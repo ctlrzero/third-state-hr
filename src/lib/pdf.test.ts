@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PdfDoc, pdfString, textWidth } from './pdf'
-import { buildPayslipPdf, money, payslipFilename } from './payslipPdf'
+import { adminPayslipDetail, buildPayslipPdf, money, payslipFilename } from './payslipPdf'
 import type { MyPayslipDetail } from './api/payslips'
 import { effectiveTriggers, operatorsFor, TRIGGERS } from './workflowCatalog'
 import { validateWorkflowDraft, buildWorkflowSummary } from './workflowSummary'
@@ -129,5 +129,34 @@ describe('employee permissions', () => {
     expect(allowedStatusMoves('location_manager', 'active')).toEqual([])
     expect(allowedStatusMoves('entity_admin', 'inactive')).toEqual(['active'])
     expect(editableFieldsFor('staff')).toEqual([])
+  })
+})
+
+describe('adminPayslipDetail', () => {
+  it('derives earnings and gross from payslip components', () => {
+    const d = adminPayslipDetail({
+      payslip: {
+        id: 'p1',
+        payroll_run_id: 'r1',
+        employee_id: 'e1',
+        base_pay: 3000,
+        overtime_pay: 150.25,
+        holiday_pay: 0,
+        tips_share: 99.75,
+        total_deductions: 50,
+        net_pay: 3200,
+        generated_at: null,
+        employees: { full_name: 'Omar' },
+      },
+      run: { period_start: '2026-08-01', period_end: '2026-08-31', status: 'paid', revises_payroll_run_id: 'r0' },
+      employer: { entity_id: 'x', name: 'TSC', trade_license_no: null, emirate: 'Dubai' },
+      currency: 'AED',
+      deductions: [{ deduction_type: 'advance', amount: 50, notes: null }],
+    })
+    expect(d.earnings.map((e) => e.code)).toEqual(['base', 'overtime', 'tips'])
+    expect(d.gross_pay).toBe(3250)
+    expect(d.is_revision).toBe(true)
+    expect(d.deductions[0]).toMatchObject({ type: 'advance', amount: 50 })
+    expect(decode(buildPayslipPdf(d))).toContain('(AED 3,200.00)')
   })
 })

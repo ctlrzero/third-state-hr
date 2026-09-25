@@ -48,7 +48,7 @@ const STAGES: { value: string; label: string }[] = [
 function money(n: number | null | undefined, currency: string) {
   const value = n ?? 0
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value)
+    return new Intl.NumberFormat('en-AE', { style: 'currency', currency }).format(value)
   } catch {
     return value.toFixed(2)
   }

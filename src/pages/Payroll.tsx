@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import MyPayslips from './MyPayslips'
+import { adminPayslipDetail, buildPayslipPdf, payslipFilename } from '../lib/payslipPdf'
+import { downloadBytes } from '../lib/pdf'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type {
@@ -78,7 +80,7 @@ function deductionTypeLabel(value: string) {
 function money(n: number | null | undefined, currency: string) {
   const value = n ?? 0
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value)
+    return new Intl.NumberFormat('en-AE', { style: 'currency', currency }).format(value)
   } catch {
     return value.toFixed(2)
   }
@@ -400,6 +402,7 @@ function PayrollRunDetail({
   onBack: () => void
   onNotice: (msg: string) => void
 }) {
+  const { entities } = useAuth()
   const [run, setRun] = useState<PayrollRun | null>(null)
   const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'full_name'>[]>([])
   const [locations, setLocations] = useState<Pick<Location, 'id' | 'name'>[]>([])
@@ -437,6 +440,26 @@ function PayrollRunDetail({
     onNotice('Revision run created — open it from the payroll runs list to make corrections.')
     void data
     onBack()
+  }
+
+  function downloadAdminPayslip(p: Payslip) {
+    if (!run) return
+    const entity = entities.find((e) => e.id === summary.entity_id)
+    const ts = timesheets.find((t) => t.employee_id === p.employee_id)
+    const detail = adminPayslipDetail({
+      payslip: p,
+      run,
+      currency,
+      employer: {
+        entity_id: summary.entity_id,
+        name: entity?.name ?? 'Employer',
+        trade_license_no: entity?.trade_license_no ?? null,
+        emirate: entity?.emirate ?? null,
+      },
+      deductions: deductions.filter((d) => d.employee_id === p.employee_id),
+      hours: ts ? { regular_hours: ts.regular_hours, overtime_hours: ts.overtime_hours, holiday_hours: ts.holiday_hours } : null,
+    })
+    downloadBytes(buildPayslipPdf(detail), payslipFilename(detail))
   }
 
   async function load() {
@@ -695,6 +718,9 @@ function PayrollRunDetail({
                   <th className="py-2 pr-3 font-medium">Tips</th>
                   <th className="py-2 pr-3 font-medium">Deductions</th>
                   <th className="py-2 pr-3 font-medium">Net pay</th>
+                  <th className="py-2 pr-3 font-medium">
+                    <span className="sr-only">Payslip PDF</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -707,6 +733,18 @@ function PayrollRunDetail({
                     <td data-label="Tips" className="py-2 pr-3 text-muted">{money(p.tips_share, currency)}</td>
                     <td data-label="Deductions" className="py-2 pr-3 text-muted">{money(p.total_deductions, currency)}</td>
                     <td data-label="Net pay" className="py-2 pr-3 font-semibold text-ink">{money(p.net_pay, currency)}</td>
+                    <td data-label="" className="py-2 pr-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => downloadAdminPayslip(p)}
+                        disabled={!run || (run.status !== 'approved' && run.status !== 'paid')}
+                        title={run && run.status !== 'approved' && run.status !== 'paid' ? 'Available once the run is approved' : undefined}
+                        aria-label={`Download payslip PDF for ${p.employees?.full_name ?? 'employee'}`}
+                        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30 disabled:opacity-60"
+                      >
+                        PDF
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -716,6 +754,7 @@ function PayrollRunDetail({
                     Total net pay
                   </td>
                   <td data-label="Total net pay" className="py-2 pr-3">{money(totalNet, currency)}</td>
+                  <td data-label="" className="max-md:hidden" />
                 </tr>
               </tfoot>
             </table>

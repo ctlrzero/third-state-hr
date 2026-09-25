@@ -126,3 +126,73 @@ export function buildPayslipPdf(p: MyPayslipDetail): Uint8Array {
 
   return doc.toBytes({ title: `Payslip ${p.period_start} to ${p.period_end}` })
 }
+
+export interface AdminPayslipSource {
+  payslip: {
+    id: string
+    payroll_run_id: string
+    employee_id: string
+    base_pay: number
+    overtime_pay: number
+    holiday_pay: number
+    tips_share: number
+    total_deductions: number
+    net_pay: number
+    generated_at: string | null
+    employees?: { full_name: string } | null
+  }
+  run: { period_start: string; period_end: string; status: string; approved_at?: string | null; revises_payroll_run_id?: string | null }
+  employer: { entity_id: string; name: string; trade_license_no: string | null; emirate: string | null }
+  currency: string
+  deductions: { deduction_type: string; amount: number; notes: string | null }[]
+  hours?: { regular_hours: number; overtime_hours: number; holiday_hours: number } | null
+}
+
+/**
+ * Owner / Entity Admin view: build the same payslip document from the
+ * payroll run screen's own (RLS-scoped) rows, so admins can hand an
+ * employee an identical PDF. get_my_payslip() is self-only by design.
+ */
+export function adminPayslipDetail(src: AdminPayslipSource): MyPayslipDetail {
+  const p = src.payslip
+  const earnings = [
+    { code: 'base', label: 'Basic pay', amount: Number(p.base_pay) },
+    { code: 'overtime', label: 'Overtime', amount: Number(p.overtime_pay) },
+    { code: 'holiday', label: 'Holiday pay', amount: Number(p.holiday_pay) },
+    { code: 'tips', label: 'Tips share', amount: Number(p.tips_share) },
+  ].filter((e) => e.amount !== 0 || e.code === 'base')
+  const gross = earnings.reduce((s, e) => s + e.amount, 0)
+  return {
+    payslip_id: p.id,
+    payroll_run_id: p.payroll_run_id,
+    version: src.run.revises_payroll_run_id ? 2 : 1,
+    is_revision: Boolean(src.run.revises_payroll_run_id),
+    revises_payroll_run_id: src.run.revises_payroll_run_id ?? null,
+    superseded: false,
+    run_status: src.run.status,
+    period_start: src.run.period_start,
+    period_end: src.run.period_end,
+    published_at: src.run.approved_at ?? null,
+    generated_at: p.generated_at,
+    currency: src.currency,
+    employer: src.employer,
+    employee: {
+      employee_id: p.employee_id,
+      full_name: p.employees?.full_name ?? 'Employee',
+      preferred_name: null,
+      position_title: null,
+      location_name: null,
+      employment_type: null,
+      join_date: null,
+    },
+    salary: src.hours
+      ? { pay_type: null, pay_rate: null, overtime_multiplier: null, holiday_multiplier: null, ...src.hours }
+      : null,
+    earnings,
+    allowances: [],
+    deductions: src.deductions.map((d) => ({ type: d.deduction_type, label: undefined, amount: Number(d.amount), notes: d.notes })),
+    gross_pay: Math.round(gross * 100) / 100,
+    total_deductions: Number(p.total_deductions),
+    net_pay: Number(p.net_pay),
+  }
+}
