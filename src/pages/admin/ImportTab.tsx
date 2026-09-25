@@ -55,7 +55,6 @@ export function ImportTab({ activeEntityId, entityName }: { activeEntityId: stri
     )
     setCommitting(false)
     setConfirming(false)
-    if (res.notAvailable) return setError('Bulk import is not available yet.')
     if (res.error) return setError(res.error)
     const rows = res.data ?? []
     setServerRows(rows)

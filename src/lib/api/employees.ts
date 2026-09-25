@@ -31,7 +31,7 @@ export async function listPendingChangeRequests(): Promise<ApiResult<EmployeeCha
     .eq('status', 'pending')
     .order('requested_at', { ascending: true })
     .limit(100)
-  return { data: (data ?? []) as unknown as EmployeeChangeRequest[], error: error?.message ?? null, notAvailable: false }
+  return { data: (data ?? []) as unknown as EmployeeChangeRequest[], error: error?.message ?? null }
 }
 
 export interface AuditRow {
@@ -52,7 +52,7 @@ export async function listEmployeeAudit(employeeId: string): Promise<ApiResult<A
     .or(`employee_id.eq.${employeeId},record_id.eq.${employeeId}`)
     .order('changed_at', { ascending: false })
     .limit(100)
-  return { data: (data ?? []) as AuditRow[], error: error?.message ?? null, notAvailable: false }
+  return { data: (data ?? []) as AuditRow[], error: error?.message ?? null }
 }
 
 /** Fields an admin may edit through update_employee_details(). */

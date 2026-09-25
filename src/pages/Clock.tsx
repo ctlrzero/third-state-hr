@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
-import { Alert, NotAvailable, PageHeader, Skeleton } from '../components/ui'
+import { Alert, PageHeader, Skeleton } from '../components/ui'
 import {
   clockIn,
   clockOut,
@@ -27,7 +27,6 @@ const ATTENDANCE_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success'
 
 export default function Clock() {
   const [status, setStatus] = useState<ClockStatus | null>(null)
-  const [statusUnavailable, setStatusUnavailable] = useState(false)
   const [notLinked, setNotLinked] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -35,12 +34,10 @@ export default function Clock() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [history, setHistory] = useState<MyAttendanceRow[] | null>(null)
-  const [historyUnavailable, setHistoryUnavailable] = useState(false)
 
   const loadStatus = useCallback(async () => {
     const res = await getMyClockStatus()
-    if (res.notAvailable) setStatusUnavailable(true)
-    else if (res.error && /no employee record/i.test(res.error)) setNotLinked(true)
+    if (res.error && /no employee record/i.test(res.error)) setNotLinked(true)
     else if (res.error) setError(res.error)
     else setStatus(res.data)
     setLoading(false)
@@ -50,8 +47,7 @@ export default function Clock() {
   const loadHistory = useCallback(async () => {
     const today = todayDubai()
     const res = await getMyAttendance(addDays(today, -30), today)
-    if (res.notAvailable) setHistoryUnavailable(true)
-    else if (res.error && /no employee record/i.test(res.error)) setHistory([])
+    if (res.error && /no employee record/i.test(res.error)) setHistory([])
     else if (res.error) setError(res.error)
     else setHistory([...(res.data ?? [])].sort((a, b) => b.business_date.localeCompare(a.business_date)))
   }, [])
@@ -109,8 +105,6 @@ export default function Clock() {
           title="Your login isn't linked to an employee record"
           description="Clocking in needs an employee record. Ask your Entity Admin to link your account in Admin → Users & access."
         />
-      ) : statusUnavailable ? (
-        <NotAvailable feature="Clock in / out" />
       ) : (
         <section className="card space-y-4" aria-labelledby="today-heading">
           <div className="flex items-start justify-between gap-3">
@@ -194,9 +188,7 @@ export default function Clock() {
         <h2 id="history-heading" className="text-base font-semibold text-ink">
           My last 30 days
         </h2>
-        {notLinked ? null : historyUnavailable ? (
-          <NotAvailable feature="Attendance history" />
-        ) : history === null ? (
+        {notLinked ? null : history === null ? (
           <Skeleton rows={3} />
         ) : history.length === 0 ? (
           <EmptyState title="No attendance yet" description="Your clock-ins will appear here." />

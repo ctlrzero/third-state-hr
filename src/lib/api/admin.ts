@@ -94,14 +94,14 @@ export interface BulkImportResultRow {
 
 export async function listEntities(): Promise<ApiResult<EntityRow[]>> {
   const { data, error } = await supabase.from('entities').select('*').order('name')
-  return { data: (data ?? []) as EntityRow[], error: error?.message ?? null, notAvailable: false }
+  return { data: (data ?? []) as EntityRow[], error: error?.message ?? null }
 }
 
 export async function listLocations(entityId?: string | null): Promise<ApiResult<LocationRow[]>> {
   let q = supabase.from('locations').select('*').order('name')
   if (entityId) q = q.eq('entity_id', entityId)
   const { data, error } = await q
-  return { data: (data ?? []) as LocationRow[], error: error?.message ?? null, notAvailable: false }
+  return { data: (data ?? []) as LocationRow[], error: error?.message ?? null }
 }
 
 export async function listPositions(entityId: string) {
@@ -113,7 +113,7 @@ export async function listRetentionPolicies(entityId?: string | null): Promise<A
   let q = supabase.from('data_retention_policies').select('*').order('created_at', { ascending: false })
   if (entityId) q = q.eq('entity_id', entityId)
   const { data, error } = await q
-  return { data: (data ?? []) as RetentionPolicy[], error: error?.message ?? null, notAvailable: false }
+  return { data: (data ?? []) as RetentionPolicy[], error: error?.message ?? null }
 }
 
 // ---------- entities & branches ----------

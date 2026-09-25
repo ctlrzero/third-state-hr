@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
-import { Alert, Drawer, Field, Modal, NotAvailable, Skeleton, TabPanel, Tabs, type TabDef } from '../components/ui'
+import { Alert, Drawer, Field, Modal, Skeleton, TabPanel, Tabs, type TabDef } from '../components/ui'
 import { expiryStatus } from '../lib/documents'
 import {
   CHANGE_FIELD_LABEL,
@@ -35,7 +35,6 @@ const EXPIRY_TONE: Record<string, 'neutral' | 'warning' | 'risk' | 'success'> = 
   current: 'success',
   non_expiring: 'neutral',
 }
-
 
 const STATUS_ACTION_LABEL: Record<EmployeeStatus, string> = {
   candidate: 'Move to candidate',
@@ -124,7 +123,7 @@ export default function EmployeeProfile() {
     setLoading(false)
     const c = await getEmployeeCompleteness(id)
     // Not-yet-deployed RPC → simply no completeness bar.
-    if (!c.error && !c.notAvailable) setCompleteness(c.data)
+    if (!c.error) setCompleteness(c.data)
   }, [id])
 
   useEffect(() => {
@@ -701,14 +700,12 @@ function StatusModal({
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const needsReason = target === 'inactive' || employee.employment_status === 'inactive'
-  const [unavailable, setUnavailable] = useState(false)
 
   async function submit() {
     if (needsReason && !reason.trim()) return setErr('A reason is required for this change.')
     setSaving(true)
     const res = await setEmployeeStatus(employee.id, target, reason.trim() || null)
     setSaving(false)
-    if (res.notAvailable) return setUnavailable(true)
     if (res.error) return setErr(res.error)
     onDone(`${employee.full_name} is now ${humanize(target).toLowerCase()}.`)
   }
@@ -723,7 +720,7 @@ function StatusModal({
           <button className="btn-secondary" onClick={onClose}>
             Cancel
           </button>
-          <button className={target === 'inactive' ? 'btn-danger' : 'btn-primary'} onClick={submit} disabled={saving || unavailable}>
+          <button className={target === 'inactive' ? 'btn-danger' : 'btn-primary'} onClick={submit} disabled={saving}>
             {saving ? 'Saving…' : STATUS_ACTION_LABEL[target]}
           </button>
         </>
@@ -738,7 +735,6 @@ function StatusModal({
       <Field label={needsReason ? 'Reason' : 'Note (optional)'} error={err} required={needsReason}>
         {(p) => <textarea {...p} rows={3} className="input" value={reason} onChange={(e) => setReason(e.target.value)} data-autofocus />}
       </Field>
-      {unavailable && <NotAvailable feature="Changing employee status" />}
     </Modal>
   )
 }
@@ -794,7 +790,6 @@ function EditDrawer({
     const res = await updateEmployeeDetails(employee.id, changes)
     setSaving(false)
     setReviewing(false)
-    if (res.notAvailable) return setServerError('Editing employee details is not available yet.')
     if (res.error) return setServerError(res.error)
     onDone()
   }

@@ -19,7 +19,7 @@ export default function StaffHome() {
   const [balances, setBalances] = useState<LeaveBalance[] | null>(null)
 
   useEffect(() => {
-    getMyClockStatus().then((r) => setClock(r.notAvailable || r.error ? 'na' : r.data))
+    getMyClockStatus().then((r) => setClock(r.error ? 'na' : r.data))
     supabase
       .from('shifts')
       .select('id, shift_date, start_time, end_time, locations(name)')

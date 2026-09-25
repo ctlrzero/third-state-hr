@@ -186,11 +186,10 @@ function InactivateConfirm({
   saving: boolean
 }) {
   const [summary, setSummary] = useState<DependencySummary | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'unavailable' | 'error'>('loading')
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading')
   useEffect(() => {
     getEntityDependencySummary(entityId, locationId).then((res) => {
-      if (res.notAvailable) setState('unavailable')
-      else if (res.error) setState('error')
+      if (res.error) setState('error')
       else {
         setSummary(res.data)
         setState('ready')
@@ -216,7 +215,6 @@ function InactivateConfirm({
     >
       <p>Nothing is deleted. It will be hidden from new schedules, hires and payroll runs.</p>
       {state === 'loading' && <Skeleton rows={1} className="h-16" />}
-      {state === 'unavailable' && <Alert tone="warning">The dependency check isn't available yet — review open items manually first.</Alert>}
       {state === 'error' && <Alert tone="warning">Couldn't load the dependency summary.</Alert>}
       {summary && (
         <>
@@ -271,7 +269,6 @@ function EntityDrawer({ row, onClose, onSaved }: { row: EntityRow | null; onClos
     const res = await adminUpsertEntity({ ...form, name: form.name.trim(), code: form.code.trim().toUpperCase() })
     setSaving(false)
     setConfirming(false)
-    if (res.notAvailable) return setServerError('Editing entities is not available yet.')
     if (res.error) return setServerError(res.error)
     onSaved(row ? `${form.name} updated.` : `${form.name} created.`)
   }
@@ -382,7 +379,6 @@ function LocationDrawer({
     const res = await adminUpsertLocation({ ...form, name: form.name.trim(), code: form.code.trim().toUpperCase() })
     setSaving(false)
     setConfirming(false)
-    if (res.notAvailable) return setServerError('Editing branches is not available yet.')
     if (res.error) return setServerError(res.error)
     onSaved(row ? `${form.name} updated.` : `${form.name} added.`)
   }

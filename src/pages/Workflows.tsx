@@ -6,7 +6,6 @@ import {
   Drawer,
   Field,
   Modal,
-  NotAvailable,
   PageHeader,
   ResponsiveTable,
   Skeleton,
@@ -52,7 +51,6 @@ export default function Workflows() {
   const [tab, setTab] = useState<TabKey>('rules')
   const [rules, setRules] = useState<WorkflowRule[] | null>(null)
   const [runs, setRuns] = useState<WorkflowRun[] | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [builderOpen, setBuilderOpen] = useState(false)
@@ -71,8 +69,7 @@ export default function Workflows() {
   const loadRules = useCallback(async () => {
     setRules(null)
     const res = await getWorkflowRules(null, activeEntityId)
-    if (res.notAvailable) setUnavailable(true)
-    else if (res.error) setError(res.error)
+    if (res.error) setError(res.error)
     setRules(res.data ?? [])
   }, [activeEntityId])
 
@@ -95,7 +92,7 @@ export default function Workflows() {
     setBusy(true)
     const res = toggling.is_active ? await deactivateWorkflowRule(toggling.id) : await activateWorkflowRule(toggling.id)
     setBusy(false)
-    if (res.error || res.notAvailable) setError(res.error ?? 'Not available yet.')
+    if (res.error) setError(res.error)
     else setNotice(`"${toggling.name}" is now ${toggling.is_active ? 'inactive' : 'active'}.`)
     setToggling(null)
     loadRules()
@@ -113,15 +110,6 @@ export default function Workflows() {
       ),
     },
   ]
-
-  if (unavailable) {
-    return (
-      <div className="space-y-5">
-        <PageHeader title="Workflows" />
-        <NotAvailable feature="Workflows" />
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-5">
@@ -324,8 +312,8 @@ function RuleBuilder({
       entity_id: entityId,
     })
     setSaving(false)
-    if (res.error || res.notAvailable) {
-      setServerError(res.error ?? 'Creating rules is not available yet.')
+    if (res.error) {
+      setServerError(res.error)
       return
     }
     onCreated(name.trim())
@@ -522,7 +510,7 @@ function TestPanel({ rule, onClose }: { rule: WorkflowRule; onClose: () => void 
     }
     const res = await testWorkflowRule(rule.id, sample)
     setRunning(false)
-    if (res.error || res.notAvailable) setError(res.error ?? 'Testing is not available yet.')
+    if (res.error) setError(res.error)
     else setResult(res.data ?? null)
   }
 

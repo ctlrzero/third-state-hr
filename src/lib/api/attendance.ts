@@ -171,17 +171,17 @@ export async function getShiftsByIds(ids: string[]) {
 }
 
 export async function getPayableRecords(shiftIds: string[]): Promise<ApiResult<PayableRecord[]>> {
-  if (shiftIds.length === 0) return { data: [], error: null, notAvailable: false }
+  if (shiftIds.length === 0) return { data: [], error: null }
   const { data, error } = await supabase.from('payable_shift_records').select('*').in('shift_id', shiftIds)
-  return { data: (data ?? []) as PayableRecord[], error: error?.message ?? null, notAvailable: false }
+  return { data: (data ?? []) as PayableRecord[], error: error?.message ?? null }
 }
 
 export async function getAdjustments(payableIds: string[]): Promise<ApiResult<AttendanceAdjustment[]>> {
-  if (payableIds.length === 0) return { data: [], error: null, notAvailable: false }
+  if (payableIds.length === 0) return { data: [], error: null }
   const { data, error } = await supabase
     .from('attendance_adjustments')
     .select('*')
     .in('payable_shift_record_id', payableIds)
     .order('created_at', { ascending: false })
-  return { data: (data ?? []) as AttendanceAdjustment[], error: error?.message ?? null, notAvailable: false }
+  return { data: (data ?? []) as AttendanceAdjustment[], error: error?.message ?? null }
 }

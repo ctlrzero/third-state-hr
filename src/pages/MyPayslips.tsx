@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
-import { Alert, Drawer, NotAvailable, PageHeader, Skeleton } from '../components/ui'
+import { Alert, Drawer, PageHeader, Skeleton } from '../components/ui'
 import { getMyPayslip, getMyPayslips, type MyPayslipDetail, type MyPayslipListRow } from '../lib/api/payslips'
 import { buildPayslipPdf, lineLabel, money, payslipFilename } from '../lib/payslipPdf'
 import { downloadBytes } from '../lib/pdf'
@@ -12,14 +12,12 @@ import { fmtDate } from '../lib/format'
 // in the browser from the RPC data — there is no stored payslip file.
 export default function MyPayslips() {
   const [rows, setRows] = useState<MyPayslipListRow[] | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
 
   useEffect(() => {
     getMyPayslips().then((res) => {
-      if (res.notAvailable) setUnavailable(true)
-      else if (res.error) setError(res.error)
+      if (res.error) setError(res.error)
       setRows(res.data ?? [])
     })
   }, [])
@@ -28,9 +26,7 @@ export default function MyPayslips() {
     <div className="mx-auto max-w-2xl space-y-5">
       <PageHeader title="My payslips" description="Published payslips. Download any of them as a PDF." />
       {error && <Alert tone="error">{error}</Alert>}
-      {unavailable ? (
-        <NotAvailable feature="Payslips" />
-      ) : rows === null ? (
+      {rows === null ? (
         <Skeleton rows={3} className="h-20" />
       ) : rows.length === 0 ? (
         <EmptyState title="No payslips yet" description="Your payslip appears here once payroll for the period is approved." />
@@ -73,7 +69,7 @@ function PayslipDrawer({ payslipId, onClose }: { payslipId: string; onClose: () 
 
   useEffect(() => {
     getMyPayslip(payslipId).then((res) => {
-      if (res.error || res.notAvailable) setError(res.error ?? 'Payslip details are not available yet.')
+      if (res.error) setError(res.error)
       else setDetail(res.data)
     })
   }, [payslipId])

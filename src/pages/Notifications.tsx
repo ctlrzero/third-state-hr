@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { EmptyState } from '../components/EmptyState'
 import { StatusBadge } from '../components/StatusBadge'
-import { Alert, NotAvailable, PageHeader, Skeleton } from '../components/ui'
+import { Alert, PageHeader, Skeleton } from '../components/ui'
 import {
   NOTIFICATION_TARGET_ROUTE,
   getMyNotifications,
@@ -19,7 +19,6 @@ export default function Notifications() {
   const [rows, setRows] = useState<NotificationRow[] | null>(null)
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -27,8 +26,7 @@ export default function Notifications() {
   const load = useCallback(async () => {
     setRows(null)
     const res = await getMyNotifications(PAGE, null, unreadOnly)
-    if (res.notAvailable) setUnavailable(true)
-    else if (res.error) setError(res.error)
+    if (res.error) setError(res.error)
     const data = res.data ?? []
     setRows(data)
     setHasMore(data.length === PAGE)
@@ -87,9 +85,7 @@ export default function Notifications() {
           {error}
         </Alert>
       )}
-      {unavailable ? (
-        <NotAvailable feature="Notifications" />
-      ) : rows === null ? (
+      {rows === null ? (
         <Skeleton rows={5} />
       ) : rows.length === 0 ? (
         <EmptyState title="You're all caught up" description="New notifications will appear here." />

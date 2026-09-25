@@ -89,7 +89,7 @@ function RetentionSection({ isOwner, entityId }: { isOwner: boolean; entityId: s
     setBusyId(id)
     const res = await approveDataRetentionPolicy(id)
     setBusyId(null)
-    if (res.error || res.notAvailable) return setError(res.error ?? 'Not available yet.')
+    if (res.error) return setError(res.error)
     setNotice('Retention policy approved.')
     load()
   }
@@ -174,7 +174,7 @@ function ProposeRetentionDrawer({ entityId, onClose, onDone }: { entityId: strin
     setSaving(true)
     const res = await proposeDataRetentionPolicy(table, y, method, basis.trim() || null, entityId)
     setSaving(false)
-    if (res.error || res.notAvailable) return setServerError(res.error ?? 'Not available yet.')
+    if (res.error) return setServerError(res.error)
     onDone()
   }
 
@@ -231,14 +231,12 @@ function ProposeRetentionDrawer({ entityId, onClose, onDone }: { entityId: strin
 
 function SelfApprovalSection({ isOwner }: { isOwner: boolean }) {
   const [enabled, setEnabled] = useState<boolean | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     getEntityAdminSelfApproval().then((res) => {
-      if (res.notAvailable) setUnavailable(true)
-      else setEnabled(Boolean(res.data))
+      setEnabled(Boolean(res.data))
     })
   }, [])
 
@@ -248,11 +246,10 @@ function SelfApprovalSection({ isOwner }: { isOwner: boolean }) {
     setError(null)
     const res = await setEntityAdminSelfApproval(!enabled)
     setSaving(false)
-    if (res.error || res.notAvailable) return setError(res.error ?? 'Not available yet.')
+    if (res.error) return setError(res.error)
     setEnabled(!enabled)
   }
 
-  if (unavailable) return null
   return (
     <section aria-labelledby="self-approval-h" className="card flex flex-wrap items-center justify-between gap-3">
       <div className="max-w-xl">

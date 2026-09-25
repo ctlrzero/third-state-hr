@@ -250,17 +250,6 @@ export function Skeleton({ rows = 3, className = 'h-14' }: { rows?: number; clas
   )
 }
 
-export function NotAvailable({ feature }: { feature: string }) {
-  return (
-    <div className="rounded-[14px] border border-dashed border-border bg-surface px-6 py-10 text-center">
-      <p className="font-medium text-ink">This feature is not available yet</p>
-      <p className="mx-auto mt-1 max-w-sm text-sm text-muted">
-        {feature} is still being switched on for your workspace. Please check back soon.
-      </p>
-    </div>
-  )
-}
-
 export function AccessDenied() {
   return (
     <div className="mx-auto max-w-md rounded-[14px] border border-border bg-surface px-6 py-10 text-center shadow-card">

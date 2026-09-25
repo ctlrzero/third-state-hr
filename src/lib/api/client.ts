@@ -1,15 +1,13 @@
 import { supabase } from '../supabase'
 
 /**
- * Uniform result for every RPC wrapper in src/lib/api/*. `notAvailable` is
- * true when PostgREST reports the function doesn't exist yet (PGRST202 /
- * 42883) — screens render a "not available yet" state instead of an error,
- * because several RPCs are being rolled out by the backend in parallel.
+ * Uniform result for every RPC wrapper in src/lib/api/*: either data or a
+ * user-safe error message. A missing function (PGRST202 / 42883, e.g. a
+ * deploy mismatch) becomes an ordinary error rather than a crash.
  */
 export interface ApiResult<T> {
   data: T | null
   error: string | null
-  notAvailable: boolean
 }
 
 interface PgError {
@@ -41,15 +39,15 @@ export async function callRpc<T>(fn: string, args?: Record<string, unknown>): Pr
   try {
     const { data, error } = await supabase.rpc(fn, args ?? {})
     if (error) {
-      if (isMissingFunction(error)) return { data: null, error: null, notAvailable: true }
-      return { data: null, error: friendlyError(error), notAvailable: false }
+      if (isMissingFunction(error))
+        return { data: null, error: 'This action is not available on the server right now. Please contact support.' }
+      return { data: null, error: friendlyError(error) }
     }
-    return { data: data as T, error: null, notAvailable: false }
+    return { data: data as T, error: null }
   } catch (e) {
     return {
       data: null,
       error: e instanceof Error ? e.message : 'Network error. Check your connection.',
-      notAvailable: false,
     }
   }
 }
@@ -61,7 +59,7 @@ export async function callRpc<T>(fn: string, args?: Record<string, unknown>): Pr
 export function unwrapOk<T>(res: ApiResult<T>): ApiResult<T> {
   const d = res.data as { ok?: boolean; message?: string } | null
   if (d && typeof d === 'object' && d.ok === false) {
-    return { data: res.data, error: d.message ?? 'The request was not accepted.', notAvailable: false }
+    return { data: res.data, error: d.message ?? 'The request was not accepted.' }
   }
   return res
 }

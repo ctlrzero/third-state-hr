@@ -10,7 +10,6 @@ import {
   Drawer,
   Field,
   Modal,
-  NotAvailable,
   PageHeader,
   ResponsiveTable,
   Skeleton,
@@ -87,7 +86,6 @@ export default function Attendance() {
   const [tab, setTab] = useState<TabKey>('overview')
 
   const [loading, setLoading] = useState(false)
-  const [unavailable, setUnavailable] = useState<Record<string, boolean>>({})
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -134,7 +132,6 @@ export default function Attendance() {
       getLocationAttendanceOverview(locationId, periodStart, periodEnd),
       getAttendanceExceptions(locationId, periodStart, periodEnd),
     ])
-    setUnavailable({ overview: ov.notAvailable, exceptions: ex.notAvailable })
     if (ov.error || ex.error) setError(ov.error ?? ex.error)
     const ovRows = ov.data ?? []
     const exRows = ex.data ?? []
@@ -179,8 +176,7 @@ export default function Attendance() {
     setBusyId('seed')
     const res = await seedPayableShiftRecords(locationId, periodStart, periodEnd)
     setBusyId(null)
-    if (res.notAvailable) setError('Preparing payable time is not available yet.')
-    else if (res.error) setError(res.error)
+    if (res.error) setError(res.error)
     else {
       setNotice('Payable time prepared from published shifts.')
       load()
@@ -191,7 +187,7 @@ export default function Attendance() {
     setBusyId(a.id)
     const res = await applyAttendanceAdjustment(a.id)
     setBusyId(null)
-    if (res.error || res.notAvailable) setError(res.error ?? 'Applying adjustments is not available yet.')
+    if (res.error) setError(res.error)
     else {
       setNotice(`Adjustment applied — payable time set to ${fmtMinutes(a.proposed_minutes)}.`)
       load()
@@ -353,9 +349,7 @@ export default function Attendance() {
 
       {tab === 'overview' && (
         <TabPanel id="overview">
-          {unavailable.overview ? (
-            <NotAvailable feature="Attendance overview" />
-          ) : loading ? (
+          {loading ? (
             <Skeleton rows={4} />
           ) : overview.length === 0 ? (
             <EmptyState
@@ -394,9 +388,7 @@ export default function Attendance() {
 
       {tab === 'exceptions' && (
         <TabPanel id="exceptions">
-          {unavailable.exceptions ? (
-            <NotAvailable feature="Attendance exceptions" />
-          ) : loading ? (
+          {loading ? (
             <Skeleton rows={4} />
           ) : exceptions.length === 0 ? (
             <EmptyState title="No exceptions" description="Every clock-in in this range matches a shift." />
@@ -548,8 +540,8 @@ function CorrectionDrawer({
       reason.trim()
     )
     setSaving(false)
-    if (res.error || res.notAvailable) {
-      setServerError(res.error ?? 'Corrections are not available yet.')
+    if (res.error) {
+      setServerError(res.error)
       setConfirming(false)
       return
     }
@@ -693,8 +685,8 @@ function AdjustmentDrawer({
     setServerError(null)
     const res = await proposeAttendanceAdjustment(payable.id, proposed, reason.trim())
     setSaving(false)
-    if (res.error || res.notAvailable) {
-      setServerError(res.error ?? 'Adjustments are not available yet.')
+    if (res.error) {
+      setServerError(res.error)
       return
     }
     onSaved()
@@ -783,8 +775,8 @@ function RejectAdjustmentModal({
     setSaving(true)
     const res = await rejectAttendanceAdjustment(adjustment.id, reason.trim())
     setSaving(false)
-    if (res.error || res.notAvailable) {
-      setErr(res.error ?? 'Rejecting adjustments is not available yet.')
+    if (res.error) {
+      setErr(res.error)
       return
     }
     onDone()

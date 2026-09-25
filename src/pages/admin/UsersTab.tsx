@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { StatusBadge } from '../../components/StatusBadge'
 import { EmptyState } from '../../components/EmptyState'
-import { Alert, Drawer, Field, Modal, NotAvailable, ResponsiveTable, Skeleton, type Column } from '../../components/ui'
+import { Alert, Drawer, Field, Modal, ResponsiveTable, Skeleton, type Column } from '../../components/ui'
 import {
   adminGrantAccess,
   adminListUserAccess,
@@ -21,7 +21,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; activeEntityId: string | null }) {
   const [rows, setRows] = useState<UserAccessRow[] | null>(null)
-  const [unavailable, setUnavailable] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [entities, setEntities] = useState<EntityRow[]>([])
@@ -34,8 +33,7 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
   const load = useCallback(async () => {
     setRows(null)
     const res = await adminListUserAccess(isOwner && allEntities ? null : activeEntityId)
-    if (res.notAvailable) setUnavailable(true)
-    else if (res.error) setError(res.error)
+    if (res.error) setError(res.error)
     setRows(res.data ?? [])
   }, [activeEntityId, isOwner, allEntities])
 
@@ -75,8 +73,6 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
     },
     { key: 'last', header: 'Last sign-in', render: (r) => (r.is_pending ? 'Invite not yet accepted' : fmtDateTime(r.last_sign_in_at)) },
   ]
-
-  if (unavailable) return <NotAvailable feature="User access management" />
 
   return (
     <div className="space-y-4">
@@ -221,7 +217,6 @@ function GrantDrawer({
       needsEmployee ? employeeId : null
     )
     setSaving(false)
-    if (res.notAvailable) return setServerError('Granting access is not available yet.')
     if (res.error) return setServerError(res.error)
     onDone(email.trim())
   }
@@ -315,7 +310,6 @@ function RevokeModal({ row, onClose, onDone }: { row: UserAccessRow; onClose: ()
     setSaving(true)
     const res = await adminRevokeAccess(row.user_id, row.grant_id, reason.trim())
     setSaving(false)
-    if (res.notAvailable) return setErr('Revoking access is not available yet.')
     if (res.error) return setErr(res.error)
     onDone()
   }
