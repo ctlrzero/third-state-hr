@@ -6,6 +6,7 @@ import { EmptyState } from '../components/EmptyState'
 import { DOC_TYPES, canRoleSeeDocType, docTypeLabel, expiryStatus, type ExpiryStatus } from '../lib/documents'
 import type { DocumentReviewStatus, Employee, EmployeeDocument } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { confirmDialog } from '../lib/confirm'
 
 const BUCKET = 'employee-documents'
 
@@ -158,7 +159,7 @@ export default function Documents() {
   }
 
   async function handleArchive(doc: EmployeeDocument) {
-    if (!confirm(`Archive this ${docTypeLabel(doc.doc_type)}? It will stay on record but stop showing as current.`)) return
+    if (!(await confirmDialog(`Archive this ${docTypeLabel(doc.doc_type)}? It will stay on record but stop showing as current.`))) return
     const { error: rpcError } = await supabase.rpc('archive_document', { p_document_id: doc.id })
     if (rpcError) {
       setError(rpcError.message)
@@ -168,7 +169,7 @@ export default function Documents() {
   }
 
   async function handleDiscardPending(doc: EmployeeDocument) {
-    if (!confirm('Discard this pending upload? This cannot be undone.')) return
+    if (!(await confirmDialog('Discard this pending upload? This cannot be undone.'))) return
     // Storage RLS requires the row to still exist (pending_review, not
     // current) at the moment the object is removed, so remove the file
     // before deleting the row, not after.

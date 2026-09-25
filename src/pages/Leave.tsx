@@ -7,6 +7,7 @@ import { EmptyState } from '../components/EmptyState'
 import { AccrualPolicyPanel } from '../components/AccrualPolicyPanel'
 import type { LeaveBalance, LeaveRequest, LeaveType } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { confirmDialog } from '../lib/confirm'
 
 const LEAVE_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'risk'> = {
   pending: 'warning',
@@ -318,7 +319,7 @@ function MyLeave() {
   // idempotent (a repeat call on an already-cancelled request is a no-op),
   // so a duplicate click can never double-release the reserved balance.
   async function handleCancel(id: string) {
-    if (!confirm('Cancel this leave request? Any balance held for it will be released.')) return
+    if (!(await confirmDialog('Cancel this leave request? Any balance held for it will be released.'))) return
     setBusyId(id)
     setError(null)
     const { error: rpcError } = await supabase.rpc('cancel_leave_request', { p_request_id: id, p_reason: null })

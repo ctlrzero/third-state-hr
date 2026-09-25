@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AppShell } from './components/AppShell'
 import { AccessDenied, Skeleton } from './components/ui'
+import { ConfirmHost } from './components/ConfirmHost'
 import { EnvironmentBanner } from './components/EnvironmentBanner'
 import { canAccessRoute } from './lib/nav'
 import SignIn from './pages/SignIn'
@@ -84,6 +85,8 @@ function App() {
     <BrowserRouter>
       {/* Renders nothing unless VITE_APP_ENV === 'uat'. */}
       <EnvironmentBanner />
+      {/* Renders the shared confirmation modal used instead of window.confirm(). */}
+      <ConfirmHost />
       <AuthProvider>
         <Routes>
           <Route path="/sign-in" element={<SignIn />} />

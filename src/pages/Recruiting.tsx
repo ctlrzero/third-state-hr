@@ -18,6 +18,7 @@ import type {
   RequisitionStatus,
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { confirmDialog } from '../lib/confirm'
 
 const REQ_STATUSES: { value: RequisitionStatus; label: string }[] = [
   { value: 'draft', label: 'Draft' },
@@ -1602,7 +1603,7 @@ function OfferSection({
 
   async function handleConvert() {
     if (!offer) return
-    if (!confirm('Convert this accepted offer into a new employee record (pre-boarding)?')) return
+    if (!(await confirmDialog('Convert this accepted offer into a new employee record (pre-boarding)?'))) return
     setBusy(true)
     setError(null)
     const { error: rpcError } = await supabase.rpc('convert_offer_to_employee', { p_offer_id: offer.id })

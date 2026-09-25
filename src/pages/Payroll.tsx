@@ -20,6 +20,7 @@ import type {
   TipsPool,
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { confirmDialog } from '../lib/confirm'
 
 const TIP_RULES: { value: TipDistributionRule; label: string }[] = [
   { value: 'equal', label: 'Split equally' },
@@ -427,7 +428,7 @@ function PayrollRunDetail({
 
   async function handleCreateRevision() {
     if (!run) return
-    if (!confirm('Create a new draft revision of this run for corrections? The original run and its payslips stay unchanged.')) {
+    if (!(await confirmDialog('Create a new draft revision of this run for corrections? The original run and its payslips stay unchanged.'))) {
       return
     }
     setRevisionBusy(true)
@@ -502,9 +503,9 @@ function PayrollRunDetail({
     const next = run.status === 'draft' ? 'in_review' : run.status === 'in_review' ? 'approved' : 'paid'
     if (
       next === 'approved' &&
-      !confirm(
+      !(await confirmDialog(
         'Approving locks this run: timesheets, tips and the calculation can no longer be changed. Continue?'
-      )
+      ))
     ) {
       return
     }

@@ -15,6 +15,7 @@ import type {
   ShiftSwapRequest,
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { confirmDialog } from '../lib/confirm'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -129,7 +130,7 @@ function ScheduleAdmin() {
   )
 
   async function handleCancelShift(id: string) {
-    if (!confirm('Cancel this shift?')) return
+    if (!(await confirmDialog('Cancel this shift?'))) return
     const { error: updateError } = await supabase.from('shifts').update({ status: 'cancelled' }).eq('id', id)
     if (updateError) {
       setError(updateError.message)
@@ -139,7 +140,7 @@ function ScheduleAdmin() {
   }
 
   async function handleDeactivateTemplate(id: string) {
-    if (!confirm('Deactivate this recurring template? Existing generated shifts are unaffected.')) return
+    if (!(await confirmDialog('Deactivate this recurring template? Existing generated shifts are unaffected.'))) return
     const { error: rpcError } = await supabase.rpc('deactivate_schedule_template', { p_template_id: id })
     if (rpcError) {
       setError(rpcError.message)
@@ -412,7 +413,7 @@ function RecurringTemplatesPanel({
 
   async function handlePublish() {
     if (!genLocationId) return
-    if (!confirm('Publish all draft shifts in this branch and period? They will become visible to employees.')) return
+    if (!(await confirmDialog('Publish all draft shifts in this branch and period? They will become visible to employees.'))) return
     setBusy('publish')
     const { error } = await supabase.rpc('publish_schedule_period', {
       p_location_id: genLocationId,
