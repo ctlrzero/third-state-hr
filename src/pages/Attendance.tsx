@@ -513,8 +513,12 @@ function CorrectionDrawer({
 
   const newInIso = fromDubaiLocalInput(newIn)
   const newOutIso = fromDubaiLocalInput(newOut)
-  const changedIn = Boolean(newInIso) && newInIso !== (actualIn ? new Date(actualIn).toISOString() : null)
-  const changedOut = Boolean(newOutIso) && newOutIso !== (actualOut ? new Date(actualOut).toISOString() : null)
+  // Compare against the minute-precision value the input started with, not the
+  // full-precision timestamp: datetime-local drops seconds, so a field the
+  // manager never touched must not be re-sent (it would silently shift the
+  // stored time by up to 59 s).
+  const changedIn = Boolean(newInIso) && newIn !== toDubaiLocalInput(actualIn)
+  const changedOut = Boolean(newOutIso) && newOut !== toDubaiLocalInput(actualOut)
 
   function validate() {
     const e: typeof errors = {}
