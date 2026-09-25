@@ -13,6 +13,8 @@ export interface Profile {
   entity_id: string | null
   location_id: string | null
   created_at: string
+  /** false once access is revoked / the employee is inactivated. */
+  is_active?: boolean | null
 }
 
 export interface Entity {

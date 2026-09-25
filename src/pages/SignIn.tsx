@@ -1,108 +1,149 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
-import { useAuth } from '../auth/AuthContext'
+import { SESSION_EXPIRED_KEY, useAuth } from '../auth/AuthContext'
+import { Alert } from '../components/ui'
 
-// UX-01 Sign-in, identity and entity selection.
-// No sensitive data renders before a successful authentication result; the
-// entity switcher itself lives in the app shell context bar once signed in,
-// not on this screen, so a failed/partial login can never leak scope.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+function readExpiredFlag(): boolean {
+  try {
+    return sessionStorage.getItem(SESSION_EXPIRED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+// UX-01 Sign-in. No sensitive data renders before a successful
+// authentication result; the entity switcher lives in the app shell, so a
+// failed/partial login can never leak scope.
 export default function SignIn() {
   const { status, signInWithPassword } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
+  const [sessionExpired] = useState(readExpiredFlag)
 
-  if (status === 'ready') {
-    return <Navigate to="/" replace />
-  }
+  if (status === 'ready') return <Navigate to="/" replace />
+  // Authenticated but inactive / not linked to a workspace.
+  if (status === 'no-assignment') return <Navigate to="/no-assignment" replace />
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    const fe: typeof fieldErrors = {}
+    if (!EMAIL_RE.test(email.trim())) fe.email = 'Enter your work email address.'
+    if (!password) fe.password = 'Enter your password.'
+    setFieldErrors(fe)
+    if (Object.keys(fe).length) return
     setError(null)
     setSubmitting(true)
-    const { error } = await signInWithPassword(email.trim(), password)
+    const { error: authError } = await signInWithPassword(email.trim(), password)
     setSubmitting(false)
-
-    if (error) {
+    if (authError) {
       // Supabase returns "Invalid login credentials" for both unknown email and
-      // wrong password — do not disclose which, and never mention employee lookup.
-      setError('Invalid email or password. Please try again.')
+      // wrong password — never disclose which.
+      if (/invalid login credentials|invalid credentials/i.test(authError)) {
+        setError('Invalid email or password. Please try again.')
+      } else if (/email not confirmed/i.test(authError)) {
+        setError('Your account has not been activated yet. Check your email for the invitation link.')
+      } else if (/fetch|network|failed to/i.test(authError)) {
+        setError("We couldn't reach the server. Check your connection and try again.")
+      } else if (/too many|rate limit/i.test(authError)) {
+        setError('Too many attempts. Please wait a minute and try again.')
+      } else {
+        setError('Sign-in failed. Please try again.')
+      }
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-alt px-4">
-      <div className="w-full max-w-sm rounded-[14px] border border-border bg-surface p-8 shadow-card">
+    <div className="flex min-h-screen items-center justify-center bg-surface-alt px-4 py-8">
+      <main className="w-full max-w-sm rounded-[14px] border border-border bg-surface p-6 shadow-card sm:p-8">
         <div className="mb-8 text-center">
-          <div
-            className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-[11px] text-[11px] font-extrabold text-white shadow-[0_8px_18px_rgba(37,99,235,0.22)]"
-            style={{ backgroundImage: 'linear-gradient(145deg, #1f62eb, #164dc2)' }}
-          >
+          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-[11px] bg-brand-primary text-[11px] font-extrabold text-white">
             TS
           </div>
           <h1 className="text-xl font-semibold text-ink">Third State Café HR</h1>
           <p className="mt-1 text-sm text-muted">Sign in to your workspace</p>
         </div>
 
+        {sessionExpired && !error && (
+          <div className="mb-4">
+            <Alert tone="info">Your session has expired. Please sign in again.</Alert>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
-            <label htmlFor="email" className="mb-1 block text-sm font-medium text-ink">
+            <label htmlFor="email" className="label">
               Work email
             </label>
             <input
               id="email"
               type="email"
+              inputMode="email"
               autoComplete="username"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-border px-3 py-2.5 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-              placeholder="you@thirdstate.ae"
+              aria-invalid={Boolean(fieldErrors.email)}
+              aria-describedby={fieldErrors.email ? 'email-err' : undefined}
+              className="input"
             />
+            {fieldErrors.email && (
+              <p id="email-err" className="mt-1 text-xs font-medium text-brand-risk-text">
+                {fieldErrors.email}
+              </p>
+            )}
           </div>
 
           <div>
-            <div className="mb-1 flex items-center justify-between">
-              <label htmlFor="password" className="block text-sm font-medium text-ink">
-                Password
-              </label>
+            <label htmlFor="password" className="label">
+              Password
+            </label>
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby={fieldErrors.password ? 'password-err' : undefined}
+                className="input pr-20"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-pressed={showPassword}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute inset-y-0 right-0 min-w-11 px-3 text-sm font-semibold text-brand-blue"
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
             </div>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-border px-3 py-2.5 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-              placeholder="••••••••"
-            />
+            {fieldErrors.password && (
+              <p id="password-err" className="mt-1 text-xs font-medium text-brand-risk-text">
+                {fieldErrors.password}
+              </p>
+            )}
           </div>
 
-          {error && (
-            <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
-              {error}
-            </p>
-          )}
+          {error && <Alert tone="error">{error}</Alert>}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {submitting && (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
-            )}
+          <button type="submit" disabled={submitting} className="btn-primary w-full">
+            {submitting && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />}
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
         <p className="mt-6 text-center text-xs text-muted">
-          Lost access to your account? Contact your entity owner or admin to recover access — self
-          sign-up is not available.
+          Lost access to your account? Contact your entity owner or admin to recover access — self sign-up is not available.
         </p>
-      </div>
+      </main>
     </div>
   )
 }

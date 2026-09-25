@@ -321,8 +321,8 @@ function InterviewDetailDrawer({
 
                   <div className="space-y-3">
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-ink">Recommendation</label>
-                      <select
+                      <label htmlFor="myinterviews-recommendation-1" className="mb-1 block text-sm font-medium text-ink">Recommendation</label>
+                      <select id="myinterviews-recommendation-1"
                         value={recommendation}
                         disabled={readOnly}
                         onChange={(e) => setRecommendation(e.target.value as InterviewRecommendation)}
@@ -342,6 +342,7 @@ function InterviewDetailDrawer({
                         <div key={c.key}>
                           <label className="mb-1 block text-xs font-medium text-ink">{c.label}</label>
                           <select
+                            aria-label={c.label}
                             value={ratings[c.key] ?? ''}
                             disabled={readOnly}
                             onChange={(e) => setRatings((r) => ({ ...r, [c.key]: Number(e.target.value) }))}
@@ -359,8 +360,8 @@ function InterviewDetailDrawer({
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-ink">Strengths</label>
-                      <textarea
+                      <label htmlFor="myinterviews-strengths-2" className="mb-1 block text-sm font-medium text-ink">Strengths</label>
+                      <textarea id="myinterviews-strengths-2"
                         value={strengths}
                         disabled={readOnly}
                         onChange={(e) => setStrengths(e.target.value)}
@@ -369,8 +370,8 @@ function InterviewDetailDrawer({
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-ink">Concerns</label>
-                      <textarea
+                      <label htmlFor="myinterviews-concerns-3" className="mb-1 block text-sm font-medium text-ink">Concerns</label>
+                      <textarea id="myinterviews-concerns-3"
                         value={concerns}
                         disabled={readOnly}
                         onChange={(e) => setConcerns(e.target.value)}
@@ -379,8 +380,8 @@ function InterviewDetailDrawer({
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-sm font-medium text-ink">Notes</label>
-                      <textarea
+                      <label htmlFor="myinterviews-notes-4" className="mb-1 block text-sm font-medium text-ink">Notes</label>
+                      <textarea id="myinterviews-notes-4"
                         value={notes}
                         disabled={readOnly}
                         onChange={(e) => setNotes(e.target.value)}

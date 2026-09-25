@@ -1,9 +1,15 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Entity, Profile } from '../types/db'
 
 type AuthStatus = 'loading' | 'signed-out' | 'no-assignment' | 'ready'
+
+/** Why a signed-in user has no usable workspace (drives the /no-assignment copy). */
+export type NoAssignmentReason = 'inactive' | 'unassigned' | null
+
+/** sessionStorage flag set when Supabase ends a session the user didn't sign out of. */
+export const SESSION_EXPIRED_KEY = 'ts-hr:session-expired'
 
 interface AuthContextValue {
   status: AuthStatus
@@ -25,6 +31,7 @@ interface AuthContextValue {
    * those checks already allow.
    */
   hasInterviewAssignments: boolean
+  noAssignmentReason: NoAssignmentReason
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -41,22 +48,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeEntityId, setActiveEntityIdState] = useState<string | null>(null)
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [hasInterviewAssignments, setHasInterviewAssignments] = useState(false)
+  const [noAssignmentReason, setNoAssignmentReason] = useState<NoAssignmentReason>(null)
+  const manualSignOut = useRef(false)
 
   async function loadProfileAndEntities(currentSession: Session) {
     const userId = currentSession.user.id
 
     const { data: profileRow, error: profileError } = await supabase
       .from('profiles')
-      .select('id, full_name, role, entity_id, location_id, created_at')
+      .select('id, full_name, role, entity_id, location_id, created_at, is_active')
       .eq('id', userId)
       .maybeSingle()
 
     if (profileError || !profileRow) {
       setProfile(null)
       setEntities([])
+      setNoAssignmentReason('unassigned')
       setStatus('no-assignment')
       return
     }
+
+    // Revoked / inactivated accounts: the backend already resolves them to no
+    // role, so every RPC denies them — show the dedicated state, not a shell.
+    if ((profileRow as Profile).is_active === false) {
+      setProfile(null)
+      setEntities([])
+      setNoAssignmentReason('inactive')
+      setStatus('no-assignment')
+      return
+    }
+    setNoAssignmentReason(null)
 
     setProfile(profileRow as Profile)
 
@@ -86,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       null
 
     setActiveEntityIdState(nextActiveEntity)
+    if (authorisedEntities.length === 0) setNoAssignmentReason('unassigned')
     setStatus(authorisedEntities.length > 0 ? 'ready' : 'no-assignment')
   }
 
@@ -108,10 +130,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus('loading')
         await loadProfileAndEntities(newSession)
       } else {
+        // A session that ends without the user pressing Sign out (refresh
+        // token expired/revoked) gets a friendly notice on the sign-in page.
+        if (!manualSignOut.current && _event === 'SIGNED_OUT') {
+          try {
+            sessionStorage.setItem(SESSION_EXPIRED_KEY, '1')
+          } catch {
+            /* storage unavailable — notice is best-effort */
+          }
+        }
+        manualSignOut.current = false
         setProfile(null)
         setEntities([])
         setActiveEntityIdState(null)
         setHasInterviewAssignments(false)
+        setNoAssignmentReason(null)
         localStorage.removeItem(LAST_ENTITY_KEY)
         setStatus('signed-out')
       }
@@ -130,6 +163,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signInWithPassword(email: string, password: string) {
+    try {
+      sessionStorage.removeItem(SESSION_EXPIRED_KEY)
+    } catch {
+      /* ignore */
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error: error?.message ?? null }
   }
@@ -137,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function signOut() {
     // Clear anything scope-sensitive before the network round trip completes
     // so a slow connection can't briefly show stale, previously-authorised data.
+    manualSignOut.current = true
     setProfile(null)
     setEntities([])
     setActiveEntityIdState(null)
@@ -158,11 +197,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activeEntityId,
       setActiveEntityId,
       hasInterviewAssignments,
+      noAssignmentReason,
       signInWithPassword,
       signOut,
       refreshProfile,
     }),
-    [status, session, profile, entities, activeEntityId, hasInterviewAssignments]
+    [status, session, profile, entities, activeEntityId, hasInterviewAssignments, noAssignmentReason]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

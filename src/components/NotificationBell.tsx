@@ -23,6 +23,8 @@ const TARGET_ROUTE: Record<string, string> = {
   shift_swap_requests: '/schedules',
   payslips: '/payroll',
   interviews: '/my-interviews',
+  attendance_records: '/attendance',
+  shifts: '/schedules',
 }
 
 function timeAgo(iso: string): string {
@@ -119,8 +121,9 @@ export function NotificationBell() {
     <div className="relative" ref={containerRef}>
       <button
         onClick={togglePanel}
-        aria-label="Notifications"
-        className="relative rounded-lg border border-border p-2 text-muted transition hover:border-brand-blue/30 hover:text-ink"
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+        aria-expanded={open}
+        className="relative flex h-11 w-11 items-center justify-center rounded-lg border border-border text-muted transition hover:border-brand-blue/30 hover:text-ink"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.75}>
           <path
@@ -178,6 +181,15 @@ export function NotificationBell() {
               ))}
             </ul>
           )}
+          <button
+            onClick={() => {
+              setOpen(false)
+              navigate('/notifications')
+            }}
+            className="mt-2 flex min-h-11 w-full items-center justify-center rounded-lg text-sm font-semibold text-brand-blue hover:bg-surface-alt"
+          >
+            See all notifications
+          </button>
         </div>
       )}
     </div>

@@ -1,39 +1,61 @@
 @import "tailwindcss";
 
 /*
-  Third State Cafe HR — design tokens
-  Re-themed to match the reference build at
-  third-state-hr.aishalzaabi.chatgpt.site (extracted from its live :root
-  custom properties + computed styles).
+  Third State Cafe HR — design tokens (UI/UX Specification v1.0, section 4).
+
+  Spec palette:
+    primary deep green  #123F3B   (brand mark, headings accent, active nav)
+    action teal         #0F766E   (primary actions, links, focus)
+    info blue           #2E74B5
+    warning amber       #B86505
+    risk red            #9B1C1C
+    ink                 #172033
+    muted               #5F6B7A
+    surfaces            #FFFFFF / #F5F7FA
+    border              #DCE4EE
+
+  Existing class names (brand-blue-*, brand-action-*, …) are kept so the
+  older pages pick up the new palette without a mass rename:
+    brand-blue*   → action teal ramp (was the "primary accent" slot)
+    brand-info*   → info blue ramp (StatusBadge "info" tone)
 */
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 
-  --color-brand-blue: #2563eb; /* primary accent: active nav, links, primary actions */
-  --color-brand-blue-soft: #edf3ff;
-  --color-brand-blue-text: #1d4ed8; /* darker stop for text on blue-soft */
-  --color-brand-blue-dark: #164dc2; /* gradient end for brand mark / active nav pill */
+  --color-brand-primary: #123f3b;
+  --color-brand-primary-soft: #e7efee;
 
-  --color-brand-action: #0f9f8f; /* teal: positive/active status */
-  --color-brand-action-soft: #e8f8f6;
-  --color-brand-action-text: #087f73; /* darker stop for text on action-soft */
+  /* action teal — primary actions, links, active states */
+  --color-brand-blue: #0f766e;
+  --color-brand-blue-soft: #e6f4f2;
+  --color-brand-blue-text: #0b5e58;
+  --color-brand-blue-dark: #123f3b;
 
-  --color-brand-warning: #d97706; /* amber: pending / due soon (icons, text) */
-  --color-brand-warning-soft: #fff6e8;
-  --color-brand-warning-solid: #b86505; /* amber: solid buttons */
+  --color-brand-info: #2e74b5;
+  --color-brand-info-soft: #eaf2fb;
+  --color-brand-info-text: #245d92;
 
-  --color-brand-risk: #dc2626; /* red: expired / destructive — not in reference, kept consistent with its soft-pill style */
-  --color-brand-risk-soft: #fef2f2;
-  --color-brand-risk-text: #b91c1c; /* darker stop for text on risk-soft */
+  /* success / positive status */
+  --color-brand-action: #0f766e;
+  --color-brand-action-soft: #e6f4f2;
+  --color-brand-action-text: #0b5e58;
 
-  --color-ink: #1c2733; /* primary text */
-  --color-muted: #64748b; /* secondary text / metadata */
-  --color-muted-strong: #455569; /* inactive nav labels */
+  --color-brand-warning: #b86505;
+  --color-brand-warning-soft: #fff4e5;
+  --color-brand-warning-solid: #8f4e04; /* AA text on warning-soft / white */
+
+  --color-brand-risk: #9b1c1c;
+  --color-brand-risk-soft: #fdf0f0;
+  --color-brand-risk-text: #9b1c1c;
+
+  --color-ink: #172033;
+  --color-muted: #5f6b7a;
+  --color-muted-strong: #414c5c;
   --color-surface: #ffffff;
   --color-surface-alt: #f5f7fa;
-  --color-border: #e3e8ef;
+  --color-border: #dce4ee;
 
-  --shadow-card: 0 10px 30px rgba(28, 39, 51, 0.05);
+  --shadow-card: 0 10px 30px rgba(23, 32, 51, 0.05);
 }
 
 @layer base {
@@ -45,7 +67,117 @@
     @apply bg-surface-alt text-ink antialiased;
   }
 
+  /* 16px minimum body text on small screens (spec 7 / WCAG reflow). Also
+     prevents iOS zoom-on-focus for form controls. */
+  @media (max-width: 767px) {
+    body {
+      font-size: 16px;
+    }
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-brand-blue);
+    outline-offset: 2px;
+  }
+
   ::selection {
     @apply bg-brand-blue/20;
+  }
+}
+
+@layer components {
+  .btn,
+  .btn-primary,
+  .btn-secondary,
+  .btn-danger,
+  .btn-ghost {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply bg-brand-blue text-white hover:bg-brand-primary;
+  }
+  .btn-secondary {
+    @apply border border-border bg-surface text-ink hover:border-brand-blue/40;
+  }
+  .btn-danger {
+    @apply bg-brand-risk text-white hover:opacity-90;
+  }
+  .btn-ghost {
+    @apply text-brand-blue hover:bg-brand-blue-soft;
+  }
+  .input {
+    @apply block min-h-11 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20;
+  }
+  .input[aria-invalid='true'] {
+    border-color: var(--color-brand-risk);
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-ink;
+  }
+  .card {
+    @apply rounded-[14px] border border-border bg-surface p-4 shadow-card;
+  }
+}
+
+/* Legacy tables: stack into labelled cards below 768px. Each <td> carries
+   data-label with its column header. */
+@media (max-width: 767px) {
+  table.table-stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  table.table-stack,
+  table.table-stack tbody,
+  table.table-stack tfoot,
+  table.table-stack tr,
+  table.table-stack td {
+    display: block;
+    width: 100%;
+  }
+  table.table-stack tr {
+    border-bottom: 1px solid var(--color-border);
+    padding: 0.5rem 0.75rem;
+  }
+  table.table-stack td {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.35rem 0 !important;
+    text-align: right;
+  }
+  table.table-stack td::before {
+    content: attr(data-label);
+    color: var(--color-muted);
+    font-weight: 500;
+    text-align: left;
+  }
+  table.table-stack td[data-label='']::before {
+    content: none;
+  }
+}
+
+/* ≥44px touch targets for the older screens' compact controls. In the base
+   layer so explicit utilities (e.g. min-h-14 on the Clock button) still win. */
+@layer base {
+  @media (max-width: 767px) {
+  main button,
+  main select,
+  main input:not([type='checkbox']):not([type='radio']):not([type='file']),
+  main textarea {
+    min-height: 44px;
+  }
+  main input[type='checkbox'],
+  main input[type='radio'] {
+    min-width: 20px;
+    min-height: 20px;
+  }
   }
 }

@@ -5,6 +5,8 @@ import { useAuth } from '../auth/AuthContext'
 import { KpiCard } from '../components/KpiCard'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
+import { GroupOverview } from '../components/GroupOverview'
+import { fmtDate } from '../lib/format'
 
 type ActionKind = 'leave' | 'document' | 'change_request' | 'shift_swap'
 
@@ -51,6 +53,9 @@ export default function Dashboard() {
     if (!activeEntityId) return
     let cancelled = false
     setLoading(true)
+    // Switching entity: never show the previous entity's rows while loading.
+    setActions([])
+    setCoverage([])
 
     async function load() {
       const today = new Date()
@@ -120,8 +125,8 @@ export default function Dashboard() {
           title: `${employeeName} — ${doc.doc_type.replace('_', ' ')}`,
           subtitle: doc.expiry_date
             ? isExpired
-              ? `Expired ${doc.expiry_date}`
-              : `Expires ${doc.expiry_date}`
+              ? `Expired ${fmtDate(doc.expiry_date)}`
+              : `Expires ${fmtDate(doc.expiry_date)}`
             : 'Expiry date missing',
           status: isExpired ? 'expired' : 'expiring',
           href: '/documents',
@@ -136,7 +141,7 @@ export default function Dashboard() {
           id: `leave-${req.id}`,
           kind: 'leave',
           title: `${employeeName} — leave request`,
-          subtitle: `${req.start_date} → ${req.end_date}`,
+          subtitle: `${fmtDate(req.start_date)} → ${fmtDate(req.end_date)}`,
           status: req.status,
           href: '/leave',
           urgent: false,
@@ -176,6 +181,8 @@ export default function Dashboard() {
           <p className="text-xs text-muted">Entity-level workforce, compliance and payroll status</p>
         </div>
       </div>
+
+      {profile?.role === 'owner' && entities.length > 1 && <GroupOverview entityCount={entities.length} />}
 
       <div className="flex items-center justify-between gap-3 rounded-[14px] border border-border bg-surface p-[18px] shadow-card">
         <div className="flex min-w-0 items-center gap-3">
@@ -259,10 +266,7 @@ export default function Dashboard() {
                   </div>
                   <div className="flex shrink-0 items-center gap-3">
                     <StatusBadge status={item.status} />
-                    <Link
-                      to={item.href}
-                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
-                    >
+                    <Link to={item.href} className="btn-secondary" aria-label={`Open ${item.title}`}>
                       Open
                     </Link>
                   </div>

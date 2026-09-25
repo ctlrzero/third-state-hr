@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
+import MyPayslips from './MyPayslips'
+import { adminPayslipDetail, buildPayslipPdf, payslipFilename } from '../lib/payslipPdf'
+import { downloadBytes } from '../lib/pdf'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type {
@@ -77,7 +80,7 @@ function deductionTypeLabel(value: string) {
 function money(n: number | null | undefined, currency: string) {
   const value = n ?? 0
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(value)
+    return new Intl.NumberFormat('en-AE', { style: 'currency', currency }).format(value)
   } catch {
     return value.toFixed(2)
   }
@@ -97,7 +100,8 @@ export default function Payroll() {
   if (isManager) {
     return <PayrollManager activeEntityId={activeEntityId} currency={currency} />
   }
-  return <MyPay currency={currency} />
+  // Staff: own published payslips with PDF download (get_my_payslips).
+  return <MyPayslips />
 }
 
 // ---------------------------------------------------------------------------
@@ -320,8 +324,8 @@ function NewRunModal({
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Period start</label>
-              <input
+              <label htmlFor="payroll-period-start-1" className="mb-1 block text-sm font-medium text-ink">Period start</label>
+              <input id="payroll-period-start-1"
                 type="date"
                 required
                 value={periodStart}
@@ -330,8 +334,8 @@ function NewRunModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Period end</label>
-              <input
+              <label htmlFor="payroll-period-end-2" className="mb-1 block text-sm font-medium text-ink">Period end</label>
+              <input id="payroll-period-end-2"
                 type="date"
                 required
                 value={periodEnd}
@@ -341,8 +345,8 @@ function NewRunModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Tip distribution rule</label>
-            <select
+            <label htmlFor="payroll-tip-distribution-rule-3" className="mb-1 block text-sm font-medium text-ink">Tip distribution rule</label>
+            <select id="payroll-tip-distribution-rule-3"
               value={tipRule}
               onChange={(e) => setTipRule(e.target.value as TipDistributionRule)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -398,6 +402,7 @@ function PayrollRunDetail({
   onBack: () => void
   onNotice: (msg: string) => void
 }) {
+  const { entities } = useAuth()
   const [run, setRun] = useState<PayrollRun | null>(null)
   const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'full_name'>[]>([])
   const [locations, setLocations] = useState<Pick<Location, 'id' | 'name'>[]>([])
@@ -435,6 +440,26 @@ function PayrollRunDetail({
     onNotice('Revision run created — open it from the payroll runs list to make corrections.')
     void data
     onBack()
+  }
+
+  function downloadAdminPayslip(p: Payslip) {
+    if (!run) return
+    const entity = entities.find((e) => e.id === summary.entity_id)
+    const ts = timesheets.find((t) => t.employee_id === p.employee_id)
+    const detail = adminPayslipDetail({
+      payslip: p,
+      run,
+      currency,
+      employer: {
+        entity_id: summary.entity_id,
+        name: entity?.name ?? 'Employer',
+        trade_license_no: entity?.trade_license_no ?? null,
+        emirate: entity?.emirate ?? null,
+      },
+      deductions: deductions.filter((d) => d.employee_id === p.employee_id),
+      hours: ts ? { regular_hours: ts.regular_hours, overtime_hours: ts.overtime_hours, holiday_hours: ts.holiday_hours } : null,
+    })
+    downloadBytes(buildPayslipPdf(detail), payslipFilename(detail))
   }
 
   async function load() {
@@ -683,7 +708,7 @@ function PayrollRunDetail({
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+            <table className="table-stack w-full text-left text-sm">
               <thead className="border-b border-border text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Employee</th>
@@ -693,27 +718,43 @@ function PayrollRunDetail({
                   <th className="py-2 pr-3 font-medium">Tips</th>
                   <th className="py-2 pr-3 font-medium">Deductions</th>
                   <th className="py-2 pr-3 font-medium">Net pay</th>
+                  <th className="py-2 pr-3 font-medium">
+                    <span className="sr-only">Payslip PDF</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {payslips.map((p) => (
                   <tr key={p.id}>
-                    <td className="py-2 pr-3 font-medium text-ink">{p.employees?.full_name ?? '—'}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.base_pay, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.overtime_pay, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.holiday_pay, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.tips_share, currency)}</td>
-                    <td className="py-2 pr-3 text-muted">{money(p.total_deductions, currency)}</td>
-                    <td className="py-2 pr-3 font-semibold text-ink">{money(p.net_pay, currency)}</td>
+                    <td data-label="Employee" className="py-2 pr-3 font-medium text-ink">{p.employees?.full_name ?? '—'}</td>
+                    <td data-label="Base" className="py-2 pr-3 text-muted">{money(p.base_pay, currency)}</td>
+                    <td data-label="Overtime" className="py-2 pr-3 text-muted">{money(p.overtime_pay, currency)}</td>
+                    <td data-label="Holiday" className="py-2 pr-3 text-muted">{money(p.holiday_pay, currency)}</td>
+                    <td data-label="Tips" className="py-2 pr-3 text-muted">{money(p.tips_share, currency)}</td>
+                    <td data-label="Deductions" className="py-2 pr-3 text-muted">{money(p.total_deductions, currency)}</td>
+                    <td data-label="Net pay" className="py-2 pr-3 font-semibold text-ink">{money(p.net_pay, currency)}</td>
+                    <td data-label="" className="py-2 pr-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => downloadAdminPayslip(p)}
+                        disabled={!run || (run.status !== 'approved' && run.status !== 'paid')}
+                        title={run && run.status !== 'approved' && run.status !== 'paid' ? 'Available once the run is approved' : undefined}
+                        aria-label={`Download payslip PDF for ${p.employees?.full_name ?? 'employee'}`}
+                        className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30 disabled:opacity-60"
+                      >
+                        PDF
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="border-t border-border font-semibold text-ink">
-                  <td className="py-2 pr-3" colSpan={6}>
+                  <td data-label="" className="py-2 pr-3 max-md:hidden" colSpan={6}>
                     Total net pay
                   </td>
-                  <td className="py-2 pr-3">{money(totalNet, currency)}</td>
+                  <td data-label="Total net pay" className="py-2 pr-3">{money(totalNet, currency)}</td>
+                  <td data-label="" className="max-md:hidden" />
                 </tr>
               </tfoot>
             </table>
@@ -803,7 +844,7 @@ function TimesheetSection({
         <p className="mb-3 text-sm text-muted">No hours recorded for this run yet.</p>
       ) : (
         <div className="mb-3 overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="table-stack w-full text-left text-sm">
             <thead className="border-b border-border text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="py-2 pr-3 font-medium">Employee</th>
@@ -816,12 +857,12 @@ function TimesheetSection({
             <tbody className="divide-y divide-border">
               {entries.map((t) => (
                 <tr key={t.id}>
-                  <td className="py-2 pr-3 font-medium text-ink">{t.employees?.full_name ?? '—'}</td>
-                  <td className="py-2 pr-3 text-muted">{t.regular_hours}</td>
-                  <td className="py-2 pr-3 text-muted">{t.overtime_hours}</td>
-                  <td className="py-2 pr-3 text-muted">{t.holiday_hours}</td>
+                  <td data-label="Employee" className="py-2 pr-3 font-medium text-ink">{t.employees?.full_name ?? '—'}</td>
+                  <td data-label="Regular" className="py-2 pr-3 text-muted">{t.regular_hours}</td>
+                  <td data-label="Overtime" className="py-2 pr-3 text-muted">{t.overtime_hours}</td>
+                  <td data-label="Holiday" className="py-2 pr-3 text-muted">{t.holiday_hours}</td>
                   {editable && (
-                    <td className="py-2 pr-3 text-right">
+                    <td data-label="Actions" className="py-2 pr-3 text-right">
                       <button onClick={() => handleDelete(t.id)} className="text-xs font-medium text-brand-risk-text hover:underline">
                         Remove
                       </button>
@@ -837,8 +878,8 @@ function TimesheetSection({
       {editable && availableEmployees.length > 0 && (
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Employee</label>
-            <select
+            <label htmlFor="payroll-employee-4" className="mb-1 block text-xs font-medium text-ink">Employee</label>
+            <select id="payroll-employee-4"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -852,8 +893,8 @@ function TimesheetSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Regular hrs</label>
-            <input
+            <label htmlFor="payroll-regular-hrs-5" className="mb-1 block text-xs font-medium text-ink">Regular hrs</label>
+            <input id="payroll-regular-hrs-5"
               type="number"
               min="0"
               step="0.25"
@@ -863,8 +904,8 @@ function TimesheetSection({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Overtime hrs</label>
-            <input
+            <label htmlFor="payroll-overtime-hrs-6" className="mb-1 block text-xs font-medium text-ink">Overtime hrs</label>
+            <input id="payroll-overtime-hrs-6"
               type="number"
               min="0"
               step="0.25"
@@ -874,8 +915,8 @@ function TimesheetSection({
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Holiday hrs</label>
-            <input
+            <label htmlFor="payroll-holiday-hrs-7" className="mb-1 block text-xs font-medium text-ink">Holiday hrs</label>
+            <input id="payroll-holiday-hrs-7"
               type="number"
               min="0"
               step="0.25"
@@ -990,8 +1031,8 @@ function TipsPoolSection({
       {editable && availableLocations.length > 0 && (
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Location</label>
-            <select
+            <label htmlFor="payroll-location-8" className="mb-1 block text-xs font-medium text-ink">Location</label>
+            <select id="payroll-location-8"
               value={locationId}
               onChange={(e) => setLocationId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1005,8 +1046,8 @@ function TipsPoolSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Pool total</label>
-            <input
+            <label htmlFor="payroll-pool-total-9" className="mb-1 block text-xs font-medium text-ink">Pool total</label>
+            <input id="payroll-pool-total-9"
               type="number"
               min="0"
               step="0.01"
@@ -1124,8 +1165,8 @@ function DeductionsSection({
       {editable && (
         <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Employee</label>
-            <select
+            <label htmlFor="payroll-employee-10" className="mb-1 block text-xs font-medium text-ink">Employee</label>
+            <select id="payroll-employee-10"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1139,8 +1180,8 @@ function DeductionsSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Type</label>
-            <select
+            <label htmlFor="payroll-type-11" className="mb-1 block text-xs font-medium text-ink">Type</label>
+            <select id="payroll-type-11"
               value={deductionType}
               onChange={(e) => setDeductionType(e.target.value)}
               className="rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -1153,8 +1194,8 @@ function DeductionsSection({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-ink">Amount</label>
-            <input
+            <label htmlFor="payroll-amount-12" className="mb-1 block text-xs font-medium text-ink">Amount</label>
+            <input id="payroll-amount-12"
               type="number"
               min="0"
               step="0.01"
@@ -1172,106 +1213,6 @@ function DeductionsSection({
         </form>
       )}
       {error && <p className="mt-2 text-xs text-brand-risk-text">{error}</p>}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Staff: My Pay
-// ---------------------------------------------------------------------------
-
-function MyPay({ currency }: { currency: string }) {
-  const [payslips, setPayslips] = useState<(Payslip & { payroll_runs?: Pick<PayrollRun, 'period_start' | 'period_end' | 'status'> | null })[]>([])
-  const [deductions, setDeductions] = useState<PayslipDeduction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState<string | null>(null)
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true)
-      const [payslipRes, dedRes] = await Promise.all([
-        supabase
-          .from('payslips')
-          .select('id, payroll_run_id, employee_id, base_pay, overtime_pay, holiday_pay, tips_share, total_deductions, net_pay, generated_at, payroll_runs(period_start, period_end, status)')
-          .order('generated_at', { ascending: false }),
-        supabase.from('payslip_deductions').select('id, payroll_run_id, employee_id, deduction_type, amount, notes, created_at'),
-      ])
-      setPayslips((payslipRes.data ?? []) as unknown as typeof payslips)
-      setDeductions((dedRes.data ?? []) as unknown as PayslipDeduction[])
-      setLoading(false)
-    }
-    load()
-  }, [])
-
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-[14px] bg-surface" />
-        ))}
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted">Third State Café</p>
-        <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My pay</h1>
-      </div>
-
-      {payslips.length === 0 ? (
-        <EmptyState title="No payslips yet" description="Your payslips will show up here once payroll has been run for a period you were paid in." />
-      ) : (
-        <ul className="space-y-3">
-          {payslips.map((p) => {
-            const myDeductions = deductions.filter((d) => d.payroll_run_id === p.payroll_run_id && d.employee_id === p.employee_id)
-            const isOpen = expanded === p.id
-            return (
-              <li key={p.id} className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-ink">
-                      {p.payroll_runs?.period_start} – {p.payroll_runs?.period_end}
-                    </p>
-                    {p.payroll_runs?.status && <StatusBadge status={p.payroll_runs.status} />}
-                  </div>
-                  <p className="text-lg font-semibold text-ink">{money(p.net_pay, currency)}</p>
-                </div>
-                <button onClick={() => setExpanded(isOpen ? null : p.id)} className="mt-2 text-xs font-medium text-brand-blue hover:underline">
-                  {isOpen ? 'Hide breakdown' : 'View breakdown'}
-                </button>
-                {isOpen && (
-                  <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3 text-sm sm:grid-cols-4">
-                    <div>
-                      <dt className="text-xs text-muted">Base pay</dt>
-                      <dd className="text-ink">{money(p.base_pay, currency)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Overtime</dt>
-                      <dd className="text-ink">{money(p.overtime_pay, currency)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Holiday</dt>
-                      <dd className="text-ink">{money(p.holiday_pay, currency)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-muted">Tips</dt>
-                      <dd className="text-ink">{money(p.tips_share, currency)}</dd>
-                    </div>
-                    {myDeductions.map((d) => (
-                      <div key={d.id}>
-                        <dt className="text-xs text-muted">{deductionTypeLabel(d.deduction_type)}</dt>
-                        <dd className="text-brand-risk-text">-{money(d.amount, currency)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
     </div>
   )
 }

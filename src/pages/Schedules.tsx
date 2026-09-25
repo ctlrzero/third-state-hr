@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { fmtDayShort, fmtTime } from '../lib/format'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type {
-  AttendanceException,
-  AttendanceRecord,
   Employee,
   Location,
   Position,
@@ -40,13 +40,8 @@ const SWAP_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success
   cancelled: 'neutral',
 }
 
-function fmtTime(t: string) {
-  return t.slice(0, 5)
-}
-
-function fmtDate(d: string) {
-  return new Date(d + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
-}
+// UAE-readable dates / 24h times (Asia/Dubai) shared across the app.
+const fmtDate = (d: string) => fmtDayShort(d)
 
 // Schedules: shifts + shift_swap_requests. Admin (owner/entity_admin/
 // location_manager) get a roster: create/cancel shifts, resolve swap
@@ -223,18 +218,21 @@ function ScheduleAdmin() {
         </div>
       )}
 
-      <select
-        value={locationFilter}
-        onChange={(e) => setLocationFilter(e.target.value)}
-        className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-      >
-        <option value="all">All branches</option>
-        {locations.map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.name}
-          </option>
-        ))}
-      </select>
+      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted w-full sm:w-56">
+        Branch
+        <select
+          value={locationFilter}
+          onChange={(e) => setLocationFilter(e.target.value)}
+          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+        >
+          <option value="all">All branches</option>
+          {locations.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <RecurringTemplatesPanel
         templates={templates}
@@ -252,7 +250,16 @@ function ScheduleAdmin() {
         onError={setError}
       />
 
-      <AttendanceExceptionsPanel locations={locations} onError={setError} />
+      <Link
+        to="/attendance"
+        className="card flex min-h-11 items-center justify-between gap-3 transition hover:border-brand-blue/40"
+      >
+        <span>
+          <span className="block text-sm font-semibold text-ink">Attendance exceptions & corrections</span>
+          <span className="block text-sm text-muted">Review missing clock-outs, late clock-ins and payable time in Attendance.</span>
+        </span>
+        <span className="btn-secondary">Open Attendance</span>
+      </Link>
 
       {loading ? (
         <div className="space-y-2">
@@ -264,7 +271,7 @@ function ScheduleAdmin() {
         <EmptyState title="No shifts in this window" description="Create a shift to start building the roster." />
       ) : (
         <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-card">
-          <table className="w-full text-left text-sm">
+          <table className="table-stack w-full text-left text-sm">
             <thead className="border-b border-border bg-surface-alt text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Date</th>
@@ -279,20 +286,20 @@ function ScheduleAdmin() {
             <tbody className="divide-y divide-border">
               {visibleShifts.map((s) => (
                 <tr key={s.id}>
-                  <td className="px-4 py-3 text-ink">{fmtDate(s.shift_date)}</td>
-                  <td className="px-4 py-3 text-muted">
+                  <td data-label="Date" className="px-4 py-3 text-ink">{fmtDate(s.shift_date)}</td>
+                  <td data-label="Time" className="px-4 py-3 text-muted">
                     {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
                   </td>
-                  <td className="px-4 py-3 text-muted">{s.locations?.name ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted">{s.positions?.title ?? '—'}</td>
-                  <td className="px-4 py-3 text-muted">{s.employees?.full_name ?? '—'}</td>
-                  <td className="px-4 py-3">
+                  <td data-label="Branch" className="px-4 py-3 text-muted">{s.locations?.name ?? '—'}</td>
+                  <td data-label="Role" className="px-4 py-3 text-muted">{s.positions?.title ?? '—'}</td>
+                  <td data-label="Assigned to" className="px-4 py-3 text-muted">{s.employees?.full_name ?? '—'}</td>
+                  <td data-label="Status" className="px-4 py-3">
                     <span className="flex items-center gap-1.5">
                       <StatusBadge status={s.status} tone={SHIFT_STATUS_TONE[s.status]} />
                       {!s.is_published && <StatusBadge status="draft" />}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td data-label="Actions" className="px-4 py-3 text-right">
                     {s.status !== 'cancelled' && (
                       <button onClick={() => handleCancelShift(s.id)} className="text-xs font-medium text-brand-risk hover:underline">
                         Cancel
@@ -458,8 +465,8 @@ function RecurringTemplatesPanel({
 
       <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Branch</label>
-          <select
+          <label htmlFor="schedules-branch-1" className="mb-1 block text-xs font-medium text-ink">Branch</label>
+          <select id="schedules-branch-1"
             value={genLocationId}
             onChange={(e) => setGenLocationId(e.target.value)}
             className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -472,8 +479,8 @@ function RecurringTemplatesPanel({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Period start</label>
-          <input
+          <label htmlFor="schedules-period-start-2" className="mb-1 block text-xs font-medium text-ink">Period start</label>
+          <input id="schedules-period-start-2"
             type="date"
             value={periodStart}
             onChange={(e) => setPeriodStart(e.target.value)}
@@ -481,8 +488,8 @@ function RecurringTemplatesPanel({
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Period end</label>
-          <input
+          <label htmlFor="schedules-period-end-3" className="mb-1 block text-xs font-medium text-ink">Period end</label>
+          <input id="schedules-period-end-3"
             type="date"
             value={periodEnd}
             onChange={(e) => setPeriodEnd(e.target.value)}
@@ -571,8 +578,8 @@ function NewTemplateModal({
         <h2 className="mb-4 text-base font-semibold text-ink">New recurring template</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Branch</label>
-            <select
+            <label htmlFor="schedules-branch-4" className="mb-1 block text-sm font-medium text-ink">Branch</label>
+            <select id="schedules-branch-4"
               value={locationId}
               onChange={(e) => {
                 setLocationId(e.target.value)
@@ -588,8 +595,8 @@ function NewTemplateModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Employee</label>
-            <select
+            <label htmlFor="schedules-employee-5" className="mb-1 block text-sm font-medium text-ink">Employee</label>
+            <select id="schedules-employee-5"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -603,8 +610,8 @@ function NewTemplateModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Day of week</label>
-            <select
+            <label htmlFor="schedules-day-of-week-6" className="mb-1 block text-sm font-medium text-ink">Day of week</label>
+            <select id="schedules-day-of-week-6"
               value={dayOfWeek}
               onChange={(e) => setDayOfWeek(Number(e.target.value))}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -618,8 +625,8 @@ function NewTemplateModal({
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Start</label>
-              <input
+              <label htmlFor="schedules-start-7" className="mb-1 block text-sm font-medium text-ink">Start</label>
+              <input id="schedules-start-7"
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
@@ -627,8 +634,8 @@ function NewTemplateModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">End</label>
-              <input
+              <label htmlFor="schedules-end-8" className="mb-1 block text-sm font-medium text-ink">End</label>
+              <input id="schedules-end-8"
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
@@ -636,8 +643,8 @@ function NewTemplateModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Break (min)</label>
-              <input
+              <label htmlFor="schedules-break-min-9" className="mb-1 block text-sm font-medium text-ink">Break (min)</label>
+              <input id="schedules-break-min-9"
                 type="number"
                 min={0}
                 value={breakMinutes}
@@ -647,8 +654,8 @@ function NewTemplateModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
-            <select
+            <label htmlFor="schedules-role-optional-10" className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
+            <select id="schedules-role-optional-10"
               value={positionId}
               onChange={(e) => setPositionId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -663,8 +670,8 @@ function NewTemplateModal({
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Effective from</label>
-              <input
+              <label htmlFor="schedules-effective-from-11" className="mb-1 block text-sm font-medium text-ink">Effective from</label>
+              <input id="schedules-effective-from-11"
                 type="date"
                 value={effectiveStart}
                 onChange={(e) => setEffectiveStart(e.target.value)}
@@ -672,8 +679,8 @@ function NewTemplateModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Effective to (optional)</label>
-              <input
+              <label htmlFor="schedules-effective-to-optional-12" className="mb-1 block text-sm font-medium text-ink">Effective to (optional)</label>
+              <input id="schedules-effective-to-optional-12"
                 type="date"
                 value={effectiveEnd}
                 onChange={(e) => setEffectiveEnd(e.target.value)}
@@ -773,8 +780,8 @@ function NewShiftModal({
         <h2 className="mb-4 text-base font-semibold text-ink">New shift</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Branch</label>
-            <select
+            <label htmlFor="schedules-branch-13" className="mb-1 block text-sm font-medium text-ink">Branch</label>
+            <select id="schedules-branch-13"
               value={locationId}
               onChange={(e) => {
                 setLocationId(e.target.value)
@@ -791,8 +798,8 @@ function NewShiftModal({
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-1">
-              <label className="mb-1 block text-sm font-medium text-ink">Date</label>
-              <input
+              <label htmlFor="schedules-date-14" className="mb-1 block text-sm font-medium text-ink">Date</label>
+              <input id="schedules-date-14"
                 type="date"
                 value={shiftDate}
                 onChange={(e) => setShiftDate(e.target.value)}
@@ -800,8 +807,8 @@ function NewShiftModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">Start</label>
-              <input
+              <label htmlFor="schedules-start-15" className="mb-1 block text-sm font-medium text-ink">Start</label>
+              <input id="schedules-start-15"
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
@@ -809,8 +816,8 @@ function NewShiftModal({
               />
             </div>
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink">End</label>
-              <input
+              <label htmlFor="schedules-end-16" className="mb-1 block text-sm font-medium text-ink">End</label>
+              <input id="schedules-end-16"
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
@@ -819,8 +826,8 @@ function NewShiftModal({
             </div>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
-            <select
+            <label htmlFor="schedules-role-optional-17" className="mb-1 block text-sm font-medium text-ink">Role (optional)</label>
+            <select id="schedules-role-optional-17"
               value={positionId}
               onChange={(e) => setPositionId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -834,8 +841,8 @@ function NewShiftModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Assign to (optional — leave blank to post as open)</label>
-            <select
+            <label htmlFor="schedules-assign-to-optional-leave-18" className="mb-1 block text-sm font-medium text-ink">Assign to (optional — leave blank to post as open)</label>
+            <select id="schedules-assign-to-optional-leave-18"
               value={employeeId}
               onChange={(e) => setEmployeeId(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -849,8 +856,8 @@ function NewShiftModal({
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
-            <input
+            <label htmlFor="schedules-notes-optional-19" className="mb-1 block text-sm font-medium text-ink">Notes (optional)</label>
+            <input id="schedules-notes-optional-19"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
@@ -877,284 +884,6 @@ function NewShiftModal({
           </div>
         </form>
       </div>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Attendance (Phase 2.7)
-// ---------------------------------------------------------------------------
-
-function AttendanceWidget({
-  onError,
-  onNotice,
-}: {
-  onError: (message: string) => void
-  onNotice: (message: string) => void
-}) {
-  const [openRecord, setOpenRecord] = useState<AttendanceRecord | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState(false)
-
-  async function load() {
-    setLoading(true)
-    // RLS-scoped to the caller's own attendance_records — this is not the
-    // access boundary, just presentation of "do I currently have an open
-    // clock-in".
-    const { data } = await supabase
-      .from('attendance_records')
-      .select('*')
-      .is('clock_out_at', null)
-      .order('clock_in_at', { ascending: false })
-      .limit(1)
-    setOpenRecord(((data ?? [])[0] as unknown as AttendanceRecord) ?? null)
-    setLoading(false)
-  }
-
-  useEffect(() => {
-    load()
-  }, [])
-
-  async function handleClockIn() {
-    setBusy(true)
-    const { data, error } = await supabase.rpc('clock_in')
-    setBusy(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    const shiftId = (data as { shift_id?: string | null } | null)?.shift_id
-    onNotice(shiftId ? 'Clocked in — matched to your shift today.' : 'Clocked in. No matching shift was found for today.')
-    load()
-  }
-
-  async function handleClockOut() {
-    setBusy(true)
-    const { error } = await supabase.rpc('clock_out')
-    setBusy(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    onNotice('Clocked out.')
-    load()
-  }
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-border bg-surface p-4 shadow-card">
-      <div>
-        <h2 className="text-sm font-semibold text-ink">Attendance</h2>
-        <p className="text-xs text-muted">
-          {loading
-            ? 'Checking your status…'
-            : openRecord
-              ? `Clocked in at ${new Date(openRecord.clock_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-              : 'Not currently clocked in.'}
-        </p>
-      </div>
-      {!loading && (
-        <button
-          onClick={openRecord ? handleClockOut : handleClockIn}
-          disabled={busy}
-          className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
-            openRecord ? 'bg-brand-risk hover:opacity-90' : 'bg-brand-blue hover:bg-brand-blue-dark'
-          }`}
-        >
-          {busy ? 'Working…' : openRecord ? 'Clock out' : 'Clock in'}
-        </button>
-      )}
-    </div>
-  )
-}
-
-const EXCEPTION_LABEL: Record<AttendanceException['exception_type'], string> = {
-  missing_clock_out: 'Missing clock-out',
-  unmatched_shift: 'Shift never clocked',
-  no_shift_match: 'No matching shift',
-}
-
-function AttendanceExceptionsPanel({
-  locations,
-  onError,
-}: {
-  locations: Pick<Location, 'id' | 'name'>[]
-  onError: (message: string) => void
-}) {
-  const [locationId, setLocationId] = useState(locations[0]?.id ?? '')
-  const [periodStart, setPeriodStart] = useState(addDaysIso(todayIso(), -7))
-  const [periodEnd, setPeriodEnd] = useState(todayIso())
-  const [exceptions, setExceptions] = useState<AttendanceException[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [correctingId, setCorrectingId] = useState<string | null>(null)
-  const [correctIn, setCorrectIn] = useState('')
-  const [correctOut, setCorrectOut] = useState('')
-  const [correctReason, setCorrectReason] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-
-  useEffect(() => {
-    if (!locationId && locations[0]) setLocationId(locations[0].id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locations])
-
-  async function handleLoad() {
-    if (!locationId) return
-    setLoading(true)
-    const { data, error } = await supabase.rpc('get_attendance_exceptions', {
-      p_location_id: locationId,
-      p_period_start: periodStart,
-      p_period_end: periodEnd,
-    })
-    setLoading(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    setExceptions((data ?? []) as unknown as AttendanceException[])
-  }
-
-  function startCorrection(exc: AttendanceException) {
-    setCorrectingId(exc.record_id)
-    setCorrectIn(exc.clock_in_at ? exc.clock_in_at.slice(0, 16) : '')
-    setCorrectOut(exc.clock_out_at ? exc.clock_out_at.slice(0, 16) : '')
-    setCorrectReason('')
-  }
-
-  async function handleSubmitCorrection() {
-    if (!correctingId || !correctIn || !correctReason.trim()) return
-    setSubmitting(true)
-    const { error } = await supabase.rpc('correct_attendance_record', {
-      p_record_id: correctingId,
-      p_new_clock_in_at: new Date(correctIn).toISOString(),
-      p_new_clock_out_at: correctOut ? new Date(correctOut).toISOString() : null,
-      p_reason: correctReason.trim(),
-    })
-    setSubmitting(false)
-    if (error) {
-      onError(error.message)
-      return
-    }
-    setCorrectingId(null)
-    handleLoad()
-  }
-
-  return (
-    <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-      <h2 className="mb-1 text-sm font-semibold text-ink">Attendance exceptions</h2>
-      <p className="mb-3 text-xs text-muted">
-        Missing clock-outs, shifts nobody clocked against, and clock-ins with no matching shift.
-      </p>
-      <div className="mb-3 flex flex-wrap items-end gap-2">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink">Branch</label>
-          <select
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          >
-            {locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink">From</label>
-          <input
-            type="date"
-            value={periodStart}
-            onChange={(e) => setPeriodStart(e.target.value)}
-            className="rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-ink">To</label>
-          <input
-            type="date"
-            value={periodEnd}
-            onChange={(e) => setPeriodEnd(e.target.value)}
-            className="rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-          />
-        </div>
-        <button
-          onClick={handleLoad}
-          disabled={loading || !locationId}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-alt disabled:opacity-60"
-        >
-          {loading ? 'Loading…' : 'Load exceptions'}
-        </button>
-      </div>
-
-      {exceptions === null ? (
-        <p className="text-sm text-muted">Choose a branch and period, then load exceptions.</p>
-      ) : exceptions.length === 0 ? (
-        <p className="text-sm text-muted">No attendance exceptions in this window.</p>
-      ) : (
-        <ul className="space-y-2">
-          {exceptions.map((exc, i) => (
-            <li key={`${exc.exception_type}-${exc.record_id ?? exc.shift_id ?? i}`} className="rounded-lg bg-surface-alt px-3 py-2 text-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-ink">
-                  {exc.employee_name} · {exc.shift_date}
-                  {exc.clock_in_at ? ` · in ${new Date(exc.clock_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                  {exc.clock_out_at ? ` – out ${new Date(exc.clock_out_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
-                </span>
-                <span className="flex items-center gap-2">
-                  <StatusBadge status={EXCEPTION_LABEL[exc.exception_type]} tone="warning" />
-                  {exc.record_id && (
-                    <button onClick={() => startCorrection(exc)} className="font-medium text-brand-blue hover:underline">
-                      Correct
-                    </button>
-                  )}
-                </span>
-              </div>
-
-              {correctingId === exc.record_id && (
-                <div className="mt-2 space-y-2 border-t border-border pt-2">
-                  <div className="flex flex-wrap gap-2">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-ink">Corrected clock-in</label>
-                      <input
-                        type="datetime-local"
-                        value={correctIn}
-                        onChange={(e) => setCorrectIn(e.target.value)}
-                        className="rounded-lg border border-border px-2 py-1 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-ink">Corrected clock-out (optional)</label>
-                      <input
-                        type="datetime-local"
-                        value={correctOut}
-                        onChange={(e) => setCorrectOut(e.target.value)}
-                        className="rounded-lg border border-border px-2 py-1 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                      />
-                    </div>
-                  </div>
-                  <input
-                    value={correctReason}
-                    onChange={(e) => setCorrectReason(e.target.value)}
-                    placeholder="Reason for this correction (required)"
-                    className="w-full rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                  />
-                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setCorrectingId(null)} className="rounded-lg border border-border px-3 py-1 text-xs text-ink hover:bg-surface">
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSubmitCorrection}
-                      disabled={submitting || !correctReason.trim()}
-                      className="rounded-lg bg-brand-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
-                    >
-                      {submitting ? 'Saving…' : 'Save correction'}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   )
 }
@@ -1331,7 +1060,13 @@ function MySchedule() {
         </p>
       )}
 
-      <AttendanceWidget onError={setError} onNotice={setNotice} />
+      <Link to="/clock" className="card flex items-center justify-between gap-3 transition hover:border-brand-blue/40">
+        <span>
+          <span className="block text-sm font-semibold text-ink">Clock in / out</span>
+          <span className="block text-sm text-muted">Start and finish your shift on the Clock screen.</span>
+        </span>
+        <span className="btn-primary">Open Clock</span>
+      </Link>
 
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
         <h2 className="mb-3 text-sm font-semibold text-ink">Upcoming shifts</h2>
@@ -1361,12 +1096,15 @@ function MySchedule() {
                   </div>
                   {swapNoteFor === s.id && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <input
-                        value={swapNote}
-                        onChange={(e) => setSwapNote(e.target.value)}
-                        placeholder="Note for whoever picks this up (optional)"
-                        className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-                      />
+                      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted flex-1">
+                        Note for whoever picks this up (optional)
+                        <input
+                          value={swapNote}
+                          onChange={(e) => setSwapNote(e.target.value)}
+                          placeholder="Note for whoever picks this up (optional)"
+                          className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                        />
+                      </label>
                       <button
                         onClick={() => handleRequestSwap(s.id)}
                         disabled={busyId === s.id}
