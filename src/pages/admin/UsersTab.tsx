@@ -8,12 +8,14 @@ import {
   adminListUserAccess,
   adminRevokeAccess,
   listEntities,
+  sendInvite,
   listLocations,
   type EntityRow,
   type LocationRow,
   type UserAccessRow,
 } from '../../lib/api/admin'
 import { ROLE_LABEL } from '../../lib/workflowCatalog'
+import { inviteOutcomeMessage, type InviteOutcome } from '../../lib/authFlows'
 import { fmtDateTime } from '../../lib/format'
 import type { UserRole } from '../../types/db'
 
@@ -22,7 +24,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; activeEntityId: string | null }) {
   const [rows, setRows] = useState<UserAccessRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<InviteOutcome | null>(null)
+  const [inviting, setInviting] = useState<string | null>(null)
   const [entities, setEntities] = useState<EntityRow[]>([])
   const [locations, setLocations] = useState<LocationRow[]>([])
   const [granting, setGranting] = useState(false)
@@ -45,6 +48,30 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
 
   const entityName = useMemo(() => Object.fromEntries(entities.map((e) => [e.id, e.name])), [entities])
   const locationName = useMemo(() => Object.fromEntries(locations.map((l) => [l.id, l.name])), [locations])
+
+  // Sends (or re-sends) the Supabase invitation email via the invite-user
+  // Edge Function, then reloads so a newly created login shows up.
+  async function invite(email: string, prefix = '') {
+    setInviting(email)
+    const res = await sendInvite(email)
+    setInviting(null)
+    const outcome = inviteOutcomeMessage(email, {
+      status: res.status,
+      errorCode: res.errorCode,
+      errorMessage: res.message,
+      httpStatus: res.httpStatus,
+    })
+    setNotice({ tone: outcome.tone, message: prefix + outcome.message })
+    load()
+  }
+
+  /** Pending grant → "Send invite"; login created but never used → "Resend invite". */
+  function inviteLabel(r: UserAccessRow): string | null {
+    if (!r.email || (!isOwner && r.role === 'owner')) return null
+    if (r.is_pending) return 'Send invite'
+    if (r.user_id && r.is_active && !r.last_sign_in_at && r.grant_id) return 'Resend invite'
+    return null
+  }
 
   const filtered = (rows ?? []).filter((r) => {
     const q = search.trim().toLowerCase()
@@ -71,7 +98,12 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
       header: 'Status',
       render: (r) => <StatusBadge status={r.is_pending ? 'pending_activation' : r.is_active ? 'active' : 'inactive'} />,
     },
-    { key: 'last', header: 'Last sign-in', render: (r) => (r.is_pending ? 'Invite not yet accepted' : fmtDateTime(r.last_sign_in_at)) },
+    {
+      key: 'last',
+      header: 'Last sign-in',
+      render: (r) =>
+        r.is_pending ? 'Invite not sent yet' : r.user_id && !r.last_sign_in_at ? 'Invite not yet accepted' : fmtDateTime(r.last_sign_in_at),
+    },
   ]
 
   return (
@@ -99,9 +131,10 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
           {error}
         </Alert>
       )}
-      {notice && (
-        <Alert tone="success" onDismiss={() => setNotice(null)}>
-          {notice}
+      {inviting && <Alert tone="info">Sending invitation to {inviting}…</Alert>}
+      {notice && !inviting && (
+        <Alert tone={notice.tone} onDismiss={() => setNotice(null)}>
+          {notice.message}
         </Alert>
       )}
       {rows === null ? (
@@ -114,13 +147,30 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
           columns={columns}
           rows={filtered}
           rowKey={(r) => r.grant_id ?? r.user_id ?? `${r.email}-${r.role}`}
-          actions={(r) =>
-            (r.is_active || r.is_pending) && (isOwner || r.role !== 'owner') ? (
-              <button className="btn-secondary" onClick={() => setRevoking(r)} aria-label={`Revoke access for ${r.email ?? r.full_name}`}>
-                Revoke
-              </button>
-            ) : null
-          }
+          actions={(r) => {
+            const label = inviteLabel(r)
+            const canRevoke = (r.is_active || r.is_pending) && (isOwner || r.role !== 'owner')
+            if (!label && !canRevoke) return null
+            return (
+              <span className="flex flex-wrap justify-end gap-2">
+                {label && r.email && (
+                  <button
+                    className="btn-secondary"
+                    disabled={inviting !== null}
+                    onClick={() => invite(r.email as string)}
+                    aria-label={`${label} to ${r.email}`}
+                  >
+                    {label}
+                  </button>
+                )}
+                {canRevoke && (
+                  <button className="btn-secondary" onClick={() => setRevoking(r)} aria-label={`Revoke access for ${r.email ?? r.full_name}`}>
+                    Revoke
+                  </button>
+                )}
+              </span>
+            )
+          }}
         />
       )}
 
@@ -133,8 +183,8 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
           onClose={() => setGranting(false)}
           onDone={(email) => {
             setGranting(false)
-            setNotice(`Access granted to ${email}. They'll get access the next time they sign in.`)
-            load()
+            setNotice(null)
+            invite(email, `Access granted to ${email}. `)
           }}
         />
       )}
@@ -143,7 +193,7 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
           row={revoking}
           onClose={() => setRevoking(null)}
           onDone={() => {
-            setNotice(`Access revoked for ${revoking.email ?? revoking.full_name}.`)
+            setNotice({ tone: 'success', message: `Access revoked for ${revoking.email ?? revoking.full_name}.` })
             setRevoking(null)
             load()
           }}
@@ -218,14 +268,14 @@ function GrantDrawer({
     )
     setSaving(false)
     if (res.error) return setServerError(res.error)
-    onDone(email.trim())
+    onDone(email.trim().toLowerCase())
   }
 
   return (
     <Drawer
       open
       title="Grant access"
-      description="Give someone a role in Third State HR. Access applies from their next sign-in."
+      description="Give someone a role in Third State HR. We'll email them an invitation to set their password."
       onClose={onClose}
       footer={
         <>

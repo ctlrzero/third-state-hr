@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { SESSION_EXPIRED_KEY, useAuth } from '../auth/AuthContext'
 import { Alert } from '../components/ui'
+import { supabase } from '../lib/supabase'
+import { RESET_REQUESTED_MESSAGE } from '../lib/authFlows'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -25,10 +27,13 @@ export default function SignIn() {
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [sessionExpired] = useState(readExpiredFlag)
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   if (status === 'ready') return <Navigate to="/" replace />
   // Authenticated but inactive / not linked to a workspace.
   if (status === 'no-assignment') return <Navigate to="/no-assignment" replace />
+
+  if (forgotOpen) return <ForgotPassword initialEmail={email} onBack={() => setForgotOpen(false)} />
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -134,6 +139,12 @@ export default function SignIn() {
 
           {error && <Alert tone="error">{error}</Alert>}
 
+          <div className="-mt-1 text-right">
+            <button type="button" onClick={() => setForgotOpen(true)} className="min-h-11 text-sm font-semibold text-brand-blue">
+              Forgot password?
+            </button>
+          </div>
+
           <button type="submit" disabled={submitting} className="btn-primary w-full">
             {submitting && <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />}
             {submitting ? 'Signing in…' : 'Sign in'}
@@ -143,6 +154,82 @@ export default function SignIn() {
         <p className="mt-6 text-center text-xs text-muted">
           Lost access to your account? Contact your entity owner or admin to recover access — self sign-up is not available.
         </p>
+      </main>
+    </div>
+  )
+}
+
+// Forgot password: always shows the same neutral acknowledgement, whether or
+// not the email has an account (and even when Supabase refuses the request),
+// so the form can't be used to discover who has a login.
+function ForgotPassword({ initialEmail, onBack }: { initialEmail: string; onBack: () => void }) {
+  const [email, setEmail] = useState(initialEmail)
+  const [fieldError, setFieldError] = useState<string | null>(null)
+  const [sending, setSending] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!EMAIL_RE.test(email.trim())) return setFieldError('Enter your work email address.')
+    setFieldError(null)
+    setSending(true)
+    try {
+      await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+        redirectTo: `${window.location.origin}/set-password`,
+      })
+    } catch {
+      /* deliberately ignored — the response is the same either way */
+    }
+    setSending(false)
+    setSent(true)
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-surface-alt px-4 py-8">
+      <main className="w-full max-w-sm rounded-[14px] border border-border bg-surface p-6 shadow-card sm:p-8">
+        <div className="mb-6 text-center">
+          <h1 className="text-xl font-semibold text-ink">Reset your password</h1>
+          <p className="mt-1 text-sm text-muted">We'll email you a link to choose a new password.</p>
+        </div>
+        {sent ? (
+          <div className="space-y-4">
+            <Alert tone="info">{RESET_REQUESTED_MESSAGE}</Alert>
+            <button type="button" onClick={onBack} className="btn-secondary w-full">
+              Back to sign in
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+            <div>
+              <label htmlFor="reset-email" className="label">
+                Work email
+              </label>
+              <input
+                id="reset-email"
+                type="email"
+                inputMode="email"
+                autoComplete="username"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                aria-invalid={Boolean(fieldError)}
+                aria-describedby={fieldError ? 'reset-email-err' : undefined}
+                className="input"
+              />
+              {fieldError && (
+                <p id="reset-email-err" className="mt-1 text-xs font-medium text-brand-risk-text">
+                  {fieldError}
+                </p>
+              )}
+            </div>
+            <button type="submit" disabled={sending} className="btn-primary w-full">
+              {sending ? 'Sending…' : 'Send reset link'}
+            </button>
+            <button type="button" onClick={onBack} className="btn-secondary w-full">
+              Back to sign in
+            </button>
+          </form>
+        )}
       </main>
     </div>
   )

@@ -9,6 +9,7 @@ import { EnvironmentBanner } from './components/EnvironmentBanner'
 import { canAccessRoute } from './lib/nav'
 import SignIn from './pages/SignIn'
 import NoAssignment from './pages/NoAssignment'
+import SetPassword from './pages/SetPassword'
 
 // Every authenticated page is its own chunk so the entry bundle only carries
 // the shell, auth and router.
@@ -91,6 +92,8 @@ function App() {
         <Routes>
           <Route path="/sign-in" element={<SignIn />} />
           <Route path="/no-assignment" element={<NoAssignment />} />
+          {/* Public: invite + password-recovery links land here (outside the role gate). */}
+          <Route path="/set-password" element={<SetPassword />} />
           {ROUTES.map((r) => (
             <Route key={r.path} path={r.path} element={<Shell route={r.path}>{r.element}</Shell>} />
           ))}

@@ -1,6 +1,7 @@
 import { supabase } from '../supabase'
 import { callRpc, type ApiResult } from './client'
 import type { UserRole } from '../../types/db'
+import type { InviteStatus } from '../authFlows'
 
 // Admin / settings RPCs. Several of these are being created by the backend
 // in parallel — keep names/params exactly as agreed so any later tweak is a
@@ -196,3 +197,40 @@ export const setEntityAdminSelfApproval = (enabled: boolean) =>
 
 export const bulkImportEmployees = (entityId: string, rows: Record<string, unknown>[]) =>
   callRpc<BulkImportResultRow[]>('bulk_import_employees', { p_entity_id: entityId, p_rows: rows })
+
+// ---------- invitations (Edge Function) ----------
+
+export interface InviteResult {
+  status: InviteStatus | null
+  message: string | null
+  errorCode: string | null
+  httpStatus: number | null
+}
+
+/**
+ * Ask the invite-user Edge Function to send (or re-send) the Supabase
+ * invitation email for an email that already has an access grant. The
+ * function re-checks the caller's role/scope server-side; this never throws.
+ */
+export async function sendInvite(email: string): Promise<InviteResult> {
+  try {
+    const { data, error } = await supabase.functions.invoke<{ status?: InviteStatus; message?: string }>('invite-user', {
+      body: { email },
+    })
+    if (!error) return { status: data?.status ?? null, message: data?.message ?? null, errorCode: null, httpStatus: 200 }
+    // FunctionsHttpError carries the Response; read the JSON {error, message} body.
+    const ctx = (error as { context?: unknown }).context
+    if (ctx instanceof Response) {
+      let body: { error?: string; message?: string } = {}
+      try {
+        body = await ctx.clone().json()
+      } catch {
+        /* non-JSON body */
+      }
+      return { status: null, message: body.message ?? null, errorCode: body.error ?? null, httpStatus: ctx.status }
+    }
+    return { status: null, message: error.message ?? null, errorCode: null, httpStatus: null }
+  } catch (e) {
+    return { status: null, message: e instanceof Error ? e.message : null, errorCode: null, httpStatus: null }
+  }
+}
