@@ -20,16 +20,23 @@ export default function StaffHome() {
 
   useEffect(() => {
     getMyClockStatus().then((r) => setClock(r.error ? 'na' : r.data))
-    supabase
-      .from('shifts')
-      .select('id, shift_date, start_time, end_time, locations(name)')
-      .gte('shift_date', todayDubai())
-      .eq('is_published', true)
-      .neq('status', 'cancelled')
-      .order('shift_date')
-      .order('start_time')
-      .limit(5)
-      .then(({ data }) => setShifts((data ?? []) as unknown as NonNullable<typeof shifts>))
+    // Only the caller's own assigned shifts: RLS also exposes open
+    // (unassigned) shifts at the branch, which belong in Schedules → open
+    // shifts, not in "Next shifts". my_employee_id() resolves from auth.uid().
+    supabase.rpc('my_employee_id').then(async ({ data: myEmployeeId }) => {
+      if (!myEmployeeId) return setShifts([])
+      const { data } = await supabase
+        .from('shifts')
+        .select('id, shift_date, start_time, end_time, locations(name)')
+        .eq('employee_id', myEmployeeId as string)
+        .gte('shift_date', todayDubai())
+        .eq('is_published', true)
+        .neq('status', 'cancelled')
+        .order('shift_date')
+        .order('start_time')
+        .limit(5)
+      setShifts((data ?? []) as unknown as NonNullable<typeof shifts>)
+    })
     supabase
       .from('leave_balances')
       .select('*, leave_types(id, name)')
