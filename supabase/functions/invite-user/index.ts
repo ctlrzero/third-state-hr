@@ -25,6 +25,16 @@ const SITE_URL = (Deno.env.get('SITE_URL') ?? 'https://hr.thirdstate.ae').replac
 const ALLOWED_ORIGINS = new Set(['https://hr.thirdstate.ae', 'http://localhost:5173', SITE_URL])
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
+/** Fallback for projects that have retired the legacy service_role key. */
+function secretKeyFromEnv(): string | undefined {
+  try {
+    const keys = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') ?? '{}') as Record<string, string>
+    return keys['default']
+  } catch {
+    return undefined
+  }
+}
+
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('Origin') ?? ''
   return {
@@ -52,7 +62,7 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return fail(req, 405, 'method_not_allowed', 'Use POST.')
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || secretKeyFromEnv()
   if (!supabaseUrl || !serviceKey) return fail(req, 500, 'misconfigured', 'The invite service is not configured.')
 
   const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
