@@ -49,6 +49,9 @@ export default function Dashboard() {
 
   const canSeePayroll = profile?.role === 'owner' || profile?.role === 'entity_admin'
   const activeEntity = entities.find((e) => e.id === activeEntityId)
+  // Coverage is limited to the viewer's scope: a location manager sees only
+  // their own branch; owner / entity admin see every branch of the entity.
+  const scopedLocationId = profile?.role === 'location_manager' ? (profile.location_id ?? null) : null
 
   useEffect(() => {
     if (!activeEntityId) return
@@ -90,7 +93,9 @@ export default function Dashboard() {
               .eq('entity_id', activeEntityId)
               .in('status', ['draft', 'in_review', 'approved'])
           : Promise.resolve({ data: [], count: 0, error: null } as const),
-        supabase.from('locations').select('id, name').eq('entity_id', activeEntityId),
+        scopedLocationId
+          ? supabase.from('locations').select('id, name').eq('entity_id', activeEntityId).eq('id', scopedLocationId)
+          : supabase.from('locations').select('id, name').eq('entity_id', activeEntityId),
       ])
 
       if (cancelled) return
@@ -104,7 +109,7 @@ export default function Dashboard() {
       }
       const locationNames = (locationsRes.data ?? []).map((l) => l.name)
       const coverageRows = locationNames.map((name) => ({ location: name, active: byLocation.get(name) ?? 0 }))
-      if (byLocation.has('Unassigned')) {
+      if (!scopedLocationId && byLocation.has('Unassigned')) {
         coverageRows.push({ location: 'Unassigned', active: byLocation.get('Unassigned') ?? 0 })
       }
       setCoverage(coverageRows)
@@ -160,7 +165,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true
     }
-  }, [activeEntityId, canSeePayroll])
+  }, [activeEntityId, canSeePayroll, scopedLocationId])
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours()
