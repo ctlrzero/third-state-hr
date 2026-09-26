@@ -112,6 +112,51 @@ Scope rules for grants: owner → no entity/location/employee; entity_admin → 
 location_manager → entity + location; staff → entity + employee. Inactive entity/location rejected.
 Deactivation is soft (`is_active=false`); dependency summary is for the confirm dialog.
 
+### 3a. Invitations and passwords **[new]**
+
+Logins are never self-created (sign-up stays disabled). The flow is:
+
+1. `admin_grant_access(...)` creates a **pending** `access_grants` row (or applies it at once if a
+   login already exists for that email).
+2. The Admin UI then calls the **Edge Function `invite-user`** (not an RPC):
+   `supabase.functions.invoke('invite-user', { body: { email } })` → `POST /functions/v1/invite-user`
+   with the caller's user JWT (`verify_jwt = true`). Source: `supabase/functions/invite-user/index.ts`.
+3. The invite email links to `https://hr.thirdstate.ae/set-password`. When the invite creates the auth
+   user, the `on_auth_user_created` trigger (`handle_new_user()`) applies the pending grant, so the
+   profile/role/scope exist before the person sets a password.
+
+| Function | Body | Roles | Returns |
+|---|---|---|---|
+| `invite-user` | `{ email }` | O; EA only for a grant whose `entity_id` = own entity. Caller profile must be active. | `200 {status:'invited'\|'already_registered', message}` |
+
+- Grant lookup is by lower-cased email: the pending grant, otherwise the latest **applied** grant (so an
+  invite that has not been accepted can be **re-sent**). No such grant → `409 {error:'no_pending_grant'}`
+  ("Grant access first").
+- A confirmed login already exists → `200 already_registered` (the grant was applied when the login was
+  created / when access was granted); nothing is sent.
+- Errors are `{error, message}`: `400 invalid_email|bad_request`, `401 unauthenticated`, `403 forbidden`,
+  `409 no_pending_grant`, `429 rate_limited` (Supabase email rate limit), `502 invite_failed`.
+- On success writes `audit_log` (`table_name='access_grants'`, `record_id` = grant id,
+  `action='user_invited'`, `changed_by` = caller, `new_value={email}`, `entity_id/location_id/employee_id`
+  from the grant — `entity_id` is NULL for owner grants, which the `audit_log_entity_id_required_check`
+  allows for `access_grants`).
+- The function performs no other privileged operation; it never changes a role or scope.
+- Env: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (or `SUPABASE_SECRET_KEYS.default`) are injected by
+  Supabase; optional secret `SITE_URL` (default `https://hr.thirdstate.ae`) sets the redirect base.
+  CORS allows `https://hr.thirdstate.ae` and `http://localhost:5173`.
+
+Client-side auth calls (supabase-js, no custom backend):
+
+| Call | Where | Notes |
+|---|---|---|
+| `auth.resetPasswordForEmail(email, { redirectTo: origin + '/set-password' })` | Sign-in → "Forgot password?" | The UI always shows the same neutral message; it never reveals whether the email has a login |
+| `auth.updateUser({ password })` | `/set-password` | Min 8 characters (plus any Supabase password policy). Afterwards the app goes to `/` |
+
+`/set-password` is a public route outside the role gate. It accepts the implicit-flow fragment
+(`#access_token…&type=invite|recovery`, parsed by supabase-js, `PASSWORD_RECOVERY` event), a PKCE
+`?code=` (`exchangeCodeForSession`) and `?token_hash=&type=` (`verifyOtp`) for custom email templates.
+An `#error_code=otp_expired` (or no session) shows "link invalid or expired — ask your manager to resend".
+
 ## 4. Employees
 
 | RPC | Args | Roles | Returns |

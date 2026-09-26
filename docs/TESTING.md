@@ -68,6 +68,10 @@ Mark each step pass/fail. "Expect" is what must happen. Business dates are Dubai
 2. Enter a wrong password. Expect: "invalid credentials" message, no crash.
 3. Staff: open `/payroll` → you see **My payslips**, not the payroll run screen. LM: `/payroll` → an access message.
 4. Sign out, then deep-link to `/admin`. Expect: you are sent to sign-in.
+5. **Forgot password?** on the sign-in page with a UAT email and with an unknown email. Expect: the same
+   message both times ("If an account exists for that email, a reset link is on its way"). The UAT
+   inbox receives a link to `/set-password`; set a new password (8+ characters, confirm must match).
+   Expect: "Password saved" then Home. Opening the same link again shows "link invalid or expired".
 
 ### 4.2 Clock in / out (employee.a)
 1. **Clock**. Expect: today's shift (Branch A1, 09:00–17:00) and state "Not started".
@@ -120,10 +124,14 @@ Mark each step pass/fail. "Expect" is what must happen. Business dates are Dubai
 ### 4.9 Admin: entities, branches, users and access
 1. owner → **Admin → Entities & branches**: edit UAT Entity B (code, emirate); add a branch to UAT Entity A; deactivate it. Expect: a dependency summary before deactivating.
 2. entityadmin.a: can add or edit Entity A branches and cannot edit entities.
-3. **Users & access → Grant access**: email `uat.tester+1@example.com`, role staff, Entity A, Branch A1, employee UAT New Starter. Expect: *Pending* grant (applied automatically when that email signs up).
-4. **Revoke** the grant: a reason is required. Expect: *Revoked*.
-5. **Policies**: owner sees retention policies for every entity; entity admin sees only their own. Propose a policy (entity admin) and approve it (owner).
-6. **Bulk import**: import 2 rows into Entity A. Expect: per-row success and errors.
+3. **Users & access → Grant access**: email `uat.tester+1@example.com` (use an inbox you can read), role staff, Entity A, Branch A1, employee UAT New Starter. Expect: "Access granted … Invitation email sent" and the row now shows the login with *Invite not yet accepted*.
+4. Open the invite email → `/set-password` → set a password. Expect: you land on the staff Home for UAT New Starter (the grant was applied when the invite created the login). Re-open the link: "link invalid or expired".
+5. **Resend invite** on a login that has not signed in yet: Expect "Invitation email sent". Repeat quickly several times: expect the friendly "Too many emails…" message (Supabase rate limit), no crash.
+6. Grant access to an email that already has a confirmed login. Expect: "already has a login — access applied".
+7. entityadmin.b cannot send an invite for an Entity A grant (403 message). Audit log shows `user_invited` with the grant's entity.
+8. **Revoke** a pending grant: a reason is required. Expect: *Revoked*.
+9. **Policies**: owner sees retention policies for every entity; entity admin sees only their own. Propose a policy (entity admin) and approve it (owner).
+10. **Bulk import**: import 2 rows into Entity A. Expect: per-row success and errors.
 
 ### 4.10 Employee lifecycle (entityadmin.a)
 1. **People → UAT New Starter** → set status *Active* (pre_boarding → active). Expect: status changes and an audit entry.
@@ -149,7 +157,7 @@ Mark each step pass/fail. "Expect" is what must happen. Business dates are Dubai
 
 | Suite | How to run | What it covers |
 |---|---|---|
-| Unit tests | `npm test` (Vitest) | Pure logic: clock state, payslip PDF, workflow summaries, CSV import, lifecycle rules, formatting |
+| Unit tests | `npm test` (Vitest) | Pure logic: clock state, payslip PDF, workflow summaries, CSV import, lifecycle rules, formatting, password validation and invite-outcome messages (`src/lib/authFlows.test.ts`) |
 | Negative-access (API) | `npm run test:access` from a machine that can reach `*.supabase.co` (uses `.env` + the UAT personas) | Real PostgREST calls as each persona: denied reads/RPCs, entity isolation, revoked user, anon |
 | Negative-access (SQL) | Paste `supabase/tests/access_tests.sql` into the Supabase SQL editor (or MCP `execute_sql`) as postgres | Same checks as the API suite, run inside a rolled-back transaction. Expect `passed = total` |
 | End-to-end journeys (SQL) | Paste `supabase/tests/e2e_journeys.sql` the same way | Staff clock/attendance/leave/payslips, LM exceptions/correction/leave approval, EA access/branch/lifecycle/workflow/publish/payroll, owner KPIs/retention/audit, cross-entity isolation. Expect every row `pass = true`. Rolled back |
@@ -162,7 +170,10 @@ Both SQL suites impersonate personas exactly like PostgREST (`set local role aut
 1. **Reassign the Ateej Tea Brew draft job requisition** whose `created_by` is `uat.owner@example.com` to a real owner/admin user (or clear it). Until then `uat_purge_seed()` refuses to run.
 2. **Purge UAT data** (postgres, SQL editor): `select public.uat_purge_seed();`. This removes UAT Entity A/B, their data and the eight `uat.*` auth users. It aborts and deletes nothing if real rows still reference a UAT user.
 3. **Auth → Leaked password protection**: enable it (Supabase Auth settings). This is the one outstanding security-advisor warning.
-4. **Auth → URL configuration**: set Site URL to `https://hr.thirdstate.ae` and add it (plus the Vercel production URL) to Redirect URLs.
+4. **Auth → URL configuration**: set Site URL to `https://hr.thirdstate.ae`. Redirect URLs must include `https://hr.thirdstate.ae/set-password` (plus `http://localhost:5173/set-password` and any preview/Vercel URL you test invites or resets on, e.g. `https://*-<vercel-team>.vercel.app/set-password`). A `redirectTo` not on this list silently falls back to the Site URL root and the user never reaches the set-password form.
+4a. **Auth → SMTP settings**: configure a custom SMTP sender (e.g. `hr@thirdstate.ae` via your mail provider). The built-in Supabase mailer only delivers to project team members and is limited to a few emails per hour, so real staff invites and resets need custom SMTP. Afterwards raise **Auth → Rate limits → emails sent per hour** to suit onboarding volume.
+4b. **Auth → Providers → Email**: keep *Allow new users to sign up* **off** (invites still work). **Auth → Email templates**: keep the default *Invite user* and *Reset password* templates (`{{ .ConfirmationURL }}`) or, if customised, link to `{{ .RedirectTo }}` with `token_hash={{ .TokenHash }}&type=invite|recovery` — `/set-password` handles both.
+4c. **Edge Functions**: `invite-user` is ACTIVE with *Verify JWT* on. Optional secret `SITE_URL` only if the app moves off `https://hr.thirdstate.ae`.
 5. **Storage placeholders**: the UAT fixture documents point at `uat-fixtures/placeholder-*.pdf` paths with no file. The purge removes their rows. Confirm no real document references `uat-fixtures/`.
 6. **Vercel env**: production has `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set and `VITE_APP_ENV` **unset** (no UAT banner).
 7. Re-run the security and performance advisors and expect no ERROR. Run `access_tests.sql` once more after the purge (with the UAT users gone, persona checks return zero rows).
