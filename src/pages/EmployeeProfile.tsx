@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
@@ -20,6 +20,19 @@ import {
   type Completeness,
 } from '../lib/api/employees'
 import { fmtClockRange, fmtDate, fmtDateTime, fmtDayShort, fmtMinutes, fmtTime, humanize, todayDubai, addDays } from '../lib/format'
+import { getEmployeeCompensation, setEmployeeCompensation } from '../lib/api/compensation'
+import {
+  DEFAULT_HOLIDAY_MULTIPLIER,
+  DEFAULT_OVERTIME_MULTIPLIER,
+  PAY_TYPE_LABEL,
+  fmtMultiplier,
+  fmtPayRate,
+  validateCompensation,
+  type CompensationDraft,
+  type CompensationErrors,
+  type CompensationView,
+  type PayType,
+} from '../lib/compensation'
 import type { Employee, EmployeeChangeRequest, EmployeeDocument, EmployeeStatus, LeaveBalance, LeaveRequest } from '../types/db'
 
 const EXPIRY_DOCS: { key: 'passport_exp' | 'visa_exp' | 'labor_card_exp' | 'health_card_exp'; label: string }[] = [
@@ -47,15 +60,6 @@ type TabKey = 'overview' | 'employment' | 'documents' | 'schedule' | 'attendance
 
 type FullEmployee = Employee
 
-interface Compensation {
-  employee_id: string
-  pay_type: string
-  pay_rate: number | null
-  overtime_multiplier: number
-  holiday_multiplier: number
-  updated_at: string | null
-}
-
 interface IdentityDocs {
   employee_id: string
   national_id_no: string | null
@@ -71,8 +75,9 @@ interface IdentityDocs {
 // Employee profile (/employees/:id). RLS (employees_select) decides which
 // ids resolve at all — a location_manager opening an out-of-location id gets
 // the same "not found" as a non-existent id. Payslips and compensation are
-// owner/entity_admin only: for location_manager the Payslips tab is not
-// rendered at all (not just hidden) and its query never runs.
+// owner/entity_admin only: for location_manager / staff the Payslips tab and
+// the Pay card are not rendered at all (not just hidden) and their queries
+// never run.
 export default function EmployeeProfile() {
   const { id } = useParams<{ id: string }>()
   const { profile } = useAuth()
@@ -86,6 +91,24 @@ export default function EmployeeProfile() {
   const [completeness, setCompleteness] = useState<Completeness | null>(null)
   const [statusTarget, setStatusTarget] = useState<EmployeeStatus | null>(null)
   const [editing, setEditing] = useState(false)
+  // Pay: owner / entity_admin only (get_employee_compensation re-checks).
+  const [comp, setComp] = useState<CompensationView | null>(null)
+  const [compError, setCompError] = useState<string | null>(null)
+  const [compLoading, setCompLoading] = useState(false)
+
+  const loadComp = useCallback(async () => {
+    if (!id || !isAdmin) return
+    setCompLoading(true)
+    setCompError(null)
+    const res = await getEmployeeCompensation(id)
+    setCompLoading(false)
+    if (res.error) setCompError(res.error)
+    else setComp(res.data)
+  }, [id, isAdmin])
+
+  useEffect(() => {
+    loadComp()
+  }, [loadComp])
 
   const tabs: TabDef<TabKey>[] = [
     { key: 'overview', label: 'Overview' },
@@ -181,6 +204,11 @@ export default function EmployeeProfile() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={status} />
+            {isAdmin && comp && comp.pay_rate == null && (
+              <button type="button" onClick={() => setTab('employment')} className="rounded-full" title="Set pay on the Employment tab">
+                <StatusBadge status="Pay not set" tone="warning" />
+              </button>
+            )}
             {canEdit && (
               <>
                 <button className="btn-secondary" onClick={() => setEditing(true)}>
@@ -225,7 +253,27 @@ export default function EmployeeProfile() {
 
       <TabPanel id={tab}>
         {tab === 'overview' && <OverviewTab employee={employee} onChanged={load} onNotice={setNotice} onError={setError} />}
-        {tab === 'employment' && <EmploymentTab employee={employee} canReveal={isAdmin} />}
+        {tab === 'employment' && (
+          <EmploymentTab
+            employee={employee}
+            canReveal={isAdmin}
+            pay={
+              isAdmin ? (
+                <PayCard
+                  employee={employee}
+                  comp={comp}
+                  loading={compLoading}
+                  error={compError}
+                  onRetry={loadComp}
+                  onSaved={(msg) => {
+                    setNotice(msg)
+                    loadComp()
+                  }}
+                />
+              ) : null
+            }
+          />
+        )}
         {tab === 'documents' && <DocumentsTab employee={employee} />}
         {tab === 'schedule' && <ScheduleTab employeeId={employee.id} />}
         {tab === 'attendance' && <AttendanceTab employeeId={employee.id} />}
@@ -375,7 +423,7 @@ function OverviewTab({
   )
 }
 
-function EmploymentTab({ employee, canReveal }: { employee: FullEmployee; canReveal: boolean }) {
+function EmploymentTab({ employee, canReveal, pay }: { employee: FullEmployee; canReveal: boolean; pay: ReactNode }) {
   return (
     <div className="space-y-4">
       <section className="card">
@@ -394,6 +442,7 @@ function EmploymentTab({ employee, canReveal }: { employee: FullEmployee; canRev
         />
         {employee.notes && <p className="mt-3 rounded-lg bg-surface-alt p-3 text-sm">{employee.notes}</p>}
       </section>
+      {pay}
       {canReveal && <SensitiveInfoPanel employeeId={employee.id} />}
     </div>
   )
@@ -924,29 +973,24 @@ function EditDrawer({
   )
 }
 
-// Compensation and identity documents load only after an explicit click,
+// Identity documents and bank details load only after an explicit click,
 // never with the page — a deliberate speed bump against casually loading
-// salary/bank/passport numbers while browsing.
+// bank/passport numbers while browsing. Pay lives in the Pay card.
 function SensitiveInfoPanel({ employeeId }: { employeeId: string }) {
   const [revealed, setRevealed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [compensation, setCompensation] = useState<Compensation | null>(null)
   const [identity, setIdentity] = useState<IdentityDocs | null>(null)
 
   async function handleReveal() {
     setLoading(true)
     setError(null)
-    const [compRes, idRes] = await Promise.all([
-      supabase.from('employee_compensation').select('*').eq('employee_id', employeeId).maybeSingle(),
-      supabase.from('employee_identity_documents').select('*').eq('employee_id', employeeId).maybeSingle(),
-    ])
+    const idRes = await supabase.from('employee_identity_documents').select('*').eq('employee_id', employeeId).maybeSingle()
     setLoading(false)
-    if (compRes.error || idRes.error) {
-      setError(compRes.error?.message ?? idRes.error?.message ?? 'Failed to load sensitive information.')
+    if (idRes.error) {
+      setError(idRes.error.message ?? 'Failed to load sensitive information.')
       return
     }
-    setCompensation((compRes.data as Compensation | null) ?? null)
     setIdentity((idRes.data as IdentityDocs | null) ?? null)
     setRevealed(true)
   }
@@ -954,7 +998,7 @@ function SensitiveInfoPanel({ employeeId }: { employeeId: string }) {
   return (
     <section className="card">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">Compensation & identity documents</h2>
+        <h2 className="text-sm font-semibold text-ink">Identity & bank details</h2>
         {revealed ? (
           <button className="btn-secondary" onClick={() => setRevealed(false)}>
             Hide
@@ -970,15 +1014,11 @@ function SensitiveInfoPanel({ employeeId }: { employeeId: string }) {
           <Alert tone="error">{error}</Alert>
         </div>
       )}
-      {!revealed && !error && <p className="mt-1 text-sm text-muted">Salary, bank details and identity numbers are hidden by default.</p>}
+      {!revealed && !error && <p className="mt-1 text-sm text-muted">Bank details and identity numbers are hidden by default.</p>}
       {revealed && (
         <div className="mt-3">
           <Dl
             items={[
-              ['Pay type', humanize(compensation?.pay_type)],
-              ['Pay rate', compensation?.pay_rate != null ? String(compensation.pay_rate) : ''],
-              ['Overtime multiplier', compensation?.overtime_multiplier != null ? String(compensation.overtime_multiplier) : ''],
-              ['Holiday multiplier', compensation?.holiday_multiplier != null ? String(compensation.holiday_multiplier) : ''],
               ['Passport no.', identity?.passport_no ?? ''],
               ['Emirates ID no.', identity?.national_id_no ?? ''],
               ['Visa no.', identity?.visa_no ?? ''],
@@ -991,5 +1031,252 @@ function SensitiveInfoPanel({ employeeId }: { employeeId: string }) {
         </div>
       )}
     </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Pay (owner / entity_admin only — never rendered for other roles).
+// ---------------------------------------------------------------------------
+function PayCard({
+  employee,
+  comp,
+  loading,
+  error,
+  onRetry,
+  onSaved,
+}: {
+  employee: FullEmployee
+  comp: CompensationView | null
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+  onSaved: (msg: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const inactive = employee.employment_status === 'inactive'
+  const hasRate = comp?.pay_rate != null
+
+  return (
+    <section className="card" aria-labelledby="pay-card-title">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 id="pay-card-title" className="text-sm font-semibold text-ink">
+          Pay
+        </h2>
+        {comp && !inactive && (
+          <button className={hasRate ? 'btn-secondary' : 'btn-primary'} onClick={() => setOpen(true)}>
+            {hasRate ? 'Edit pay' : 'Set pay'}
+          </button>
+        )}
+      </div>
+      {loading && !comp ? (
+        <Skeleton rows={1} className="h-16" />
+      ) : error ? (
+        <Alert tone="error">
+          {error}{' '}
+          <button type="button" className="font-semibold underline" onClick={onRetry}>
+            Retry
+          </button>
+        </Alert>
+      ) : comp ? (
+        <>
+          {!hasRate && (
+            <div className="mb-3">
+              <Alert tone="warning">Pay not set — this employee will get AED 0 on payslips.</Alert>
+            </div>
+          )}
+          <Dl
+            items={[
+              ['Pay type', PAY_TYPE_LABEL[comp.pay_type] ?? humanize(comp.pay_type)],
+              ['Rate', fmtPayRate(comp.pay_type, comp.pay_rate)],
+              ['Overtime multiplier', fmtMultiplier(comp.overtime_multiplier)],
+              ['Holiday multiplier', fmtMultiplier(comp.holiday_multiplier)],
+              ['Last updated', comp.updated_at ? fmtDateTime(comp.updated_at) : ''],
+            ]}
+          />
+          {comp.pay_type === 'monthly' && (
+            <p className="mt-3 text-xs text-muted">Monthly salary is paid in full each payroll run; overtime and holiday multipliers apply to hourly pay only.</p>
+          )}
+          {inactive && <p className="mt-3 text-xs text-muted">Pay cannot be changed for an inactive employee.</p>}
+        </>
+      ) : null}
+      {open && comp && (
+        <PayDrawer
+          employee={employee}
+          comp={comp}
+          onClose={() => setOpen(false)}
+          onDone={(msg) => {
+            setOpen(false)
+            onSaved(msg)
+          }}
+        />
+      )}
+    </section>
+  )
+}
+
+function PayDrawer({
+  employee,
+  comp,
+  onClose,
+  onDone,
+}: {
+  employee: FullEmployee
+  comp: CompensationView
+  onClose: () => void
+  onDone: (msg: string) => void
+}) {
+  const hasRate = comp.pay_rate != null
+  const [draft, setDraft] = useState<CompensationDraft>(() => ({
+    // Monthly salary is the default for a new rate.
+    payType: hasRate ? comp.pay_type : 'monthly',
+    rate: hasRate ? String(comp.pay_rate) : '',
+    overtimeMultiplier: String(comp.overtime_multiplier ?? DEFAULT_OVERTIME_MULTIPLIER),
+    holidayMultiplier: String(comp.holiday_multiplier ?? DEFAULT_HOLIDAY_MULTIPLIER),
+    reason: '',
+  }))
+  const [errors, setErrors] = useState<CompensationErrors>({})
+  const [serverError, setServerError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  const { value: preview } = validateCompensation(draft, comp)
+  const set = (patch: Partial<CompensationDraft>) => setDraft((d) => ({ ...d, ...patch }))
+
+  async function save() {
+    const { value, errors: e } = validateCompensation(draft, comp)
+    setErrors(e)
+    if (e.overtimeMultiplier || e.holidayMultiplier) setShowAdvanced(true)
+    if (!value) return
+    setSaving(true)
+    setServerError(null)
+    const res = await setEmployeeCompensation(employee.id, value)
+    setSaving(false)
+    if (res.error) return setServerError(res.error)
+    onDone(`Pay for ${employee.full_name} saved: ${fmtPayRate(value.pay_type, value.pay_rate)}.`)
+  }
+
+  const rows: [string, string, string][] = preview
+    ? [
+        ['Pay type', hasRate ? PAY_TYPE_LABEL[comp.pay_type] : '—', PAY_TYPE_LABEL[preview.pay_type]],
+        ['Rate', fmtPayRate(comp.pay_type, comp.pay_rate), fmtPayRate(preview.pay_type, preview.pay_rate)],
+        ['Overtime', fmtMultiplier(comp.overtime_multiplier), fmtMultiplier(preview.overtime_multiplier)],
+        ['Holiday', fmtMultiplier(comp.holiday_multiplier), fmtMultiplier(preview.holiday_multiplier)],
+      ]
+    : []
+
+  return (
+    <Drawer
+      open
+      title={hasRate ? 'Edit pay' : 'Set pay'}
+      description={employee.full_name}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn-primary" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Save pay'}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <fieldset>
+          <legend className="label">Pay type</legend>
+          <div className="mt-1 grid gap-2 sm:grid-cols-2">
+            {(['monthly', 'hourly'] as PayType[]).map((t) => (
+              <label
+                key={t}
+                className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${
+                  draft.payType === t ? 'border-brand-blue bg-brand-blue/5' : 'border-border'
+                }`}
+              >
+                <input type="radio" name="pay-type" className="mt-0.5" checked={draft.payType === t} onChange={() => set({ payType: t })} />
+                <span>
+                  <span className="font-medium text-ink">{PAY_TYPE_LABEL[t]}</span>
+                  <span className="block text-xs text-muted">{t === 'monthly' ? 'Fixed amount every payroll run' : 'Regular hours × rate, plus overtime'}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <Field label={draft.payType === 'hourly' ? 'Rate per hour (AED)' : 'Monthly salary (AED)'} error={errors.rate} required>
+          {(p) => (
+            <input
+              {...p}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              className="input"
+              placeholder={draft.payType === 'hourly' ? 'e.g. 25.00' : 'e.g. 4500.00'}
+              value={draft.rate}
+              onChange={(e) => set({ rate: e.target.value })}
+              data-autofocus
+            />
+          )}
+        </Field>
+
+        <div>
+          <button type="button" className="text-sm font-medium text-brand-blue hover:underline" aria-expanded={showAdvanced} onClick={() => setShowAdvanced((v) => !v)}>
+            {showAdvanced ? 'Hide' : 'Show'} overtime & holiday multipliers
+          </button>
+          {showAdvanced && (
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Overtime multiplier" error={errors.overtimeMultiplier} hint={`Default ${DEFAULT_OVERTIME_MULTIPLIER}× · 1 to 3`}>
+                {(p) => (
+                  <input {...p} type="text" inputMode="decimal" className="input" value={draft.overtimeMultiplier} onChange={(e) => set({ overtimeMultiplier: e.target.value })} />
+                )}
+              </Field>
+              <Field label="Holiday multiplier" error={errors.holidayMultiplier} hint={`Default ${DEFAULT_HOLIDAY_MULTIPLIER}× · 1 to 3`}>
+                {(p) => (
+                  <input {...p} type="text" inputMode="decimal" className="input" value={draft.holidayMultiplier} onChange={(e) => set({ holidayMultiplier: e.target.value })} />
+                )}
+              </Field>
+            </div>
+          )}
+        </div>
+
+        <Field
+          label={hasRate ? 'Reason for change' : 'Note (optional)'}
+          error={errors.reason}
+          required={hasRate}
+          hint={hasRate ? 'Recorded in the audit log with the before/after values.' : undefined}
+        >
+          {(p) => <textarea {...p} rows={2} className="input" value={draft.reason} onChange={(e) => set({ reason: e.target.value })} />}
+        </Field>
+
+        {preview && (
+          <table className="w-full text-left text-sm">
+            <caption className="mb-1 text-left text-xs font-semibold text-muted">Before and after</caption>
+            <thead className="text-xs text-muted">
+              <tr>
+                <th scope="col" className="py-1">
+                  Field
+                </th>
+                <th scope="col" className="py-1">
+                  Before
+                </th>
+                <th scope="col" className="py-1">
+                  After
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map(([label, before, after]) => (
+                <tr key={label}>
+                  <td className="py-1.5 pr-2 text-muted">{label}</td>
+                  <td className={`py-1.5 pr-2 ${before !== after ? 'line-through decoration-brand-risk/60' : ''}`}>{before}</td>
+                  <td className="py-1.5 font-medium">{after}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+        {serverError && <Alert tone="error">{serverError}</Alert>}
+      </div>
+    </Drawer>
   )
 }

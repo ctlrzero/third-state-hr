@@ -4,6 +4,9 @@ import { useAuth } from '../auth/AuthContext'
 import MyPayslips from './MyPayslips'
 import { buildPayslipPdf, payslipFilename } from '../lib/payslipPdf'
 import { getPayrollPayslip } from '../lib/api/payslips'
+import { addEmployeesToPayrollRun, listPayRates } from '../lib/api/compensation'
+import { employeesMissingPay } from '../lib/compensation'
+import { Alert } from '../components/ui'
 import { downloadBytes } from '../lib/pdf'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
@@ -412,6 +415,7 @@ function PayrollRunDetail({
   const [tipsPools, setTipsPools] = useState<TipsPool[]>([])
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [deductions, setDeductions] = useState<PayslipDeduction[]>([])
+  const [payRates, setPayRates] = useState<{ employee_id: string; pay_rate: number | null }[] | null>(null)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -491,6 +495,10 @@ function PayrollRunDetail({
     setPayslips((payslipRes.data ?? []) as unknown as Payslip[])
     setDeductions((dedRes.data ?? []) as unknown as PayslipDeduction[])
     setLoading(false)
+    // Pay rates of everyone in the run, to warn about AED 0 payslips.
+    const ids = ((tsRes.data ?? []) as { employee_id: string }[]).map((t) => t.employee_id)
+    const rates = await listPayRates(ids)
+    setPayRates(rates.error ? null : rates.data)
   }
 
   useEffect(() => {
@@ -566,6 +574,12 @@ function PayrollRunDetail({
   }
 
   const totalNet = payslips.reduce((sum, p) => sum + Number(p.net_pay), 0)
+  const missingPay = payRates
+    ? employeesMissingPay(
+        timesheets.map((t) => ({ employee_id: t.employee_id, name: t.employees?.full_name ?? 'Unknown employee' })),
+        payRates
+      )
+    : []
 
   return (
     <div className="space-y-5">
@@ -662,6 +676,7 @@ function PayrollRunDetail({
         runId={runId}
         editable={editable}
         onChange={load}
+        onNotice={onNotice}
       />
 
       <TipsPoolSection
@@ -695,6 +710,14 @@ function PayrollRunDetail({
             </button>
           )}
         </div>
+        {missingPay.length > 0 && (
+          <div className="mb-3">
+            <Alert tone="warning">
+              <span className="font-semibold">Pay not set for {missingPay.length === 1 ? '1 employee' : `${missingPay.length} employees`}</span> — they will
+              get AED 0 base pay: {missingPay.join(', ')}. Set pay on each employee's profile (Employment tab), then recalculate.
+            </Alert>
+          </div>
+        )}
         {payslips.length === 0 ? (
           <p className="text-sm text-muted">
             {timesheets.length === 0
@@ -770,13 +793,16 @@ function TimesheetSection({
   runId,
   editable,
   onChange,
+  onNotice,
 }: {
   entries: TimesheetEntry[]
   employees: Pick<Employee, 'id' | 'full_name'>[]
   runId: string
   editable: boolean
   onChange: () => void
+  onNotice: (msg: string) => void
 }) {
+  const [adding, setAdding] = useState(false)
   const [employeeId, setEmployeeId] = useState('')
   const [regular, setRegular] = useState('')
   const [overtime, setOvertime] = useState('')
@@ -818,6 +844,23 @@ function TimesheetSection({
     onChange()
   }
 
+  // Monthly-salaried staff have no hours but still need a row in the run to
+  // get a payslip; add_employees_to_payroll_run adds every active employee
+  // of the entity who is missing (0 hours, audited like a manual entry).
+  async function handleAddAll() {
+    setAdding(true)
+    setError(null)
+    const res = await addEmployeesToPayrollRun(runId)
+    setAdding(false)
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+    const n = res.data ?? 0
+    onNotice(n === 0 ? 'All active employees are already in this run.' : `Added ${n} employee${n === 1 ? '' : 's'}.`)
+    onChange()
+  }
+
   async function handleDelete(id: string) {
     const { data, error: rpcError } = await supabase.rpc('delete_timesheet_entry', { p_entry_id: id })
     if (rpcError) {
@@ -834,7 +877,19 @@ function TimesheetSection({
 
   return (
     <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-      <h2 className="mb-3 text-sm font-semibold text-ink">Timesheets</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink">Timesheets</h2>
+        {editable && (
+          <button
+            type="button"
+            onClick={handleAddAll}
+            disabled={adding}
+            className="rounded-lg border border-brand-blue px-3 py-1.5 text-xs font-medium text-brand-blue hover:bg-brand-blue/5 disabled:opacity-60"
+          >
+            {adding ? 'Adding…' : 'Add all active employees'}
+          </button>
+        )}
+      </div>
       {entries.length === 0 ? (
         <p className="mb-3 text-sm text-muted">No hours recorded for this run yet.</p>
       ) : (
