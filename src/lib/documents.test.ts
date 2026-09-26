@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canRoleApprove, canRoleSeeDocType, docTypeLabel, expiryStatus, isRestrictedDocType } from './documents'
+import { canRoleApprove, canRoleSeeDocType, completenessItemLabel, docTypeLabel, expiryStatus, isRestrictedDocType } from './documents'
 
 describe('expiryStatus', () => {
   const today = new Date('2026-08-13T12:00:00Z')
@@ -108,5 +108,17 @@ describe('docTypeLabel', () => {
 
   it('falls back to a humanised version of unknown types', () => {
     expect(docTypeLabel('some_new_type')).toBe('some new type')
+  })
+})
+
+describe('completenessItemLabel', () => {
+  it('labels key-document codes with the document display label', () => {
+    expect(completenessItemLabel('emirates_id_document')).toBe('Emirates ID')
+    expect(completenessItemLabel('passport_document')).toBe('Passport')
+  })
+
+  it('humanises non-document items', () => {
+    expect(completenessItemLabel('emergency_contact')).toBe('Emergency contact')
+    expect(completenessItemLabel('join_date')).toBe('Join date')
   })
 })

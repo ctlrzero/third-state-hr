@@ -7,6 +7,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { GroupOverview } from '../components/GroupOverview'
 import { fmtDate } from '../lib/format'
+import { docTypeLabel } from '../lib/documents'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 
 type ActionKind = 'leave' | 'document' | 'change_request' | 'shift_swap'
@@ -128,7 +129,7 @@ export default function Dashboard() {
         return {
           id: `doc-${doc.id}`,
           kind: 'document',
-          title: `${employeeName} — ${doc.doc_type.replace('_', ' ')}`,
+          title: `${employeeName} — ${docTypeLabel(doc.doc_type)}`,
           subtitle: doc.expiry_date
             ? isExpired
               ? `Expired ${fmtDate(doc.expiry_date)}`

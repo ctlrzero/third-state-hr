@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { Alert, Drawer, Field, Modal, Skeleton, TabPanel, Tabs, type TabDef } from '../components/ui'
-import { expiryStatus } from '../lib/documents'
+import { completenessItemLabel, docTypeLabel, expiryStatus } from '../lib/documents'
 import {
   CHANGE_FIELD_LABEL,
   allowedStatusMoves,
@@ -215,7 +215,7 @@ export default function EmployeeProfile() {
               />
             </div>
             {completeness.missing?.length > 0 && (
-              <p className="mt-1 text-xs text-muted">Missing: {completeness.missing.map(humanize).join(', ')}</p>
+              <p className="mt-1 text-xs text-muted">Missing: {completeness.missing.map(completenessItemLabel).join(', ')}</p>
             )}
           </div>
         ) : null}
@@ -439,8 +439,8 @@ function DocumentsTab({ employee }: { employee: FullEmployee }) {
           <ul className="space-y-1.5">
             {docs.map((d) => (
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-sm">
-                <span className="capitalize">
-                  {d.doc_type.replace(/_/g, ' ')} · v{d.version_number}
+                <span>
+                  {docTypeLabel(d.doc_type)} · v{d.version_number}
                   {d.expiry_date && <span className="text-muted"> · expires {fmtDate(d.expiry_date)}</span>}
                 </span>
                 <StatusBadge status={d.review_status} />
@@ -743,7 +743,7 @@ function StatusModal({
       {blocked && (
         <Alert tone="warning">
           Key documents must be approved and in date before activation. Missing:{' '}
-          {missingKeyDocs.map((m) => humanize(m.replace(/_document$/, ''))).join(', ')}. Add them on the Documents tab.
+          {missingKeyDocs.map(completenessItemLabel).join(', ')}. Add them on the Documents tab.
         </Alert>
       )}
       <Field label={needsReason ? 'Reason' : 'Note (optional)'} error={err} required={needsReason}>

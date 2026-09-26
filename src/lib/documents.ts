@@ -99,3 +99,16 @@ export function expiryStatus(expiryDate: string | null, today: Date = new Date()
 export function docTypeLabel(docType: string): string {
   return DOC_TYPES.find((t) => t.value === docType)?.label ?? docType.replace(/_/g, ' ')
 }
+
+/**
+ * Label for a code in get_employee_completeness().missing: key-document codes
+ * arrive as "<doc_type>_document" (e.g. "emirates_id_document" → "Emirates ID");
+ * everything else ("emergency_contact", "join_date") is humanised.
+ */
+export function completenessItemLabel(code: string): string {
+  const docType = code.replace(/_document$/, '')
+  const known = DOC_TYPES.find((t) => t.value === docType)
+  if (known) return known.label
+  const s = code.replace(/_/g, ' ')
+  return s.charAt(0).toUpperCase() + s.slice(1)
+}
