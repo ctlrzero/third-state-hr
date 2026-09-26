@@ -48,8 +48,10 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   '/clock': ALL,
   '/attendance': MANAGERS,
   '/leave': ALL,
-  // Staff see their own payslips here; location_manager never sees Payroll.
-  '/payroll': ['owner', 'entity_admin', 'staff'],
+  // Staff see their own payslips (or the workspace if granted payroll
+  // access); location managers get the hours/tips inputs sheet — the
+  // server never returns pay amounts to them.
+  '/payroll': ['owner', 'entity_admin', 'location_manager', 'staff'],
   '/reports': MANAGERS,
   '/workflows': ADMINS,
   '/admin': ADMINS,
@@ -83,6 +85,7 @@ const MANAGEMENT_NAV: NavItem[] = [
   { label: 'Documents', to: '/documents', icon: 'documents', roles: MANAGERS },
   { label: 'Recruiting', to: '/recruiting', icon: 'recruiting', roles: MANAGERS },
   { label: 'Payroll', to: '/payroll', icon: 'payroll', roles: ADMINS },
+  { label: 'Payroll inputs', to: '/payroll', icon: 'payroll', roles: ['location_manager'] },
   { label: 'Reports', to: '/reports', icon: 'reports', roles: MANAGERS },
   { label: 'Workflows', to: '/workflows', icon: 'workflows', roles: ADMINS },
   { label: 'Admin', to: '/admin', icon: 'admin', roles: ADMINS },

@@ -6,19 +6,65 @@ import { getMyPayslip, getMyPayslips, type MyPayslipDetail, type MyPayslipListRo
 import { buildPayslipPdf, lineLabel, money, payslipFilename } from '../lib/payslipPdf'
 import { downloadBytes } from '../lib/pdf'
 import { fmtDate } from '../lib/format'
+import { getMyPayslipV2, getMyPayslipsV2 } from '../lib/api/payroll'
+import { myV2ToPdfData } from '../lib/payroll'
 
 // Staff "Payslips": own published payslips only (get_my_payslips /
 // get_my_payslip resolve the employee from auth.uid()). PDFs are generated
 // in the browser from the RPC data — there is no stored payslip file.
+interface ListItem {
+  key: string
+  source: 'v1' | 'v2'
+  id: string
+  period_start: string
+  period_end: string
+  label: string | null
+  badges: { text: string; tone?: 'info' | 'neutral' }[]
+  net: number
+  currency: string
+}
+
+// Staff "Payslips": own published payslips only. Payroll v2 records
+// (payroll_my_payslips) and earlier runs (get_my_payslips) are listed
+// together; both resolve the employee from auth.uid(). PDFs are generated
+// in the browser from the RPC data — there is no stored payslip file.
 export default function MyPayslips() {
-  const [rows, setRows] = useState<MyPayslipListRow[] | null>(null)
+  const [rows, setRows] = useState<ListItem[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [open, setOpen] = useState<ListItem | null>(null)
 
   useEffect(() => {
-    getMyPayslips().then((res) => {
-      if (res.error) setError(res.error)
-      setRows(res.data ?? [])
+    Promise.all([getMyPayslipsV2(), getMyPayslips()]).then(([v2, v1]) => {
+      if (v2.error && v1.error) setError(v2.error)
+      const a: ListItem[] = (v2.data ?? []).map((p) => ({
+        key: `v2-${p.record_id}`,
+        source: 'v2',
+        id: p.record_id,
+        period_start: p.period_start,
+        period_end: p.period_end,
+        label: p.kind === 'off_cycle' ? p.label : null,
+        badges: [
+          ...(p.is_correction ? [{ text: 'Corrected', tone: 'info' as const }] : []),
+          ...(p.superseded ? [{ text: 'Superseded', tone: 'neutral' as const }] : []),
+        ],
+        net: p.net,
+        currency: p.currency,
+      }))
+      const b: ListItem[] = (v1.data ?? []).map((p: MyPayslipListRow) => ({
+        key: `v1-${p.payslip_id}`,
+        source: 'v1',
+        id: p.payslip_id,
+        period_start: p.period_start,
+        period_end: p.period_end,
+        label: null,
+        badges: [
+          ...(p.is_revision ? [{ text: `Revision v${p.version}`, tone: 'info' as const }] : []),
+          ...(p.superseded ? [{ text: 'Superseded', tone: 'neutral' as const }] : []),
+        ],
+        net: p.net_pay,
+        currency: p.currency,
+      }))
+      setRows([...a, ...b].sort((x, y) => y.period_start.localeCompare(x.period_start)))
     })
   }, [])
 
@@ -29,50 +75,66 @@ export default function MyPayslips() {
       {rows === null ? (
         <Skeleton rows={3} className="h-20" />
       ) : rows.length === 0 ? (
-        <EmptyState title="No payslips yet" description="Your payslip appears here once payroll for the period is approved." />
+        <EmptyState title="No payslips yet" description="Your payslip appears here once payroll for the period is approved and published." />
       ) : (
         <ul className="space-y-3">
           {rows.map((p) => (
-            <li key={p.payslip_id}>
+            <li key={p.key}>
               <button
                 type="button"
-                onClick={() => setOpenId(p.payslip_id)}
+                onClick={() => setOpen(p)}
                 className="card flex w-full flex-wrap items-center justify-between gap-3 text-left transition hover:border-brand-blue/40"
               >
                 <span>
                   <span className="block font-semibold text-ink">
-                    {fmtDate(p.period_start)} – {fmtDate(p.period_end)}
+                    {p.label ?? `${fmtDate(p.period_start)} – ${fmtDate(p.period_end)}`}
                   </span>
                   <span className="mt-1 flex flex-wrap gap-1">
-                    <StatusBadge status={p.run_status} />
-                    {p.is_revision && <StatusBadge status={`Revision v${p.version}`} tone="info" />}
-                    {p.superseded && <StatusBadge status="Superseded" tone="neutral" />}
+                    <StatusBadge status="Published" tone="success" />
+                    {p.badges.map((b) => (
+                      <StatusBadge key={b.text} status={b.text} tone={b.tone} />
+                    ))}
                   </span>
                 </span>
                 <span className="text-right">
                   <span className="block text-xs text-muted">Net pay</span>
-                  <span className="text-lg font-semibold text-ink">{money(p.net_pay, p.currency)}</span>
+                  <span className="text-lg font-semibold text-ink">{money(p.net, p.currency)}</span>
                 </span>
               </button>
             </li>
           ))}
         </ul>
       )}
-      {openId && <PayslipDrawer payslipId={openId} onClose={() => setOpenId(null)} />}
+      {open && (
+        <PayslipDrawer
+          load={async () => {
+            if (open.source === 'v1') return getMyPayslip(open.id)
+            const res = await getMyPayslipV2(open.id)
+            return { data: res.data ? myV2ToPdfData(res.data) : null, error: res.error }
+          }}
+          onClose={() => setOpen(null)}
+        />
+      )}
     </div>
   )
 }
 
-function PayslipDrawer({ payslipId, onClose }: { payslipId: string; onClose: () => void }) {
+function PayslipDrawer({
+  load,
+  onClose,
+}: {
+  load: () => Promise<{ data: MyPayslipDetail | null; error: string | null }>
+  onClose: () => void
+}) {
   const [detail, setDetail] = useState<MyPayslipDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    getMyPayslip(payslipId).then((res) => {
+    load().then((res) => {
       if (res.error) setError(res.error)
       else setDetail(res.data)
     })
-  }, [payslipId])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function download() {
     if (!detail) return
@@ -113,7 +175,7 @@ function PayslipDrawer({ payslipId, onClose }: { payslipId: string; onClose: () 
         <Skeleton rows={4} />
       ) : (
         <div className="space-y-4 text-sm">
-          {detail.superseded && <Alert tone="warning">This payslip was replaced by a later revision.</Alert>}
+          {detail.superseded && <Alert tone="warning">This payslip was replaced by a later correction.</Alert>}
           <dl className="grid grid-cols-2 gap-3">
             <div>
               <dt className="text-muted">Employer</dt>

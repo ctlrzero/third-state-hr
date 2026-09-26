@@ -182,13 +182,14 @@ describe('clockButtonModel', () => {
 })
 
 describe('nav mapping', () => {
-  it('never shows Payroll/Workflows/Admin to location_manager', () => {
-    const paths = navForRole('location_manager').map((i) => i.to)
-    expect(paths).not.toContain('/payroll')
+  it('gives location_manager payroll inputs only, never Workflows/Admin', () => {
+    const items = navForRole('location_manager')
+    const paths = items.map((i) => i.to)
+    expect(items.find((i) => i.to === '/payroll')?.label).toBe('Payroll inputs')
     expect(paths).not.toContain('/workflows')
     expect(paths).not.toContain('/admin')
     expect(paths).toContain('/attendance')
-    expect(canAccessRoute('location_manager', '/payroll')).toBe(false)
+    expect(canAccessRoute('location_manager', '/payroll')).toBe(true)
     expect(canAccessRoute('location_manager', '/admin')).toBe(false)
   })
   it('gives staff the 4+More bottom nav', () => {
