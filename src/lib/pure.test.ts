@@ -5,7 +5,7 @@ import { clockButtonModel } from './clockState'
 import { canAccessRoute, mobileNavForRole, navForRole } from './nav'
 import { isMissingFunction } from './api/client'
 import { diffEmployeeChanges } from './api/employees'
-import { fmtMinutes, fmtTime, fromDubaiLocalInput, toDubaiLocalInput } from './format'
+import { fmtClockRange, fmtMinutes, fmtTime, fromDubaiLocalInput, toDubaiLocalInput } from './format'
 
 describe('buildWorkflowSummary', () => {
   it('builds the canonical leave example', () => {
@@ -232,5 +232,11 @@ describe('format', () => {
   it('round-trips datetime-local in Dubai time', () => {
     expect(toDubaiLocalInput('2026-09-25T05:05:00.000Z')).toBe('2026-09-25T09:05')
     expect(fromDubaiLocalInput('2026-09-25T09:05')).toBe('2026-09-25T05:05:00.000Z')
+  })
+  it('names a missing clock-out instead of rendering a dash', () => {
+    expect(fmtClockRange('2026-09-25T08:02:00Z', null)).toBe('12:02 · no clock-out')
+    expect(fmtClockRange('2026-09-25T08:02:00Z', '2026-09-25T13:30:00Z')).toBe('12:02–17:30')
+    expect(fmtClockRange(null, '2026-09-25T13:30:00Z')).toBe('No clock-in · out 17:30')
+    expect(fmtClockRange(null, null)).toBe('—')
   })
 })

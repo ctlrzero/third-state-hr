@@ -33,6 +33,17 @@ export function fmtTime(value: string | null | undefined): string {
   return d.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: TZ })
 }
 
+/**
+ * Actual clock-in/out span: "12:02–17:30". A missing side is named rather
+ * than rendered as a dash ("12:02 · no clock-out", "No clock-in · out 17:30").
+ */
+export function fmtClockRange(clockIn: string | null | undefined, clockOut: string | null | undefined): string {
+  if (!clockIn && !clockOut) return '—'
+  if (!clockOut) return `${fmtTime(clockIn)} · no clock-out`
+  if (!clockIn) return `No clock-in · out ${fmtTime(clockOut)}`
+  return `${fmtTime(clockIn)}–${fmtTime(clockOut)}`
+}
+
 /** "25 Sep 2026, 14:05" */
 export function fmtDateTime(value: string | null | undefined): string {
   if (!value) return '—'

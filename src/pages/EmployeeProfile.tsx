@@ -19,7 +19,7 @@ import {
   type AuditRow,
   type Completeness,
 } from '../lib/api/employees'
-import { fmtDate, fmtDateTime, fmtDayShort, fmtMinutes, fmtTime, humanize, todayDubai, addDays } from '../lib/format'
+import { fmtClockRange, fmtDate, fmtDateTime, fmtDayShort, fmtMinutes, fmtTime, humanize, todayDubai, addDays } from '../lib/format'
 import type { Employee, EmployeeChangeRequest, EmployeeDocument, EmployeeStatus, LeaveBalance, LeaveRequest } from '../types/db'
 
 const EXPIRY_DOCS: { key: 'passport_exp' | 'visa_exp' | 'labor_card_exp' | 'health_card_exp'; label: string }[] = [
@@ -531,7 +531,7 @@ function AttendanceTab({ employeeId }: { employeeId: string }) {
             return (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-sm">
                 <span>
-                  {fmtDayShort(r.clock_in_at)} · {fmtTime(r.clock_in_at)}–{fmtTime(r.clock_out_at)}
+                  {fmtDayShort(r.clock_in_at)} · {fmtClockRange(r.clock_in_at, r.clock_out_at)}
                   {r.corrected && <span className="block text-xs text-brand-info-text">Corrected: {r.correction_reason}</span>}
                 </span>
                 <span className="flex items-center gap-2">

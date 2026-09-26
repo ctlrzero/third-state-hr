@@ -11,7 +11,7 @@ import {
   type MyAttendanceRow,
 } from '../lib/api/attendance'
 import { CLOCK_STATE_LABEL, clockButtonModel } from '../lib/clockState'
-import { addDays, fmtDayShort, fmtMinutes, fmtTime, todayDubai } from '../lib/format'
+import { addDays, fmtClockRange, fmtDayShort, fmtMinutes, fmtTime, todayDubai } from '../lib/format'
 
 // Staff "Clock" screen (mobile-first). The big button's state is always
 // derived from what the server says (get_my_clock_status), never from an
@@ -200,7 +200,7 @@ export default function Clock() {
                   <p className="font-medium text-ink">{fmtDayShort(r.business_date)}</p>
                   <p className="text-sm text-muted">
                     {r.planned_start ? `Planned ${fmtTime(r.planned_start)}–${fmtTime(r.planned_end)} · ` : ''}
-                    {r.clock_in_at ? `Actual ${fmtTime(r.clock_in_at)}–${fmtTime(r.clock_out_at)}` : 'No clock-in'}
+                    {r.clock_in_at ? `Actual ${fmtClockRange(r.clock_in_at, r.clock_out_at)}` : 'No clock-in'}
                     {r.location_name ? ` · ${r.location_name}` : ''}
                   </p>
                   {r.corrected && (

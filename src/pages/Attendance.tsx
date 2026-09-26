@@ -36,6 +36,7 @@ import {
 import type { AttendanceException } from '../types/db'
 import {
   addDays,
+  fmtClockRange,
   fmtDateTime,
   fmtDayShort,
   fmtMinutes,
@@ -235,7 +236,7 @@ export default function Attendance() {
         return s ? `${fmtTime(s.start_time)}–${fmtTime(s.end_time)}` : '—'
       },
     },
-    { key: 'actual', header: 'Actual', render: (e) => `${fmtTime(e.clock_in_at)}–${fmtTime(e.clock_out_at)}` },
+    { key: 'actual', header: 'Actual', render: (e) => fmtClockRange(e.clock_in_at, e.clock_out_at) },
   ]
 
   const adjustmentColumns: Column<AttendanceAdjustment>[] = [
