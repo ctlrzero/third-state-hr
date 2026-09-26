@@ -140,6 +140,14 @@ Mark each step pass/fail. "Expect" is what must happen. Business dates are Dubai
 4. Inactivate with a reason. Expect: login deactivated and future unpublished shifts cancelled. Reactivate afterwards.
 5. employee.a → **Profile**: request a change (phone). The manager approves it in **People → Change requests**.
 
+### 4.10a Pay (owner, entityadmin.a)
+1. **People → an employee → Employment**. Expect a **Pay** card; with no rate: "Pay not set — this employee will get AED 0 on payslips" and an amber **Pay not set** chip in the header.
+2. **Set pay**: *Monthly salary* is preselected. Enter 4500 → preview shows *AED 4,500.00 / month* → **Save pay**. Expect the card shows the rate and last updated; the chip disappears.
+3. **Edit pay** → switch to *Hourly*, 25.50. Saving without a reason is blocked ("A reason is required…"); add a reason and save. Owner → **Audit** tab shows *Compensation changed*.
+4. Invalid values are rejected inline: 0, 1,000,000, 25.125, multipliers outside 1–3.
+5. entityadmin.a cannot open or set pay for an Entity B employee, nor their own. locationmanager.a / employee.a: no Pay card or chip in the DOM at all.
+6. **Payroll** → a draft run → **Add all active employees**. Expect "Added N employees", every active employee listed with 0 hours; a second click adds 0. If anyone in the run has no rate, the Payslips card shows a warning listing them.
+
 ### 4.11 Notifications
 1. The bell shows an unread count; **Notifications** lists them with paging.
 2. Mark one read, then **Mark all read**. Expect: the count drops to 0.
@@ -157,9 +165,10 @@ Mark each step pass/fail. "Expect" is what must happen. Business dates are Dubai
 
 | Suite | How to run | What it covers |
 |---|---|---|
-| Unit tests | `npm test` (Vitest) | Pure logic: clock state, payslip PDF, workflow summaries, CSV import, lifecycle rules, formatting, password validation and invite-outcome messages (`src/lib/authFlows.test.ts`) |
+| Unit tests | `npm test` (Vitest) | Pure logic: pay rate formatting/validation (`src/lib/compensation.test.ts`), clock state, payslip PDF, workflow summaries, CSV import, lifecycle rules, formatting, password validation and invite-outcome messages (`src/lib/authFlows.test.ts`) |
 | Negative-access (API) | `npm run test:access` from a machine that can reach `*.supabase.co` (uses `.env` + the UAT personas) | Real PostgREST calls as each persona: denied reads/RPCs, entity isolation, revoked user, anon |
 | Negative-access (SQL) | Paste `supabase/tests/access_tests.sql` into the Supabase SQL editor (or MCP `execute_sql`) as postgres | Same checks as the API suite, run inside a rolled-back transaction. Expect `passed = total` |
+| Compensation (SQL, W7) | Paste `supabase/tests/w7_compensation_tests.sql` as postgres | Creates temporary users/entities/employees/run inside one `DO` block and ends with `RAISE EXCEPTION` carrying the results (nothing persists — works with no UAT users). Covers owner/EA set+get, LM/staff `42501` on the RPCs and 0 rows / permission denied on the table, invalid values, audit rows, `add_employees_to_payroll_run` (only missing active employees, idempotent, draft only) and the payroll maths. Every line must start `PASS` |
 | End-to-end journeys (SQL) | Paste `supabase/tests/e2e_journeys.sql` the same way | Staff clock/attendance/leave/payslips, LM exceptions/correction/leave approval, EA access/branch/lifecycle/workflow/publish/payroll, owner KPIs/retention/audit, cross-entity isolation. Expect every row `pass = true`. Rolled back |
 
 Both SQL suites impersonate personas exactly like PostgREST (`set local role authenticated` +

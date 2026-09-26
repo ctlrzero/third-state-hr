@@ -178,6 +178,24 @@ An `#error_code=otp_expired` (or no session) shows "link invalid or expired — 
 - Completeness `missing` values: `contact, emergency_contact, position, join_date, passport_document,
   visa_document, emirates_id_document, contract_document`. (Was raising 22P02 for every employee.)
 
+### 4a. Compensation (pay) **[new, W7]**
+
+| RPC | Args | Roles | Returns |
+|---|---|---|---|
+| `get_employee_compensation` | `p_employee_id` | O (any entity), EA (own entity). LM/S → `42501` | `{pay_type 'monthly'|'hourly', pay_rate numeric|null, overtime_multiplier, holiday_multiplier, updated_at}` |
+| `set_employee_compensation` | `p_employee_id, p_pay_type text, p_pay_rate numeric, p_overtime_multiplier numeric = null, p_holiday_multiplier numeric = null, p_reason text = null` | O (any entity), EA (own entity; not own pay; not an employee linked to an owner login). LM/S → `42501` | `void` |
+
+- Validation (`22023`): `p_pay_type` in `monthly, hourly`; `0 < p_pay_rate < 1,000,000` (AED, max 2 dp);
+  multipliers, when given, `1..3` (null keeps the current value, default 1.5 / 2.0); employee not `inactive`;
+  `p_reason` required when an existing rate is changed. Unchanged values are a no-op (no audit row).
+- Upserts `employee_compensation` and writes `audit_log` action `compensation_changed`
+  (`old_value`/`new_value` = pay_type, pay_rate, multipliers; `new_value` also has `reason`, `actor_role`;
+  entity/location/employee scope set).
+- `employee_compensation.pay_type` defaults to **monthly**. Direct `INSERT/UPDATE/DELETE` on the table is
+  revoked from `authenticated`; `SELECT` stays under RLS `comp_access` (O, EA own entity; LM/S see 0 rows).
+- Payroll maths (`run_payroll_calculation`): hourly = regular_hours × rate (+ OT/holiday × multipliers when
+  confirmed on the run); monthly = the fixed rate per run. A null rate pays AED 0.
+
 ## 5. Leave
 
 | RPC | Args | Roles | Returns |
@@ -223,10 +241,14 @@ LM own). Draft (`is_published=false`) shifts are never visible to staff. Also:
 | `record_payslip_deduction` / `delete_payslip_deduction` | `…, p_deduction_type 'uniform'|'cash_shortage'|'advance'|'other'` | O, EA (draft) | `{ok, …}` |
 | `record_tips_pool` / `delete_tips_pool` | see signature | O, EA (draft) | `{ok, …}` |
 | `materialize_payroll_from_payable_shifts`, `override_materialized_payable_shift` | see signature | O, EA | `{ok, …}` |
+| `add_employees_to_payroll_run` **[new, W7]** | `p_payroll_run_id` | O, EA scoped; LM → `42501` | `integer` = rows added. Draft runs only (`22023` otherwise). Adds a 0-hour timesheet row (notes `Added automatically`) through `record_timesheet_entry` (same checks, `payroll_change_succeeded` audit) for every **active** employee of the run's entity with no row yet and `join_date` null or ≤ `period_end`. Idempotent |
 | `get_wps_export_readiness` | `p_payroll_run_id` | O, EA scoped | `TABLE(employee_id, employee_name, missing_labor_card_no, missing_bank_iban, missing_bank_name, net_pay)` |
 | `get_my_payslips` **[new]** | – | self (any role with an employee record) | `TABLE(payslip_id, payroll_run_id, period_start, period_end, run_status, version int, is_revision, superseded, published_at, currency, gross_pay, total_deductions, net_pay)` |
 | `get_my_payslip` **[new]** | `p_payslip_id` | self, published only | `jsonb` (below) |
 | `get_payroll_payslip` **[new, W4]** | `p_payslip_id` | O (any entity), EA (own entity); any run status | same `jsonb` as `get_my_payslip` (`published_at` null until approved); audited `payslip_viewed` with `viewer_role` |
+
+Only employees with a `timesheet_entries` row in the run get a payslip — use `add_employees_to_payroll_run`
+so monthly-salaried staff (no hours) are not left out.
 
 Published = run status `approved` or `paid`. LM has no payroll RPC access. Published payslips (and their
 deductions/timesheets/tips) are immutable at the DB level (trigger); corrections go through
