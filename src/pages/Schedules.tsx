@@ -128,6 +128,10 @@ function ScheduleAdmin() {
     () => (locationFilter === 'all' ? shifts : shifts.filter((s) => s.location_id === locationFilter)),
     [shifts, locationFilter]
   )
+  const visibleTemplates = useMemo(
+    () => (locationFilter === 'all' ? templates : templates.filter((t) => t.location_id === locationFilter)),
+    [templates, locationFilter]
+  )
 
   async function handleCancelShift(id: string) {
     if (!(await confirmDialog('Cancel this shift?'))) return
@@ -237,7 +241,7 @@ function ScheduleAdmin() {
       </label>
 
       <RecurringTemplatesPanel
-        templates={templates}
+        templates={visibleTemplates}
         locations={locations}
         onNewTemplate={() => setTemplateModalOpen(true)}
         onDeactivate={handleDeactivateTemplate}
