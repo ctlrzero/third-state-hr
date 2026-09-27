@@ -44,7 +44,10 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   // Managers see the dashboard; staff see their own onboarding (or pay/bank
   // reviews with payroll permission). Every RPC re-checks scope.
   '/onboarding': ALL,
-  '/offboarding': MANAGERS,
+  // Managers see the branch/company checklist; staff with payroll access
+  // (e.g. a payroll-admin preset) see the settlement side. The page itself
+  // checks payroll_can for a staff caller.
+  '/offboarding': ['owner', 'entity_admin', 'location_manager', 'staff'],
   '/me': ALL,
   '/my-interviews': ALL,
   '/documents': ALL,
@@ -78,6 +81,9 @@ const STAFF_NAV: NavItem[] = [
   { label: 'Leave', to: '/leave', icon: 'leave', roles: ['staff'] },
   { label: 'Documents', to: '/documents', icon: 'documents', roles: ['staff'] },
   { label: 'Payslips', to: '/payroll', icon: 'payroll', roles: ['staff'] },
+  // Only meaningful for a payroll-admin preset staff login; the page itself
+  // checks payroll_can and shows a plain staff member a "not authorized" state.
+  { label: 'Offboarding', to: '/offboarding', icon: 'offboarding', roles: ['staff'] },
   { label: 'Profile', to: '/me', icon: 'profile', roles: ['staff'] },
   { label: 'My Interviews', to: '/my-interviews', icon: 'interviews', roles: ['staff'], requires: 'interviewAssignment' },
   { label: 'Notifications', to: '/notifications', icon: 'notifications', roles: ['staff'] },

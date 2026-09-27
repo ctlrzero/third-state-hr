@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../../auth/AuthContext'
 import { Alert, Drawer, Modal, Skeleton } from '../../components/ui'
 import { StatusBadge } from '../../components/StatusBadge'
 import {
@@ -7,16 +8,20 @@ import {
   completeOffboarding,
   completeOffboardingTask,
   getOffboardingCase,
+  startOffboardingSettlement,
   updateOffboardingDates,
   type OffboardingCase,
   type OffboardingTask,
 } from '../../lib/api/offboarding'
 import { OFF_OWNER_LABEL, SEPARATION_LABEL } from '../../lib/offboarding'
+import { openOffboardingLetterForPrint } from '../../lib/offboardingLetter'
 import { fmtDate, fmtDateTime, todayDubai } from '../../lib/format'
 import { fmtMoney } from '../../lib/payroll'
 import { ReasonModal, Section } from '../onboarding/shared'
 
 export default function CaseDrawer({ caseId, onClose, onChanged }: { caseId: string | null; onClose: () => void; onChanged: () => void }) {
+  const { entities, activeEntityId } = useAuth()
+  const companyName = entities.find((e) => e.id === activeEntityId)?.name ?? 'the company'
   const [d, setD] = useState<OffboardingCase | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -59,6 +64,7 @@ export default function CaseDrawer({ caseId, onClose, onChanged }: { caseId: str
   const open = c?.status === 'open'
   const canDo = (t: OffboardingTask) => (t.owner_role === 'location_manager' ? p?.operate : t.owner_role === 'payroll' ? p?.payroll : p?.manage)
   const openRequired = d?.tasks.filter((t) => t.is_required && t.status === 'not_started').length ?? 0
+  const settlementTask = d?.tasks.find((t) => t.item_key === 'final_settlement')
 
   return (
     <Drawer open={Boolean(caseId)} wide title={d ? d.employee.name : 'Offboarding'} description={d ? [d.employee.position, d.employee.branch].filter(Boolean).join(' · ') : undefined} onClose={onClose}>
@@ -81,11 +87,17 @@ export default function CaseDrawer({ caseId, onClose, onChanged }: { caseId: str
             title="Leaving"
             id="off-summary"
             actions={
-              open &&
               p?.manage && (
-                <button className="btn-secondary min-h-9" onClick={() => setDates(true)}>
-                  Change dates
-                </button>
+                <div className="flex gap-2">
+                  <button className="btn-ghost min-h-9" onClick={() => openOffboardingLetterForPrint(d, companyName)}>
+                    Print letter (EN/AR)
+                  </button>
+                  {open && (
+                    <button className="btn-secondary min-h-9" onClick={() => setDates(true)}>
+                      Change dates
+                    </button>
+                  )}
+                </div>
               )
             }
           >
@@ -185,8 +197,26 @@ export default function CaseDrawer({ caseId, onClose, onChanged }: { caseId: str
               }
             >
               <p className="text-sm text-ink">
-                Pay within 14 days of the last working day: by <strong>{fmtDate(d.settlement.due_date)}</strong>. Use Payroll → Off-cycle / final settlement.
+                Pay within 14 days of the last working day: by <strong>{fmtDate(d.settlement.due_date)}</strong>.
               </p>
+              {d.settlement.payroll_period_id ? (
+                <Alert tone={settlementTask?.status === 'done' ? 'success' : 'info'}>
+                  {settlementTask?.status === 'done'
+                    ? 'Paid. The checklist item completed on its own.'
+                    : 'An off-cycle payroll run is open for this settlement. Add the final amounts and approve/pay it in Payroll — the checklist item completes on its own once it is paid.'}
+                </Alert>
+              ) : (
+                open &&
+                (p?.manage || p?.payroll) && (
+                  <button
+                    className="btn-secondary min-h-9"
+                    disabled={busy}
+                    onClick={() => act(() => startOffboardingSettlement(c.id, null), 'Off-cycle payroll run opened for the final settlement.')}
+                  >
+                    Start settlement in Payroll
+                  </button>
+                )
+              )}
               {d.settlement.gratuity && (
                 <div className="rounded-lg bg-surface-alt p-3 text-sm">
                   {d.settlement.gratuity.ok ? (

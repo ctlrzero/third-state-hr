@@ -16,6 +16,7 @@ import {
 } from '../../lib/api/onboarding'
 import { TRACK_LABEL } from '../../lib/onboarding'
 import { fmtDate, todayDubai } from '../../lib/format'
+import { fmtMoney } from '../../lib/payroll'
 import { ReasonModal, Section } from './shared'
 
 const STEP_STATUS: Record<ImmigrationStepStatus, { label: string; tone: 'neutral' | 'info' | 'success' | 'risk' }> = {
@@ -146,6 +147,7 @@ export default function ImmigrationCard({ employeeId, onChanged }: { employeeId:
                       {s.expiry_date && `Expires ${fmtDate(s.expiry_date)} · `}
                       {s.status === 'done' && s.completed_at ? `Done ${fmtDate(s.completed_at)}` : s.due_date ? `Target ${fmtDate(s.due_date)}` : ''}
                       {overdue && <span className="text-brand-risk-text"> · overdue</span>}
+                      {s.fee_amount != null && ` · Fee ${fmtMoney(s.fee_amount)} (${s.fee_paid_by === 'employee' ? 'employee paid' : 'company paid'})`}
                     </span>
                     {s.notes && <span className="block text-xs text-muted">{s.notes}</span>}
                   </span>
@@ -171,7 +173,18 @@ export default function ImmigrationCard({ employeeId, onChanged }: { employeeId:
       )}
 
       {editing && <StepEditor step={editing} onClose={() => setEditing(null)} onSave={async (a) => {
-        const e = await after(await updateImmigrationStep(editing.id, a.status, a.reference || null, a.expiry || null, a.due || null, a.notes || null))
+        const e = await after(
+          await updateImmigrationStep(
+            editing.id,
+            a.status,
+            a.reference || null,
+            a.expiry || null,
+            a.due || null,
+            a.notes || null,
+            a.feeAmount ? Number(a.feeAmount) : null,
+            a.feeAmount ? a.feePaidBy : null
+          )
+        )
         if (!e) setEditing(null)
         return e
       }} />}
@@ -238,9 +251,17 @@ function StepEditor({
 }: {
   step: ImmigrationStep
   onClose: () => void
-  onSave: (a: { status: ImmigrationStepStatus; reference: string; expiry: string; due: string; notes: string }) => Promise<string | null>
+  onSave: (a: { status: ImmigrationStepStatus; reference: string; expiry: string; due: string; notes: string; feeAmount: string; feePaidBy: 'company' | 'employee' }) => Promise<string | null>
 }) {
-  const [f, setF] = useState({ status: step.status, reference: step.reference_number ?? '', expiry: step.expiry_date ?? '', due: step.due_date ?? '', notes: '' })
+  const [f, setF] = useState({
+    status: step.status,
+    reference: step.reference_number ?? '',
+    expiry: step.expiry_date ?? '',
+    due: step.due_date ?? '',
+    notes: '',
+    feeAmount: step.fee_amount != null ? String(step.fee_amount) : '',
+    feePaidBy: (step.fee_paid_by ?? 'company') as 'company' | 'employee',
+  })
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   async function save() {
@@ -291,6 +312,26 @@ function StepEditor({
         <label className="block">
           <span className="label">Target date</span>
           <input type="date" className="input" value={f.due} onChange={(e) => setF({ ...f, due: e.target.value })} />
+        </label>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="label">Fee (if any)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            className="input"
+            value={f.feeAmount}
+            onChange={(e) => setF({ ...f, feeAmount: e.target.value })}
+          />
+        </label>
+        <label className="block">
+          <span className="label">Paid by</span>
+          <select className="input" value={f.feePaidBy} onChange={(e) => setF({ ...f, feePaidBy: e.target.value as 'company' | 'employee' })} disabled={!f.feeAmount}>
+            <option value="company">Company</option>
+            <option value="employee">Employee</option>
+          </select>
         </label>
       </div>
       <label className="block">

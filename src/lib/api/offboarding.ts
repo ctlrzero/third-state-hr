@@ -60,6 +60,7 @@ export interface OffboardingCase {
     due_date: string
     gratuity: { ok: boolean; amount?: number; years?: number; explanation?: string; reason?: string; note?: string } | null
     leave_balances: { leave_type: string; balance_days: number }[]
+    payroll_period_id: string | null
   } | null
   timeline: { action: string; at: string; by: string | null }[] | null
 }
@@ -114,3 +115,10 @@ export const completeOffboarding = (caseId: string, notes: string | null) =>
   callRpc<{ ok: boolean }>('complete_offboarding', { p_case_id: caseId, p_notes: notes })
 
 export const cancelOffboarding = (caseId: string, reason: string) => callRpc<{ ok: boolean }>('cancel_offboarding', { p_case_id: caseId, p_reason: reason })
+
+// Opens (or returns the existing) off-cycle payroll period for this leaver's
+// final settlement and prepares a draft record — HR/payroll then add the
+// actual settlement lines and approve/pay it in Payroll, same as any
+// off-cycle run. The checklist item completes on its own once it's paid.
+export const startOffboardingSettlement = (caseId: string, payDate: string | null = null) =>
+  callRpc<{ ok: boolean; already: boolean; period_id: string }>('start_offboarding_settlement', { p_case_id: caseId, p_pay_date: payDate })
