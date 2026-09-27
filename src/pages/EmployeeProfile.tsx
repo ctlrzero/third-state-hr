@@ -36,6 +36,8 @@ import {
 import { findOpenOnboarding, startForEmployee, type OnboardingStatus } from '../lib/api/onboarding'
 import { STATUS_LABEL as ONB_STATUS_LABEL } from '../lib/onboarding'
 import { ReasonModal } from './onboarding/shared'
+import ImmigrationCard from './onboarding/ImmigrationCard'
+import StartOffboarding from './offboarding/StartOffboarding'
 import type { Employee, EmployeeChangeRequest, EmployeeDocument, EmployeeStatus, LeaveBalance, LeaveRequest } from '../types/db'
 
 const EXPIRY_DOCS: { key: 'passport_exp' | 'visa_exp' | 'labor_card_exp' | 'health_card_exp'; label: string }[] = [
@@ -95,6 +97,8 @@ export default function EmployeeProfile() {
   const [statusTarget, setStatusTarget] = useState<EmployeeStatus | null>(null)
   const [onboarding, setOnboarding] = useState<{ id: string; status: OnboardingStatus } | null>(null)
   const [startingOnb, setStartingOnb] = useState(false)
+  const [offboardCase, setOffboardCase] = useState<string | null>(null)
+  const [startingOff, setStartingOff] = useState(false)
   const [editing, setEditing] = useState(false)
   // Pay: owner / entity_admin only (get_employee_compensation re-checks).
   const [comp, setComp] = useState<CompensationView | null>(null)
@@ -154,6 +158,9 @@ export default function EmployeeProfile() {
     if (!c.error) setCompleteness(c.data)
     // Open onboarding (null when none, or when onboarding is not deployed).
     setOnboarding(await findOpenOnboarding(id))
+    // Open offboarding (owner / entity admin can read cases directly).
+    const off = await supabase.from('offboarding_cases').select('id').eq('employee_id', id).eq('status', 'open').maybeSingle()
+    setOffboardCase(off.error ? null : ((off.data?.id as string | undefined) ?? null))
   }, [id])
 
   useEffect(() => {
@@ -223,6 +230,19 @@ export default function EmployeeProfile() {
         <p>Uses this employee record — no second record is created. The onboarding checklist comes from the company template.</p>
       </ReasonModal>
 
+      {startingOff && (
+        <StartOffboarding
+          entityId={employee.entity_id}
+          employee={{ id: employee.id, name: employee.full_name }}
+          onClose={() => setStartingOff(false)}
+          onStarted={(caseId) => {
+            setStartingOff(false)
+            setOffboardCase(caseId)
+            setNotice('Offboarding started. The last working day is set for payroll.')
+          }}
+        />
+      )}
+
       <header className="card space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -252,6 +272,16 @@ export default function EmployeeProfile() {
                 {!onboarding && isAdmin && (status === 'pre_boarding' || status === 'candidate') && (
                   <button className="btn-secondary" onClick={() => setStartingOnb(true)}>
                     Start onboarding
+                  </button>
+                )}
+                {offboardCase && (
+                  <Link to={`/offboarding?open=${offboardCase}`} className="btn-secondary">
+                    Open offboarding
+                  </Link>
+                )}
+                {!offboardCase && isAdmin && status === 'active' && (
+                  <button className="btn-secondary" onClick={() => setStartingOff(true)}>
+                    Start offboarding
                   </button>
                 )}
                 {statusMoves.map((s) => (
@@ -288,6 +318,15 @@ export default function EmployeeProfile() {
           </div>
         ) : null}
       </header>
+
+      {isAdmin && (status === 'active' || status === 'pre_boarding') && (
+        <details className="card">
+          <summary className="cursor-pointer text-sm font-semibold text-ink">Work permit and visa</summary>
+          <div className="mt-3">
+            <ImmigrationCard employeeId={employee.id} />
+          </div>
+        </details>
+      )}
 
       <Tabs<TabKey> label="Employee sections" tabs={tabs} active={tab} onChange={setTab} />
 

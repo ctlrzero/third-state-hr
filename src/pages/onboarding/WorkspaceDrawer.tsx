@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Alert, Drawer, Modal, Skeleton } from '../../components/ui'
 import { StatusBadge } from '../../components/StatusBadge'
 import { supabase } from '../../lib/supabase'
@@ -46,6 +46,8 @@ import { fmtDate, fmtDateTime, todayDubai } from '../../lib/format'
 import { fmtMoney } from '../../lib/payroll'
 import { OnboardingStatusBadge, ReadinessPanel, ReasonModal, Section, TaskStatusBadge } from './shared'
 import { EMPLOYMENT_TYPES, loadPickers, type Pickers } from './pickers'
+import ImmigrationCard from './ImmigrationCard'
+import StartOffboarding from '../offboarding/StartOffboarding'
 
 type Perms = Workspace['permissions']
 
@@ -102,6 +104,8 @@ export default function WorkspaceDrawer({
   const [busy, setBusy] = useState(false)
   const [prompt, setPrompt] = useState<Prompt>(null)
   const [panel, setPanel] = useState<'setup' | 'pay' | 'exception' | 'dayone' | 'activate' | 'contract' | null>(null)
+  const [offboard, setOffboard] = useState<{ type: 'no_show' | 'probation_not_confirmed'; exceptionId: string } | null>(null)
+  const navigate = useNavigate()
 
   const load = useCallback(async () => {
     if (!instanceId) return
@@ -379,6 +383,9 @@ export default function WorkspaceDrawer({
             </Section>
           ))}
 
+          {/* ------------------------------------------- work permit / visa */}
+          {p?.manage && <ImmigrationCard employeeId={ws.employee.id} onChanged={() => { load(); onChanged() }} />}
+
           {/* --------------------------------------------------- documents */}
           <Section
             title="Documents"
@@ -530,6 +537,11 @@ export default function WorkspaceDrawer({
                     <span className="flex items-center gap-2">
                       <StatusBadge status={x.status} />
                       <span className="text-xs text-muted">{OWNER_LABEL[x.owner_role]}</span>
+                      {x.status === 'open' && p?.manage && ws.employee.employment_status === 'active' && (x.exception_type === 'no_show' || x.exception_type === 'probation_not_confirmed') && (
+                        <button className="btn-primary min-h-9" disabled={busy} onClick={() => setOffboard({ type: x.exception_type as 'no_show' | 'probation_not_confirmed', exceptionId: x.id })}>
+                          Start offboarding
+                        </button>
+                      )}
                       {x.status === 'open' && (
                         <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'resolve', id: x.id })}>
                           Resolve
@@ -689,6 +701,16 @@ export default function WorkspaceDrawer({
           {panel === 'dayone' && <DayOneEditor ws={ws} onClose={() => setPanel(null)} act={act} />}
           {panel === 'activate' && <ActivateDialog ws={ws} onClose={() => setPanel(null)} act={act} />}
           {panel === 'contract' && <ContractUpload ws={ws} onClose={() => setPanel(null)} act={act} />}
+          {offboard && (
+            <StartOffboarding
+              entityId={ws.instance.entity_id}
+              employee={{ id: ws.employee.id, name: ws.employee.name }}
+              presetType={offboard.type}
+              sourceExceptionId={offboard.exceptionId}
+              onClose={() => setOffboard(null)}
+              onStarted={(id) => navigate(`/offboarding?open=${id}`)}
+            />
+          )}
         </>
       )}
     </Drawer>

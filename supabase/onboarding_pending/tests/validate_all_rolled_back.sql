@@ -1,4 +1,4 @@
--- Validation: migrations 001-010 + tests in ONE transaction. Always rolls back.
+-- Validation: migrations 001-013 + tests in ONE transaction. Always rolls back.
 -- Paste the whole file into the Supabase SQL editor and run. Expected: an error
 -- starting 'ONBOARDING_TESTS n passed / n total'. Any other error = a bug; nothing is kept either way.
 begin;
@@ -22,6 +22,8 @@ comment on column public.positions.description is
 alter table public.employees add column if not exists employee_number text;
 alter table public.employees add column if not exists residential_address text;
 alter table public.employees add column if not exists reporting_manager_employee_id uuid references public.employees(id);
+-- Set when the employee confirms their weekly availability (onboarding portal).
+alter table public.employees add column if not exists availability_confirmed_at timestamptz;
 create unique index if not exists employees_number_per_entity
   on public.employees (entity_id, employee_number) where employee_number is not null;
 
@@ -82,7 +84,7 @@ create table public.onboarding_template_tasks (
                                            'operations', 'employment', 'payroll', 'day_one', 'follow_up')),
   phase text not null default 'pre_activation' check (phase in ('pre_activation', 'day_one', 'initial_period')),
   kind text not null default 'manual' check (kind in ('manual', 'profile', 'document', 'acknowledgement',
-                                                      'contract_acceptance', 'payment_details', 'compensation')),
+                                                      'contract_acceptance', 'payment_details', 'compensation', 'availability')),
   owner_role text not null check (owner_role in ('employee', 'location_manager', 'hr', 'payroll', 'approver')),
   reviewer_role text check (reviewer_role in ('location_manager', 'hr', 'payroll')),
   doc_type public.document_type,
@@ -519,8 +521,10 @@ returns boolean language sql immutable set search_path to '' as $$
   select case
     when p_from = p_to then false
     when p_from in ('completed', 'cancelled', 'withdrawn') then false
-    when p_to in ('cancelled', 'withdrawn') then p_from in ('initiated', 'awaiting_employee', 'under_review',
-                                                           'changes_required', 'blocked', 'ready_for_activation')
+    when p_to = 'withdrawn' then p_from in ('initiated', 'awaiting_employee', 'under_review',
+                                           'changes_required', 'blocked', 'ready_for_activation')
+    -- After start, only offboarding cancels an onboarding (employment ended before closure).
+    when p_to = 'cancelled' then p_from not in ('completed', 'cancelled', 'withdrawn')
     when p_from in ('initiated', 'awaiting_employee', 'under_review', 'changes_required', 'blocked', 'ready_for_activation')
       then p_to in ('initiated', 'awaiting_employee', 'under_review', 'changes_required', 'blocked', 'ready_for_activation', 'activated')
            and (p_to <> 'activated' or p_from = 'ready_for_activation')
@@ -618,7 +622,7 @@ begin
   select * into i from public.onboarding_instances where id = p_instance_id;
   select * into e from public.employees where id = i.employee_id;
   for t in select * from public.onboarding_tasks where instance_id = i.id
-             and kind in ('document', 'acknowledgement', 'contract_acceptance', 'payment_details', 'compensation')
+             and kind in ('document', 'acknowledgement', 'contract_acceptance', 'payment_details', 'compensation', 'availability')
              and status not in ('waived', 'cancelled')
   loop
     v_new := t.status;
@@ -654,6 +658,8 @@ begin
        where employee_id = e.id order by submitted_at desc limit 1;
       v_new := case v_pay.status when 'verified' then 'approved' when 'submitted' then 'submitted'
                                  when 'rejected' then 'changes_required' else 'not_started' end;
+    elsif t.kind = 'availability' then
+      v_new := case when e.availability_confirmed_at is not null then 'approved' else 'not_started' end;
     elsif t.kind = 'compensation' then
       select status into v_comp from public.onboarding_pending_compensation where instance_id = i.id;
       v_new := case v_comp.status when 'approved' then 'approved' when 'pending_review' then 'submitted'
@@ -667,6 +673,13 @@ begin
     end if;
   end loop;
 end;
+$$;
+
+-- Extension point for readiness: later migrations replace this function to
+-- add their own blockers/warnings without redefining the engine below.
+create or replace function public._onb_extension_checks(p_instance_id uuid, p_audience text)
+returns jsonb language sql stable security definer set search_path to '' as $$
+  select jsonb_build_object('blockers', '[]'::jsonb, 'warnings', '[]'::jsonb);
 $$;
 
 -- ---------------------------------------------------- readiness engine
@@ -760,6 +773,13 @@ begin
     end if;
   end loop;
 
+  -- Checks added by later modules (work permit / visa tracking in 012).
+  declare v_ext jsonb := public._onb_extension_checks(p_instance_id, p_audience);
+  begin
+    b := b || coalesce(v_ext -> 'blockers', '[]'::jsonb);
+    w := w || coalesce(v_ext -> 'warnings', '[]'::jsonb);
+  end;
+
   -- Invitation / login
   select * into v_inv from public.onboarding_invitations where instance_id = i.id order by issued_at desc limit 1;
   if e.auth_user_id is null then
@@ -848,7 +868,8 @@ begin
   foreach f in array array['_onb_settings(uuid)', '_onb_can(uuid, text)', '_onb_require(uuid, text)', '_onb_is_self(uuid)',
     '_onb_can_own(uuid, text)', '_onb_can_review(uuid, text)', '_onb_op()', '_onb_audit(uuid, text, uuid, text, jsonb, jsonb)',
     '_onb_transition_allowed(text, text)', '_onb_set_status(uuid, text, text)', '_onb_touch(uuid)',
-    '_onb_generate_tasks(uuid, text)', '_onb_sync_derived(uuid)', '_onb_readiness(uuid, text)', '_onb_recompute(uuid)'] loop
+    '_onb_generate_tasks(uuid, text)', '_onb_sync_derived(uuid)', '_onb_readiness(uuid, text)', '_onb_recompute(uuid)',
+    '_onb_extension_checks(uuid, text)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
   end loop;
 end $$;
@@ -1034,7 +1055,9 @@ begin
     version_number, supersedes_template_id, created_by)
   values (v_old.entity_id, coalesce(nullif(btrim(coalesce(p_name, '')), ''), v_old.name),
     coalesce(nullif(btrim(coalesce(p_description, '')), ''), v_old.description),
-    coalesce(p_employment_types, v_old.applies_to_employment_types), coalesce(p_position_ids, v_old.applies_to_position_ids),
+    -- null keeps the old filter; an empty array clears it (applies to everyone).
+    case when p_employment_types is null then v_old.applies_to_employment_types when cardinality(p_employment_types) = 0 then null else p_employment_types end,
+    case when p_position_ids is null then v_old.applies_to_position_ids when cardinality(p_position_ids) = 0 then null else p_position_ids end,
     v_old.version_number + 1, p_template_id, auth.uid())
   returning id into v_new;
   if p_tasks is null then
@@ -1100,6 +1123,7 @@ begin
     {"item_key":"contract_upload","item_label":"Upload the signed-off employment contract","section":"employment","kind":"document","doc_type":"contract","owner_role":"hr","is_statutory":true,"due_offset_days":3,"sort_order":10},
     {"item_key":"contract_acceptance","item_label":"Accept the employment contract","section":"employment","kind":"contract_acceptance","owner_role":"employee","is_statutory":true,"depends_on":["contract_upload"],"due_offset_days":6,"sort_order":11},
     {"item_key":"compensation","item_label":"Enter pay for payroll review","section":"payroll","kind":"compensation","owner_role":"hr","reviewer_role":"payroll","is_statutory":true,"due_offset_days":5,"sort_order":12},
+    {"item_key":"availability","item_label":"Your weekly availability","section":"availability","kind":"availability","owner_role":"employee","is_required":false,"due_offset_days":5,"sort_order":12},
     {"item_key":"operations_setup","item_label":"Confirm branch, first schedule, uniform and access","section":"operations","kind":"manual","owner_role":"location_manager","due_offset_days":7,"sort_order":13},
     {"item_key":"arrival","item_label":"Confirm arrival on day one","section":"day_one","phase":"day_one","kind":"manual","owner_role":"location_manager","due_offset_days":0,"sort_order":20},
     {"item_key":"induction","item_label":"Branch tour, role briefing and safety induction","section":"day_one","phase":"day_one","kind":"manual","owner_role":"location_manager","due_offset_days":0,"sort_order":21},
@@ -2888,7 +2912,7 @@ end $$;
 
 alter table public.workflow_rules drop constraint if exists workflow_rules_module_check;
 alter table public.workflow_rules add constraint workflow_rules_module_check
-  check (module = any (array['leave', 'document', 'attendance', 'schedule', 'payroll', 'recruitment', 'onboarding']));
+  check (module = any (array['leave', 'document', 'attendance', 'schedule', 'payroll', 'recruitment', 'onboarding', 'offboarding']));
 
 -- Same body as the live catalog (checked 27 Sep 2026) plus 'onboarding'.
 create or replace function public.workflow_trigger_catalog()
@@ -2914,7 +2938,11 @@ returns jsonb language sql immutable set search_path to '' as $$
       'onboarding_ready_for_activation', jsonb_build_array('employee_id', 'location_id', 'onboarding_instance_id', 'proposed_start_date'),
       'employee_activated', jsonb_build_array('employee_id', 'location_id', 'onboarding_instance_id', 'join_date'),
       'onboarding_task_overdue', jsonb_build_array('employee_id', 'location_id', 'onboarding_instance_id', 'task_id', 'owner_role', 'days_overdue'),
-      'probation_review_due', jsonb_build_array('employee_id', 'location_id', 'probation_period_id', 'review_due_date', 'days_to_due'))
+      'probation_review_due', jsonb_build_array('employee_id', 'location_id', 'probation_period_id', 'review_due_date', 'days_to_due'),
+      'immigration_step_overdue', jsonb_build_array('employee_id', 'location_id', 'immigration_case_id', 'step_key', 'days_overdue')),
+    'offboarding', jsonb_build_object(
+      'offboarding_started', jsonb_build_array('employee_id', 'location_id', 'offboarding_case_id', 'separation_type', 'last_working_date'),
+      'final_settlement_due', jsonb_build_array('employee_id', 'location_id', 'offboarding_case_id', 'settlement_due_date', 'days_to_due'))
   );
 $$;
 
@@ -2965,6 +2993,10 @@ create trigger workflow_on_onboarding_section after insert on public.onboarding_
   for each row execute function public.trg_onb_workflow_section();
 
 -- ----------------------------------------------------- daily reminders
+-- Extension point: 012 / 013 replace this with their own reminders.
+create or replace function public._onb_extension_reminders(p_today date)
+returns integer language sql security definer set search_path to '' as $$ select 0; $$;
+
 -- One consolidated, deduped notification per person per day. Expires
 -- stale invitations, escalates overdue items to HR after 2 days, raises
 -- probation-review-due events. Run as the database owner (pg_cron).
@@ -3036,6 +3068,9 @@ begin
     end;
   end loop;
 
+  -- Reminders added by later modules (visa steps in 012, offboarding in 013).
+  v_sent := v_sent + public._onb_extension_reminders(v_today);
+
   return jsonb_build_object('ok', true, 'invitations_expired', v_expired, 'notifications', v_sent, 'run_at', now());
 end;
 $$;
@@ -3043,7 +3078,8 @@ $$;
 do $$
 declare f text;
 begin
-  foreach f in array array['trg_onb_workflow_status()', 'trg_onb_workflow_section()', 'onboarding_send_reminders()'] loop
+  foreach f in array array['trg_onb_workflow_status()', 'trg_onb_workflow_section()', 'onboarding_send_reminders()',
+    '_onb_extension_reminders(date)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
   end loop;
 end $$;
@@ -3392,6 +3428,1020 @@ begin
 end;
 $function$;
 
+-- ===== migrations/011_onboarding_jobs_availability.sql
+-- =====================================================================
+-- Migration 011 — jobs (positions with job descriptions) and the new
+-- starter's weekly availability.
+-- Depends on: 001–004.
+-- =====================================================================
+
+
+-- --------------------------------------------------------------- jobs
+-- Create or edit a job. The description is what the employee reads in
+-- the portal (get_my_job_description). Owner / entity admin only.
+create or replace function public.upsert_position(p_entity_id uuid, p_position_id uuid, p_title text, p_department text,
+  p_description text)
+returns uuid language plpgsql security definer set search_path to '' as $$
+declare v_old public.positions; v_id uuid;
+begin
+  if not public.is_active_user() or not (public.my_role() = 'owner' or (public.my_role() = 'entity_admin' and p_entity_id = public.my_entity())) then
+    raise exception 'Not authorized to manage jobs for this company' using errcode = '42501';
+  end if;
+  if nullif(btrim(coalesce(p_title, '')), '') is null then raise exception 'Job title is required' using errcode = '22023'; end if;
+  if exists (select 1 from public.positions where entity_id = p_entity_id and lower(title) = lower(btrim(p_title))
+              and id is distinct from p_position_id) then
+    raise exception 'Another job already has this title' using errcode = '23505';
+  end if;
+  if p_position_id is null then
+    insert into public.positions (entity_id, title, department, description)
+    values (p_entity_id, btrim(p_title), nullif(btrim(coalesce(p_department, '')), ''), nullif(btrim(coalesce(p_description, '')), ''))
+    returning id into v_id;
+  else
+    select * into v_old from public.positions where id = p_position_id for update;
+    if v_old.id is null or v_old.entity_id <> p_entity_id then raise exception 'Job not found' using errcode = 'P0002'; end if;
+    update public.positions set title = btrim(p_title), department = nullif(btrim(coalesce(p_department, '')), ''),
+           description = nullif(btrim(coalesce(p_description, '')), '')
+     where id = p_position_id
+    returning id into v_id;
+  end if;
+  insert into public.audit_log (table_name, record_id, changed_by, action, old_value, new_value, entity_id)
+  values ('positions', v_id, auth.uid(), case when p_position_id is null then 'position_created' else 'position_updated' end,
+    case when v_old.id is not null then jsonb_build_object('title', v_old.title, 'department', v_old.department, 'description', v_old.description) end,
+    jsonb_build_object('title', p_title, 'department', p_department, 'description', p_description), p_entity_id);
+  return v_id;
+end;
+$$;
+
+-- ------------------------------------------------------- availability
+-- The employee's weekly availability (0 = Sunday … 6 = Saturday, the same
+-- convention as schedule templates). Staff can normally not edit
+-- employee_availability; during an open onboarding they set their own.
+create or replace function public.get_my_availability()
+returns jsonb language plpgsql stable security definer set search_path to '' as $$
+declare v_emp uuid := public.my_employee_id();
+begin
+  if v_emp is null then raise exception 'No employee record for this login' using errcode = '42501'; end if;
+  return jsonb_build_object(
+    'confirmed_at', (select availability_confirmed_at from public.employees where id = v_emp),
+    'days', coalesce((select jsonb_agg(jsonb_build_object('day_of_week', a.day_of_week, 'is_available', a.is_available,
+                        'start_time', a.start_time, 'end_time', a.end_time) order by a.day_of_week)
+                      from public.employee_availability a where a.employee_id = v_emp), '[]'::jsonb));
+end;
+$$;
+
+create or replace function public.save_my_availability(p_days jsonb)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare
+  i public.onboarding_instances;
+  d jsonb;
+  v_dow integer;
+  v_start time;
+  v_end time;
+  v_seen integer[] := '{}';
+begin
+  i := public._onb_my_open_instance();
+  if i.id is null then
+    raise exception 'Ask your manager to change your availability' using errcode = '42501';
+  end if;
+  if p_days is null or jsonb_typeof(p_days) <> 'array' or jsonb_array_length(p_days) <> 7 then
+    raise exception 'Give availability for all seven days' using errcode = '22023';
+  end if;
+  for d in select * from jsonb_array_elements(p_days) loop
+    v_dow := (d ->> 'day_of_week')::integer;
+    if v_dow is null or v_dow not between 0 and 6 or v_dow = any(v_seen) then
+      raise exception 'Each day of the week must appear once' using errcode = '22023';
+    end if;
+    v_seen := v_seen || v_dow;
+    v_start := nullif(d ->> 'start_time', '')::time;
+    v_end := nullif(d ->> 'end_time', '')::time;
+    if coalesce((d ->> 'is_available')::boolean, false) and v_start is not null and v_end is not null and v_end <= v_start then
+      raise exception 'The end time must be after the start time' using errcode = '22023';
+    end if;
+  end loop;
+  delete from public.employee_availability where employee_id = i.employee_id;
+  insert into public.employee_availability (employee_id, day_of_week, is_available, start_time, end_time)
+  select i.employee_id, (x ->> 'day_of_week')::integer, coalesce((x ->> 'is_available')::boolean, false),
+         case when coalesce((x ->> 'is_available')::boolean, false) then nullif(x ->> 'start_time', '')::time end,
+         case when coalesce((x ->> 'is_available')::boolean, false) then nullif(x ->> 'end_time', '')::time end
+    from jsonb_array_elements(p_days) x;
+  update public.employees set availability_confirmed_at = now(), updated_at = now() where id = i.employee_id;
+  perform public._onb_audit(i.id, 'employee_availability', i.employee_id, 'availability_confirmed', null, jsonb_build_object('days', p_days));
+  perform public._onb_sync_derived(i.id);
+  perform public._onb_recompute(i.id);
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+do $$
+declare f text;
+begin
+  foreach f in array array['upsert_position(uuid, uuid, text, text, text)', 'get_my_availability()', 'save_my_availability(jsonb)'] loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end $$;
+
+-- ===== migrations/012_onboarding_immigration.sql
+-- =====================================================================
+-- Migration 012 — work permit and visa processing (MOHRE / ICP / GDRFA).
+-- One case per hire, with steps chosen by the person's situation (track).
+-- Steps marked blocking stop activation until done or marked not needed;
+-- the defaults block on the work permit and the MOHRE labour contract
+-- (or MOHRE registration for UAE / GCC nationals). HR can change which
+-- steps block, with a reason. Everything is HR-only (owner / entity
+-- admin); branch managers only see "work permit paperwork outstanding"
+-- through readiness. Check the step list against current MOHRE / ICP /
+-- emirate rules before relying on it.
+-- Depends on: 001–008.
+-- =====================================================================
+
+
+create table public.employee_immigration_cases (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references public.employees(id),
+  entity_id uuid not null references public.entities(id),
+  onboarding_instance_id uuid references public.onboarding_instances(id),
+  track text not null check (track in ('outside_uae', 'inside_uae', 'transfer', 'own_visa', 'uae_national', 'gcc_national')),
+  status text not null default 'open' check (status in ('open', 'completed', 'cancelled')),
+  mohre_person_code text,
+  work_permit_number text,
+  uid_number text,
+  visa_file_number text,
+  notes text,
+  opened_by uuid references auth.users(id),
+  opened_at timestamptz not null default now(),
+  closed_by uuid references auth.users(id),
+  closed_at timestamptz,
+  close_reason text,
+  updated_at timestamptz not null default now()
+);
+create unique index employee_immigration_cases_one_open on public.employee_immigration_cases (employee_id) where status = 'open';
+create index employee_immigration_cases_entity_idx on public.employee_immigration_cases (entity_id, status);
+
+create table public.employee_immigration_steps (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid not null references public.employee_immigration_cases(id) on delete cascade,
+  step_key text not null,
+  label text not null,
+  sort_order integer not null default 0,
+  status text not null default 'not_started' check (status in ('not_started', 'in_progress', 'done', 'not_needed', 'failed')),
+  is_blocking boolean not null default false,
+  due_date date,
+  started_at timestamptz,
+  completed_at timestamptz,
+  reference_number text,
+  expiry_date date,
+  notes text,
+  updated_by uuid references auth.users(id),
+  updated_at timestamptz not null default now(),
+  unique (case_id, step_key)
+);
+
+-- Default steps per track: key, label, blocking, days from case start, tracks.
+create or replace function public._imm_step_catalog()
+returns table (step_key text, label text, is_blocking boolean, due_days integer, tracks text[], sort_order integer)
+language sql immutable set search_path to '' as $$
+  select * from (values
+    ('mohre_offer_letter', 'MOHRE offer letter signed by the employee', false, 3, array['outside_uae','inside_uae','transfer','own_visa'], 1),
+    ('previous_permit_cancelled', 'Previous work permit cancelled / transfer approved', false, 7, array['transfer'], 2),
+    ('work_permit', 'Work permit approved (MOHRE)', true, 10, array['outside_uae','inside_uae','transfer','own_visa'], 3),
+    ('labour_contract', 'MOHRE labour contract signed', true, 10, array['outside_uae','inside_uae','transfer','own_visa'], 4),
+    ('mohre_registration', 'Registered with MOHRE', true, 5, array['uae_national','gcc_national'], 5),
+    ('entry_permit', 'Entry permit issued', false, 12, array['outside_uae'], 6),
+    ('entered_uae', 'Employee entered the UAE (record the date)', false, 20, array['outside_uae'], 7),
+    ('change_of_status', 'Change of visa status done inside the UAE', false, 14, array['inside_uae'], 8),
+    ('medical_fitness', 'Medical fitness test passed', false, 25, array['outside_uae','inside_uae','transfer'], 9),
+    ('health_insurance', 'Health insurance issued', false, 25, array['outside_uae','inside_uae','transfer','own_visa'], 10),
+    ('emirates_id_biometrics', 'Emirates ID application and biometrics', false, 30, array['outside_uae','inside_uae','transfer'], 11),
+    ('residence_visa', 'Residence visa issued', false, 45, array['outside_uae','inside_uae','transfer'], 12),
+    ('emirates_id_issued', 'Emirates ID received', false, 45, array['outside_uae','inside_uae','transfer'], 13),
+    ('pension_registration', 'Pension registration (GPSSA / GCC scheme)', false, 30, array['uae_national','gcc_national'], 14),
+    ('wps_registration', 'Added to WPS salary payments', false, 30, array['outside_uae','inside_uae','transfer','own_visa','uae_national','gcc_national'], 15)
+  ) as c(step_key, label, is_blocking, due_days, tracks, sort_order);
+$$;
+
+create or replace function public._imm_require(p_entity_id uuid)
+returns void language plpgsql stable security definer set search_path to '' as $$
+begin
+  if not public.is_active_user() or not (public.my_role() = 'owner' or (public.my_role() = 'entity_admin' and p_entity_id = public.my_entity())) then
+    raise exception 'Only the owner or entity admin can manage work permits and visas' using errcode = '42501';
+  end if;
+end;
+$$;
+
+create or replace function public._imm_audit(p_case public.employee_immigration_cases, p_record uuid, p_action text, p_old jsonb, p_new jsonb)
+returns void language sql security definer set search_path to '' as $$
+  insert into public.audit_log (table_name, record_id, changed_by, action, old_value, new_value, entity_id, employee_id)
+  values ('employee_immigration_cases', p_record, auth.uid(), p_action, p_old,
+          coalesce(p_new, '{}'::jsonb) || jsonb_build_object('immigration_case_id', p_case.id, 'onboarding_instance_id', p_case.onboarding_instance_id),
+          p_case.entity_id, p_case.employee_id);
+$$;
+
+-- Suggested track from nationality (HR confirms it).
+create or replace function public.suggest_immigration_track(p_employee_id uuid)
+returns text language sql stable security definer set search_path to '' as $$
+  select case
+    when lower(btrim(coalesce(e.nationality, ''))) in ('uae', 'emirati', 'united arab emirates') then 'uae_national'
+    when lower(btrim(coalesce(e.nationality, ''))) in ('saudi arabia', 'saudi', 'kuwait', 'kuwaiti', 'bahrain', 'bahraini', 'oman', 'omani', 'qatar', 'qatari') then 'gcc_national'
+    else 'outside_uae' end
+  from public.employees e where e.id = p_employee_id;
+$$;
+
+create or replace function public.open_immigration_case(p_employee_id uuid, p_track text, p_notes text default null)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare
+  e public.employees;
+  c public.employee_immigration_cases;
+  v_inst uuid;
+begin
+  select * into e from public.employees where id = p_employee_id;
+  if e.id is null then raise exception 'Employee not found' using errcode = 'P0002'; end if;
+  perform public._imm_require(e.entity_id);
+  if p_track not in ('outside_uae', 'inside_uae', 'transfer', 'own_visa', 'uae_national', 'gcc_national') then
+    raise exception 'Unknown track %', p_track using errcode = '22023';
+  end if;
+  select * into c from public.employee_immigration_cases where employee_id = e.id and status = 'open';
+  if c.id is not null then
+    return jsonb_build_object('ok', true, 'already_open', true, 'case_id', c.id);
+  end if;
+  select id into v_inst from public.onboarding_instances where employee_id = e.id and status not in ('completed', 'cancelled', 'withdrawn')
+   order by created_at desc limit 1;
+  insert into public.employee_immigration_cases (employee_id, entity_id, onboarding_instance_id, track, notes, opened_by)
+  values (e.id, e.entity_id, v_inst, p_track, nullif(btrim(coalesce(p_notes, '')), ''), auth.uid())
+  returning * into c;
+  insert into public.employee_immigration_steps (case_id, step_key, label, sort_order, is_blocking, due_date)
+  select c.id, k.step_key, k.label, k.sort_order, k.is_blocking, (now() at time zone 'Asia/Dubai')::date + k.due_days
+    from public._imm_step_catalog() k where p_track = any(k.tracks);
+  perform public._imm_audit(c, c.id, 'immigration_case_opened', null, jsonb_build_object('track', p_track));
+  if v_inst is not null then perform public._onb_touch(v_inst); perform public._onb_recompute(v_inst); end if;
+  return jsonb_build_object('ok', true, 'already_open', false, 'case_id', c.id);
+end;
+$$;
+
+-- Change the track: steps for the new track are added; steps that no
+-- longer apply and were not started are marked not needed.
+create or replace function public.change_immigration_track(p_case_id uuid, p_track text, p_reason text)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare c public.employee_immigration_cases;
+begin
+  select * into c from public.employee_immigration_cases where id = p_case_id for update;
+  if c.id is null then raise exception 'Case not found' using errcode = 'P0002'; end if;
+  perform public._imm_require(c.entity_id);
+  if c.status <> 'open' then raise exception 'This case is closed' using errcode = '22023'; end if;
+  if nullif(btrim(coalesce(p_reason, '')), '') is null then raise exception 'A reason is required' using errcode = '22023'; end if;
+  update public.employee_immigration_cases set track = p_track, updated_at = now() where id = c.id;
+  insert into public.employee_immigration_steps (case_id, step_key, label, sort_order, is_blocking, due_date)
+  select c.id, k.step_key, k.label, k.sort_order, k.is_blocking, (now() at time zone 'Asia/Dubai')::date + k.due_days
+    from public._imm_step_catalog() k where p_track = any(k.tracks)
+  on conflict (case_id, step_key) do update set status = case when public.employee_immigration_steps.status = 'not_needed' then 'not_started'
+                                                            else public.employee_immigration_steps.status end;
+  update public.employee_immigration_steps s set status = 'not_needed', updated_by = auth.uid(), updated_at = now(),
+         notes = coalesce(s.notes || ' · ', '') || 'Not needed after track change'
+   where s.case_id = c.id and s.status = 'not_started'
+     and not exists (select 1 from public._imm_step_catalog() k where k.step_key = s.step_key and p_track = any(k.tracks));
+  perform public._imm_audit(c, c.id, 'immigration_track_changed', jsonb_build_object('track', c.track), jsonb_build_object('track', p_track, 'reason', p_reason));
+  if c.onboarding_instance_id is not null then perform public._onb_recompute(c.onboarding_instance_id); end if;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.update_immigration_step(p_step_id uuid, p_status text, p_reference text default null,
+  p_expiry_date date default null, p_due_date date default null, p_notes text default null)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare s public.employee_immigration_steps; c public.employee_immigration_cases;
+begin
+  select * into s from public.employee_immigration_steps where id = p_step_id for update;
+  if s.id is null then raise exception 'Step not found' using errcode = 'P0002'; end if;
+  select * into c from public.employee_immigration_cases where id = s.case_id;
+  perform public._imm_require(c.entity_id);
+  if c.status <> 'open' then raise exception 'This case is closed' using errcode = '22023'; end if;
+  if p_status not in ('not_started', 'in_progress', 'done', 'not_needed', 'failed') then raise exception 'Unknown status' using errcode = '22023'; end if;
+  if p_status in ('not_needed', 'failed') and nullif(btrim(coalesce(p_notes, '')), '') is null then
+    raise exception 'Add a note saying why' using errcode = '22023';
+  end if;
+  update public.employee_immigration_steps set status = p_status,
+         reference_number = coalesce(nullif(btrim(coalesce(p_reference, '')), ''), reference_number),
+         expiry_date = coalesce(p_expiry_date, expiry_date), due_date = coalesce(p_due_date, due_date),
+         notes = coalesce(nullif(btrim(coalesce(p_notes, '')), ''), notes),
+         started_at = case when p_status = 'in_progress' and started_at is null then now() else started_at end,
+         completed_at = case when p_status = 'done' then now() when p_status in ('not_started', 'in_progress') then null else completed_at end,
+         updated_by = auth.uid(), updated_at = now()
+   where id = s.id;
+  -- Key references also live on the case for search.
+  if p_status = 'done' and nullif(btrim(coalesce(p_reference, '')), '') is not null then
+    update public.employee_immigration_cases set
+      work_permit_number = case when s.step_key = 'work_permit' then btrim(p_reference) else work_permit_number end,
+      uid_number = case when s.step_key in ('entry_permit', 'residence_visa') and uid_number is null then btrim(p_reference) else uid_number end,
+      visa_file_number = case when s.step_key = 'residence_visa' then btrim(p_reference) else visa_file_number end,
+      updated_at = now()
+     where id = c.id;
+  end if;
+  perform public._imm_audit(c, s.id, 'immigration_step_updated', jsonb_build_object('step', s.step_key, 'status', s.status),
+    jsonb_build_object('step', s.step_key, 'status', p_status, 'reference', p_reference, 'expiry_date', p_expiry_date, 'notes', p_notes));
+  if c.onboarding_instance_id is not null then perform public._onb_touch(c.onboarding_instance_id); perform public._onb_recompute(c.onboarding_instance_id); end if;
+  return jsonb_build_object('ok', true, 'status', p_status);
+end;
+$$;
+
+create or replace function public.set_immigration_step_blocking(p_step_id uuid, p_is_blocking boolean, p_reason text)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare s public.employee_immigration_steps; c public.employee_immigration_cases;
+begin
+  select * into s from public.employee_immigration_steps where id = p_step_id for update;
+  if s.id is null then raise exception 'Step not found' using errcode = 'P0002'; end if;
+  select * into c from public.employee_immigration_cases where id = s.case_id;
+  perform public._imm_require(c.entity_id);
+  if nullif(btrim(coalesce(p_reason, '')), '') is null then raise exception 'A reason is required' using errcode = '22023'; end if;
+  update public.employee_immigration_steps set is_blocking = p_is_blocking, updated_by = auth.uid(), updated_at = now() where id = s.id;
+  perform public._imm_audit(c, s.id, 'immigration_step_blocking_changed', jsonb_build_object('step', s.step_key, 'is_blocking', s.is_blocking),
+    jsonb_build_object('step', s.step_key, 'is_blocking', p_is_blocking, 'reason', p_reason));
+  if c.onboarding_instance_id is not null then perform public._onb_recompute(c.onboarding_instance_id); end if;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.update_immigration_case(p_case_id uuid, p jsonb)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare c public.employee_immigration_cases;
+begin
+  select * into c from public.employee_immigration_cases where id = p_case_id for update;
+  if c.id is null then raise exception 'Case not found' using errcode = 'P0002'; end if;
+  perform public._imm_require(c.entity_id);
+  update public.employee_immigration_cases set
+    mohre_person_code = case when p ? 'mohre_person_code' then nullif(btrim(p ->> 'mohre_person_code'), '') else mohre_person_code end,
+    work_permit_number = case when p ? 'work_permit_number' then nullif(btrim(p ->> 'work_permit_number'), '') else work_permit_number end,
+    uid_number = case when p ? 'uid_number' then nullif(btrim(p ->> 'uid_number'), '') else uid_number end,
+    visa_file_number = case when p ? 'visa_file_number' then nullif(btrim(p ->> 'visa_file_number'), '') else visa_file_number end,
+    notes = case when p ? 'notes' then nullif(btrim(p ->> 'notes'), '') else notes end,
+    updated_at = now()
+   where id = c.id;
+  perform public._imm_audit(c, c.id, 'immigration_case_updated', to_jsonb(c) - 'id', p);
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.close_immigration_case(p_case_id uuid, p_status text, p_reason text default null)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare c public.employee_immigration_cases; v_open text;
+begin
+  select * into c from public.employee_immigration_cases where id = p_case_id for update;
+  if c.id is null then raise exception 'Case not found' using errcode = 'P0002'; end if;
+  perform public._imm_require(c.entity_id);
+  if c.status <> 'open' then return jsonb_build_object('ok', true, 'already', true); end if;
+  if p_status not in ('completed', 'cancelled') then raise exception 'Status must be completed or cancelled' using errcode = '22023'; end if;
+  if p_status = 'cancelled' and nullif(btrim(coalesce(p_reason, '')), '') is null then raise exception 'A reason is required' using errcode = '22023'; end if;
+  if p_status = 'completed' then
+    select string_agg(label, ', ' order by sort_order) into v_open from public.employee_immigration_steps
+     where case_id = c.id and status not in ('done', 'not_needed');
+    if v_open is not null then raise exception 'Still open: %', v_open using errcode = '22023'; end if;
+  end if;
+  update public.employee_immigration_cases set status = p_status, closed_by = auth.uid(), closed_at = now(),
+         close_reason = nullif(btrim(coalesce(p_reason, '')), ''), updated_at = now() where id = c.id;
+  perform public._imm_audit(c, c.id, 'immigration_case_' || p_status, null, jsonb_build_object('reason', p_reason));
+  if c.onboarding_instance_id is not null then perform public._onb_recompute(c.onboarding_instance_id); end if;
+  return jsonb_build_object('ok', true, 'already', false);
+end;
+$$;
+
+create or replace function public.get_immigration_case(p_employee_id uuid)
+returns jsonb language plpgsql stable security definer set search_path to '' as $$
+declare e public.employees; c public.employee_immigration_cases;
+begin
+  select * into e from public.employees where id = p_employee_id;
+  if e.id is null then raise exception 'Employee not found' using errcode = 'P0002'; end if;
+  perform public._imm_require(e.entity_id);
+  select * into c from public.employee_immigration_cases where employee_id = e.id order by (status = 'open') desc, opened_at desc limit 1;
+  return jsonb_build_object('ok', true, 'suggested_track', public.suggest_immigration_track(e.id),
+    'case', case when c.id is null then null else to_jsonb(c) end,
+    'steps', coalesce((select jsonb_agg(to_jsonb(s) order by s.sort_order) from public.employee_immigration_steps s where s.case_id = c.id), '[]'::jsonb));
+end;
+$$;
+
+create or replace function public.list_immigration_cases(p_entity_id uuid, p_status text default 'open')
+returns jsonb language plpgsql stable security definer set search_path to '' as $$
+declare v_today date := (now() at time zone 'Asia/Dubai')::date;
+begin
+  perform public._imm_require(p_entity_id);
+  return coalesce((select jsonb_agg(jsonb_build_object('case_id', c.id, 'employee_id', e.id, 'name', e.full_name, 'track', c.track,
+      'status', c.status, 'opened_at', c.opened_at, 'onboarding_instance_id', c.onboarding_instance_id,
+      'done', (select count(*) from public.employee_immigration_steps s where s.case_id = c.id and s.status in ('done', 'not_needed')),
+      'total', (select count(*) from public.employee_immigration_steps s where s.case_id = c.id),
+      'blocking_open', (select count(*) from public.employee_immigration_steps s where s.case_id = c.id and s.is_blocking and s.status not in ('done', 'not_needed')),
+      'overdue', (select count(*) from public.employee_immigration_steps s where s.case_id = c.id and s.status not in ('done', 'not_needed') and s.due_date < v_today),
+      'next_step', (select s.label from public.employee_immigration_steps s where s.case_id = c.id and s.status not in ('done', 'not_needed') order by s.sort_order limit 1),
+      'next_due', (select min(s.due_date) from public.employee_immigration_steps s where s.case_id = c.id and s.status not in ('done', 'not_needed')))
+      order by c.opened_at desc)
+    from public.employee_immigration_cases c join public.employees e on e.id = c.employee_id
+   where c.entity_id = p_entity_id and (p_status = 'all' or c.status = p_status)), '[]'::jsonb);
+end;
+$$;
+
+-- The employee sees their own progress (labels and status only).
+create or replace function public.get_my_immigration()
+returns jsonb language plpgsql stable security definer set search_path to '' as $$
+declare v_emp uuid := public.my_employee_id(); c public.employee_immigration_cases;
+begin
+  if v_emp is null then raise exception 'No employee record for this login' using errcode = '42501'; end if;
+  select * into c from public.employee_immigration_cases where employee_id = v_emp and status = 'open';
+  if c.id is null then return jsonb_build_object('ok', true, 'steps', null); end if;
+  return jsonb_build_object('ok', true, 'steps', (select jsonb_agg(jsonb_build_object('label', s.label, 'status', s.status, 'completed_at', s.completed_at)
+                                                                  order by s.sort_order)
+                                                     from public.employee_immigration_steps s where s.case_id = c.id and s.status <> 'not_needed'));
+end;
+$$;
+
+-- --------------------------------------------- readiness contribution
+create or replace function public._onb_extension_checks(p_instance_id uuid, p_audience text)
+returns jsonb language plpgsql stable security definer set search_path to '' as $$
+declare
+  i public.onboarding_instances;
+  c public.employee_immigration_cases;
+  b jsonb := '[]'::jsonb;
+  w jsonb := '[]'::jsonb;
+  s record;
+begin
+  select * into i from public.onboarding_instances where id = p_instance_id;
+  select * into c from public.employee_immigration_cases where employee_id = i.employee_id and status in ('open', 'completed')
+   order by (status = 'open') desc, opened_at desc limit 1;
+  if c.id is null then
+    if public.suggest_immigration_track(i.employee_id) <> 'uae_national' then
+      w := w || jsonb_build_object('code', 'no_immigration_case', 'message', 'Work permit and visa tracking has not been started.');
+    end if;
+  elsif c.status = 'open' then
+    for s in select * from public.employee_immigration_steps where case_id = c.id and status not in ('done', 'not_needed') order by sort_order loop
+      if s.is_blocking or s.status = 'failed' then
+        b := b || jsonb_build_object('code', 'immigration_' || s.step_key, 'owner_role', 'hr', 'due_date', s.due_date,
+          'message', case when p_audience = 'full' then s.label || case when s.status = 'failed' then ': failed.' else ': not done yet.' end
+                          else 'Work permit paperwork is outstanding.' end);
+      end if;
+    end loop;
+  end if;
+  return jsonb_build_object('blockers', b, 'warnings', w);
+end;
+$$;
+
+-- --------------------------------------------------------- reminders
+create or replace function public._imm_reminders(p_today date)
+returns integer language plpgsql security definer set search_path to '' as $$
+declare r record; x record; n integer := 0;
+begin
+  for r in select c.entity_id, count(*) steps, max(p_today - s.due_date) worst, (array_agg(c.id order by s.due_date))[1] first_case,
+                  (array_agg(c.employee_id order by s.due_date))[1] first_employee, (array_agg(s.step_key order by s.due_date))[1] first_step
+             from public.employee_immigration_steps s join public.employee_immigration_cases c on c.id = s.case_id
+            where c.status = 'open' and s.status not in ('done', 'not_needed') and s.due_date < p_today
+            group by c.entity_id loop
+    for x in select p.id from public.profiles p where p.is_active and p.role = 'entity_admin' and p.entity_id = r.entity_id loop
+      perform public.create_notification(r.entity_id, x.id, null, 'immigration_step_overdue', 'Visa / work permit steps overdue',
+        format('%s step(s) overdue, oldest %s day(s).', r.steps, r.worst), 'employee_immigration_case', r.first_case,
+        case when r.worst >= 3 then 'high' else 'normal' end, format('imm:overdue:%s:%s:%s', r.entity_id, x.id, p_today));
+      n := n + 1;
+    end loop;
+    begin
+      perform public.evaluate_workflow_rules('onboarding', 'immigration_step_overdue', r.entity_id, 'employee_immigration_cases', r.first_case,
+        jsonb_build_object('employee_id', r.first_employee, 'immigration_case_id', r.first_case, 'step_key', r.first_step, 'days_overdue', r.worst));
+    exception when others then raise warning 'workflow immigration_step_overdue failed: %', sqlerrm;
+    end;
+  end loop;
+  return n;
+end;
+$$;
+
+create or replace function public._onb_extension_reminders(p_today date)
+returns integer language sql security definer set search_path to '' as $$ select public._imm_reminders(p_today); $$;
+
+-- --------------------------------------------------------------- RLS
+alter table public.employee_immigration_cases enable row level security;
+alter table public.employee_immigration_steps enable row level security;
+revoke all on public.employee_immigration_cases, public.employee_immigration_steps from anon, authenticated;
+grant select on public.employee_immigration_cases, public.employee_immigration_steps to authenticated;
+create policy employee_immigration_cases_select on public.employee_immigration_cases for select to authenticated
+  using ((select public.is_active_user()) and ((select public.my_role()) = 'owner'
+         or ((select public.my_role()) = 'entity_admin' and entity_id = (select public.my_entity()))));
+create policy employee_immigration_steps_select on public.employee_immigration_steps for select to authenticated
+  using (exists (select 1 from public.employee_immigration_cases c where c.id = case_id));
+
+do $$
+declare f text;
+begin
+  foreach f in array array['_imm_step_catalog()', '_imm_require(uuid)', '_imm_reminders(date)', 'suggest_immigration_track(uuid)',
+    '_imm_audit(public.employee_immigration_cases, uuid, text, jsonb, jsonb)', '_onb_extension_checks(uuid, text)',
+    '_onb_extension_reminders(date)'] loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+  end loop;
+  foreach f in array array['open_immigration_case(uuid, text, text)',
+    'change_immigration_track(uuid, text, text)', 'update_immigration_step(uuid, text, text, date, date, text)',
+    'set_immigration_step_blocking(uuid, boolean, text)', 'update_immigration_case(uuid, jsonb)',
+    'close_immigration_case(uuid, text, text)', 'get_immigration_case(uuid)', 'list_immigration_cases(uuid, text)',
+    'get_my_immigration()'] loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end $$;
+
+-- ===== migrations/013_offboarding.sql
+-- =====================================================================
+-- Migration 013 — offboarding (end of employment).
+-- One case per leaver: separation type, notice and last working day,
+-- a role-based checklist (branch handover, access, final settlement,
+-- work permit / visa cancellation or pension notice), and a controlled
+-- finish that inactivates the employee through set_employee_status.
+--
+-- UAE rules applied (Federal Decree-Law 33/2021; check the contract):
+--   * Probation, employer ends it: at least 14 days' written notice (Art. 9(1)).
+--   * Probation, employee resigns: 14 days if leaving the UAE, one month
+--     if joining another UAE employer (Art. 9(2)–(3)).
+--   * After probation: at least 30 days (contract may say up to 90) (Art. 43).
+--   * Dismissal without notice only under Art. 44 (recorded as its own type).
+--   * Final settlement within 14 days of the last day (Art. 53).
+--   * Gratuity from payroll_gratuity_preview (none under one year; UAE
+--     nationals get pension instead).
+-- A shorter notice is allowed only with a recorded reason (e.g. pay in lieu,
+-- notice waived in writing).
+-- Depends on: 001–012, payroll v2 (payroll_set_last_working_date, payroll_gratuity_preview).
+-- =====================================================================
+
+
+create table public.offboarding_cases (
+  id uuid primary key default gen_random_uuid(),
+  employee_id uuid not null references public.employees(id),
+  entity_id uuid not null references public.entities(id),
+  location_id uuid references public.locations(id),
+  separation_type text not null check (separation_type in ('resignation', 'termination', 'dismissal_art44', 'end_of_contract',
+    'mutual_agreement', 'probation_not_confirmed', 'no_show', 'retirement', 'death', 'other')),
+  initiated_by text not null check (initiated_by in ('employee', 'employer', 'mutual', 'none')),
+  notice_date date not null,
+  last_working_date date not null,
+  in_probation boolean not null default false,
+  leaving_uae boolean not null default false,
+  min_notice_days integer not null default 0,
+  notice_shortfall_reason text,
+  reason text not null,
+  status text not null default 'open' check (status in ('open', 'completed', 'cancelled')),
+  settlement_due_date date not null,
+  source_onboarding_instance_id uuid references public.onboarding_instances(id),
+  source_exception_id uuid references public.onboarding_exceptions(id),
+  row_version integer not null default 1,
+  created_by uuid references auth.users(id),
+  created_at timestamptz not null default now(),
+  closed_by uuid references auth.users(id),
+  closed_at timestamptz,
+  close_notes text,
+  updated_at timestamptz not null default now(),
+  check (last_working_date >= notice_date)
+);
+create unique index offboarding_cases_one_open on public.offboarding_cases (employee_id) where status = 'open';
+create index offboarding_cases_entity_idx on public.offboarding_cases (entity_id, status);
+
+create table public.offboarding_tasks (
+  id uuid primary key default gen_random_uuid(),
+  case_id uuid not null references public.offboarding_cases(id) on delete cascade,
+  item_key text not null,
+  label text not null,
+  owner_role text not null check (owner_role in ('location_manager', 'hr', 'payroll')),
+  is_required boolean not null default true,
+  status text not null default 'not_started' check (status in ('not_started', 'done', 'not_needed')),
+  due_date date,
+  notes text,
+  completed_by uuid references auth.users(id),
+  completed_at timestamptz,
+  sort_order integer not null default 0,
+  unique (case_id, item_key)
+);
+
+-- ---------------------------------------------------------- helpers
+create or replace function public._off_min_notice_days(p_type text, p_initiated_by text, p_in_probation boolean, p_leaving_uae boolean)
+returns integer language sql immutable set search_path to '' as $$
+  select case
+    when p_type in ('no_show', 'death', 'dismissal_art44', 'end_of_contract', 'mutual_agreement') then 0
+    when p_type = 'probation_not_confirmed' then 14
+    when p_in_probation and p_initiated_by = 'employer' then 14
+    when p_in_probation and p_initiated_by = 'employee' then case when p_leaving_uae then 14 else 30 end
+    else 30 end;
+$$;
+
+-- Scope on one case: manage (owner / entity admin), payroll (payroll approver),
+-- operate (branch manager of the case's branch, or manage).
+create or replace function public._off_can(p_case_id uuid, p_cap text)
+returns boolean language plpgsql stable security definer set search_path to '' as $$
+declare c public.offboarding_cases; v_role public.user_role := public.my_role();
+begin
+  select * into c from public.offboarding_cases where id = p_case_id;
+  if c.id is null or v_role is null or not public.is_active_user() then return false; end if;
+  if c.employee_id = public.my_employee_id() then return false; end if;
+  if p_cap = 'manage' then return v_role = 'owner' or (v_role = 'entity_admin' and c.entity_id = public.my_entity()); end if;
+  if p_cap = 'payroll' then return public.payroll_can(c.entity_id, 'approve'); end if;
+  if p_cap = 'operate' then
+    return v_role = 'owner' or (v_role = 'entity_admin' and c.entity_id = public.my_entity())
+        or (v_role = 'location_manager' and c.location_id = public.my_location());
+  end if;
+  if p_cap = 'view' then
+    return public._off_can(p_case_id, 'operate') or public._off_can(p_case_id, 'payroll');
+  end if;
+  return false;
+end;
+$$;
+
+create or replace function public._off_audit(p_case public.offboarding_cases, p_record uuid, p_action text, p_old jsonb, p_new jsonb)
+returns void language sql security definer set search_path to '' as $$
+  insert into public.audit_log (table_name, record_id, changed_by, action, old_value, new_value, entity_id, location_id, employee_id)
+  values ('offboarding_cases', p_record, auth.uid(), p_action, p_old,
+          coalesce(p_new, '{}'::jsonb) || jsonb_build_object('offboarding_case_id', p_case.id), p_case.entity_id, p_case.location_id, p_case.employee_id);
+$$;
+
+create or replace function public._off_generate_tasks(p_case_id uuid)
+returns integer language plpgsql security definer set search_path to '' as $$
+declare c public.offboarding_cases; v_track text; v_national boolean; n integer;
+begin
+  select * into c from public.offboarding_cases where id = p_case_id;
+  v_track := public.suggest_immigration_track(c.employee_id);
+  v_national := v_track in ('uae_national', 'gcc_national');
+  insert into public.offboarding_tasks (case_id, item_key, label, owner_role, is_required, due_date, sort_order)
+  select c.id, k, l, o, r, d, s from (values
+    ('notice_letter', 'Resignation / termination letter on file', 'hr', c.separation_type not in ('no_show', 'death'), c.notice_date, 1),
+    ('handover', 'Handover of duties and open work', 'location_manager', false, c.last_working_date, 2),
+    ('reassign_shifts', 'Future shifts reassigned', 'location_manager', true, c.last_working_date, 3),
+    ('return_items', 'Uniform, keys and equipment returned', 'location_manager', c.separation_type <> 'death', c.last_working_date, 4),
+    ('system_access', 'POS, till and other logins removed', 'location_manager', true, c.last_working_date, 5),
+    ('exit_interview', 'Exit interview', 'hr', false, c.last_working_date, 6),
+    ('final_settlement', 'Final settlement paid (wages, leave, gratuity)', 'payroll', true, c.settlement_due_date, 7),
+    ('work_permit_cancellation', 'Work permit cancelled with MOHRE', 'hr', true, c.last_working_date + 14, 8),
+    ('visa_cancellation', 'Residence visa cancelled (or transfer confirmed)', 'hr', true, c.last_working_date + 14, 9),
+    ('health_insurance_cancellation', 'Health insurance cancelled after visa cancellation', 'hr', false, c.last_working_date + 30, 10),
+    ('pension_notice', 'End of service notified to the pension authority (GPSSA / GCC)', 'hr', true, c.last_working_date + 14, 11),
+    ('service_certificate', 'Service certificate issued (on request, Art. 13)', 'hr', false, c.last_working_date + 14, 12)
+  ) as t(k, l, o, r, d, s)
+  where (k not in ('work_permit_cancellation', 'visa_cancellation', 'health_insurance_cancellation') or not v_national)
+    and (k <> 'pension_notice' or v_national)
+    and (k <> 'exit_interview' or c.separation_type not in ('no_show', 'death', 'dismissal_art44'))
+  on conflict (case_id, item_key) do nothing;
+  get diagnostics n = row_count;
+  return n;
+end;
+$$;
+
+-- ------------------------------------------------------------- start
+create or replace function public.start_offboarding(p_employee_id uuid, p_type text, p_initiated_by text, p_notice_date date,
+  p_last_working_date date, p_reason text, p_leaving_uae boolean default false, p_notice_shortfall_reason text default null,
+  p_source_exception_id uuid default null)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare
+  e public.employees;
+  c public.offboarding_cases;
+  v_role public.user_role := public.my_role();
+  v_in_prob boolean;
+  v_min integer;
+  v_days integer;
+  v_inst uuid;
+  x public.onboarding_exceptions;
+  v_user uuid;
+begin
+  select * into e from public.employees where id = p_employee_id for update;
+  if e.id is null then raise exception 'Employee not found' using errcode = 'P0002'; end if;
+  if not public.is_active_user() or not (v_role = 'owner' or (v_role = 'entity_admin' and e.entity_id = public.my_entity())) then
+    raise exception 'Only the owner or entity admin can start offboarding' using errcode = '42501';
+  end if;
+  if e.id = public.my_employee_id() then raise exception 'You cannot offboard yourself' using errcode = '42501'; end if;
+  if e.employment_status <> 'active' then
+    raise exception 'Only active employees are offboarded. For someone who has not started, withdraw or cancel their onboarding.'
+      using errcode = '22023';
+  end if;
+  if exists (select 1 from public.offboarding_cases where employee_id = e.id and status = 'open') then
+    raise exception 'This employee already has an open offboarding' using errcode = '23505';
+  end if;
+  if p_type is null or p_initiated_by is null or p_notice_date is null or p_last_working_date is null then
+    raise exception 'Type, who ended it, notice date and last working day are required' using errcode = '22023';
+  end if;
+  if nullif(btrim(coalesce(p_reason, '')), '') is null then raise exception 'A reason is required' using errcode = '22023'; end if;
+  if p_last_working_date < p_notice_date then raise exception 'The last working day cannot be before the notice date' using errcode = '22023'; end if;
+  if e.join_date is not null and p_last_working_date < e.join_date - 1 then
+    raise exception 'The last working day is before the start date' using errcode = '22023';
+  end if;
+
+  v_in_prob := exists (select 1 from public.employee_probation_periods pp where pp.employee_id = e.id and pp.status = 'active'
+                        and pp.end_date >= p_notice_date);
+  v_min := public._off_min_notice_days(p_type, p_initiated_by, v_in_prob, coalesce(p_leaving_uae, false));
+  v_days := p_last_working_date - p_notice_date;
+  if v_days < v_min and nullif(btrim(coalesce(p_notice_shortfall_reason, '')), '') is null then
+    raise exception 'The minimum notice here is % days (you gave %). Move the last working day, or record why the notice is shorter (e.g. pay in lieu, waived in writing).', v_min, v_days
+      using errcode = '22023';
+  end if;
+
+  if p_source_exception_id is not null then
+    select * into x from public.onboarding_exceptions where id = p_source_exception_id for update;
+    if x.id is null or not exists (select 1 from public.onboarding_instances i where i.id = x.instance_id and i.employee_id = e.id) then
+      raise exception 'That onboarding problem belongs to someone else' using errcode = '22023';
+    end if;
+    v_inst := x.instance_id;
+  else
+    select id into v_inst from public.onboarding_instances where employee_id = e.id and status not in ('completed', 'cancelled', 'withdrawn')
+     order by created_at desc limit 1;
+  end if;
+
+  insert into public.offboarding_cases (employee_id, entity_id, location_id, separation_type, initiated_by, notice_date, last_working_date,
+    in_probation, leaving_uae, min_notice_days, notice_shortfall_reason, reason, settlement_due_date, source_onboarding_instance_id,
+    source_exception_id, created_by)
+  values (e.id, e.entity_id, e.home_location_id, p_type, p_initiated_by, p_notice_date, p_last_working_date, v_in_prob,
+    coalesce(p_leaving_uae, false), v_min, nullif(btrim(coalesce(p_notice_shortfall_reason, '')), ''), btrim(p_reason),
+    p_last_working_date + 14, v_inst, p_source_exception_id, auth.uid())
+  returning * into c;
+  perform public._off_generate_tasks(c.id);
+  -- Payroll uses the last working day for proration and final settlement.
+  perform public.payroll_set_last_working_date(e.id, p_last_working_date, 'Offboarding: ' || replace(p_type, '_', ' '));
+
+  if x.id is not null and x.status = 'open' then
+    update public.onboarding_exceptions set status = 'resolved', resolution = 'Offboarding started', resolved_by = auth.uid(), resolved_at = now()
+     where id = x.id;
+  end if;
+
+  perform public._off_audit(c, c.id, 'offboarding_started', null,
+    jsonb_build_object('type', p_type, 'initiated_by', p_initiated_by, 'notice_date', p_notice_date, 'last_working_date', p_last_working_date,
+      'notice_days', v_days, 'min_notice_days', v_min, 'in_probation', v_in_prob, 'shortfall_reason', p_notice_shortfall_reason));
+
+  -- Branch manager(s) of the branch; no pay, no reason in the message.
+  for v_user in select p.id from public.profiles p where p.is_active and p.role = 'location_manager' and p.location_id = e.home_location_id loop
+    perform public.create_notification(e.entity_id, v_user, null, 'offboarding_started', 'Employee leaving',
+      format('%s''s last working day is %s. Your checklist is in Offboarding.', e.full_name, to_char(p_last_working_date, 'DD Mon YYYY')),
+      'offboarding_case', c.id, 'normal', format('off:%s:started:%s', c.id, v_user));
+  end loop;
+  begin
+    perform public.evaluate_workflow_rules('offboarding', 'offboarding_started', e.entity_id, 'offboarding_cases', c.id,
+      jsonb_build_object('employee_id', e.id, 'location_id', e.home_location_id, 'offboarding_case_id', c.id,
+                         'separation_type', p_type, 'last_working_date', p_last_working_date));
+  exception when others then raise warning 'workflow offboarding_started failed: %', sqlerrm;
+  end;
+
+  return jsonb_build_object('ok', true, 'case_id', c.id, 'notice_days', v_days, 'min_notice_days', v_min, 'in_probation', v_in_prob,
+    'settlement_due_date', c.settlement_due_date);
+end;
+$$;
+
+-- Change the notice date / last working day (e.g. garden leave, agreed earlier exit).
+create or replace function public.update_offboarding_dates(p_case_id uuid, p_notice_date date, p_last_working_date date, p_reason text,
+  p_expected_version integer, p_notice_shortfall_reason text default null)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare c public.offboarding_cases; v_days integer;
+begin
+  select * into c from public.offboarding_cases where id = p_case_id for update;
+  if c.id is null then raise exception 'Case not found' using errcode = 'P0002'; end if;
+  if not public._off_can(c.id, 'manage') then raise exception 'Not authorized' using errcode = '42501'; end if;
+  if c.status <> 'open' then raise exception 'This offboarding is closed' using errcode = '22023'; end if;
+  if p_expected_version is distinct from c.row_version then raise exception 'This offboarding changed; reload and try again' using errcode = '40001'; end if;
+  if nullif(btrim(coalesce(p_reason, '')), '') is null then raise exception 'A reason is required' using errcode = '22023'; end if;
+  if p_last_working_date < p_notice_date then raise exception 'The last working day cannot be before the notice date' using errcode = '22023'; end if;
+  v_days := p_last_working_date - p_notice_date;
+  if v_days < c.min_notice_days and nullif(btrim(coalesce(p_notice_shortfall_reason, c.notice_shortfall_reason, '')), '') is null then
+    raise exception 'The minimum notice here is % days. Record why the notice is shorter.', c.min_notice_days using errcode = '22023';
+  end if;
+  update public.offboarding_cases set notice_date = p_notice_date, last_working_date = p_last_working_date,
+         settlement_due_date = p_last_working_date + 14,
+         notice_shortfall_reason = coalesce(nullif(btrim(coalesce(p_notice_shortfall_reason, '')), ''), notice_shortfall_reason),
+         row_version = row_version + 1, updated_at = now()
+   where id = c.id;
+  update public.offboarding_tasks t set due_date = t.due_date + (p_last_working_date - c.last_working_date)
+   where t.case_id = c.id and t.status = 'not_started' and t.item_key <> 'notice_letter';
+  perform public.payroll_set_last_working_date(c.employee_id, p_last_working_date, 'Offboarding dates changed: ' || btrim(p_reason));
+  perform public._off_audit(c, c.id, 'offboarding_dates_changed',
+    jsonb_build_object('notice_date', c.notice_date, 'last_working_date', c.last_working_date),
+    jsonb_build_object('notice_date', p_notice_date, 'last_working_date', p_last_working_date, 'reason', p_reason));
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.complete_offboarding_task(p_task_id uuid, p_status text, p_notes text default null)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare t public.offboarding_tasks; c public.offboarding_cases; v_ok boolean;
+begin
+  select * into t from public.offboarding_tasks where id = p_task_id for update;
+  if t.id is null then raise exception 'Task not found' using errcode = 'P0002'; end if;
+  select * into c from public.offboarding_cases where id = t.case_id;
+  if c.status <> 'open' then raise exception 'This offboarding is closed' using errcode = '22023'; end if;
+  v_ok := case t.owner_role when 'location_manager' then public._off_can(c.id, 'operate')
+                            when 'payroll' then public._off_can(c.id, 'payroll')
+                            else public._off_can(c.id, 'manage') end;
+  if not v_ok then raise exception 'This task belongs to %', replace(t.owner_role, '_', ' ') using errcode = '42501'; end if;
+  if p_status not in ('done', 'not_needed', 'not_started') then raise exception 'Status must be done, not_needed or not_started' using errcode = '22023'; end if;
+  if p_status = 'not_needed' and nullif(btrim(coalesce(p_notes, '')), '') is null then raise exception 'Say why it is not needed' using errcode = '22023'; end if;
+  if p_status = 'not_needed' and t.is_required and not public._off_can(c.id, 'manage') then
+    raise exception 'Only HR can skip a required step' using errcode = '42501';
+  end if;
+  update public.offboarding_tasks set status = p_status, notes = coalesce(nullif(btrim(coalesce(p_notes, '')), ''), notes),
+         completed_by = case when p_status = 'not_started' then null else auth.uid() end,
+         completed_at = case when p_status = 'not_started' then null else now() end
+   where id = t.id;
+  update public.offboarding_cases set row_version = row_version + 1, updated_at = now() where id = c.id;
+  perform public._off_audit(c, t.id, 'offboarding_task_updated', jsonb_build_object('task', t.item_key, 'status', t.status),
+    jsonb_build_object('task', t.item_key, 'status', p_status, 'notes', p_notes));
+  return jsonb_build_object('ok', true, 'status', p_status);
+end;
+$$;
+
+-- -------------------------------------------------------------- read
+create or replace function public.get_offboarding_case(p_case_id uuid)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare
+  c public.offboarding_cases;
+  e public.employees;
+  v_hr boolean;
+  v_pay boolean;
+  v_grat jsonb;
+  v_today date := (now() at time zone 'Asia/Dubai')::date;
+begin
+  select * into c from public.offboarding_cases where id = p_case_id;
+  if c.id is null then raise exception 'Case not found' using errcode = 'P0002'; end if;
+  if not public._off_can(c.id, 'view') then raise exception 'Not authorized' using errcode = '42501'; end if;
+  v_hr := public._off_can(c.id, 'manage');
+  v_pay := public._off_can(c.id, 'payroll');
+  select * into e from public.employees where id = c.employee_id;
+  if v_pay then
+    begin
+      v_grat := public.payroll_gratuity_preview(e.id, c.last_working_date);
+    exception when others then v_grat := jsonb_build_object('ok', false, 'reason', sqlerrm);
+    end;
+  end if;
+  return jsonb_build_object(
+    'case', (to_jsonb(c) - 'reason' - 'notice_shortfall_reason')
+            || case when v_hr then jsonb_build_object('reason', c.reason, 'notice_shortfall_reason', c.notice_shortfall_reason) else '{}'::jsonb end,
+    'employee', jsonb_build_object('id', e.id, 'name', e.full_name, 'employee_number', e.employee_number, 'join_date', e.join_date,
+      'employment_status', e.employment_status,
+      'branch', (select name from public.locations where id = e.home_location_id),
+      'position', (select title from public.positions where id = e.position_id)),
+    'permissions', jsonb_build_object('manage', v_hr, 'payroll', v_pay, 'operate', public._off_can(c.id, 'operate')),
+    'notice_days', c.last_working_date - c.notice_date,
+    'tasks', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'item_key', t.item_key, 'label', t.label, 'owner_role', t.owner_role,
+        'is_required', t.is_required, 'status', t.status, 'due_date', t.due_date, 'notes', t.notes, 'completed_at', t.completed_at,
+        'overdue', t.status = 'not_started' and t.due_date < v_today) order by t.sort_order)
+      from public.offboarding_tasks t where t.case_id = c.id
+       and (v_hr or v_pay or t.owner_role = 'location_manager')), '[]'::jsonb),
+    'future_published_shifts', (select count(*) from public.shifts s where s.employee_id = e.id and s.shift_date > c.last_working_date
+                                  and s.is_published and s.status <> 'cancelled'),
+    'settlement', case when v_pay then jsonb_build_object('due_date', c.settlement_due_date, 'gratuity', v_grat,
+      'leave_balances', coalesce((select jsonb_agg(jsonb_build_object('leave_type', lt.name, 'balance_days', lb.balance_days))
+                                    from public.leave_balances lb join public.leave_types lt on lt.id = lb.leave_type_id
+                                   where lb.employee_id = e.id and lb.balance_days <> 0), '[]'::jsonb)) end,
+    'timeline', case when v_hr then coalesce((select jsonb_agg(jsonb_build_object('action', a.action, 'at', a.changed_at, 'by', pr.full_name) order by a.changed_at desc)
+       from public.audit_log a left join public.profiles pr on pr.id = a.changed_by
+      where a.new_value ->> 'offboarding_case_id' = c.id::text), '[]'::jsonb) end);
+end;
+$$;
+
+create or replace function public.list_offboarding(p_entity_id uuid, p_status text default 'open')
+returns jsonb language plpgsql stable security definer set search_path to '' as $$
+declare v_role public.user_role := public.my_role(); v_today date := (now() at time zone 'Asia/Dubai')::date;
+begin
+  if not public.is_active_user() or not (v_role = 'owner' or (v_role in ('entity_admin', 'location_manager') and p_entity_id = public.my_entity())
+          or public.payroll_can(p_entity_id, 'approve')) then
+    raise exception 'Not authorized' using errcode = '42501';
+  end if;
+  return coalesce((select jsonb_agg(jsonb_build_object('case_id', c.id, 'employee_id', e.id, 'name', e.full_name,
+      'branch', (select name from public.locations where id = c.location_id), 'separation_type', c.separation_type,
+      'notice_date', c.notice_date, 'last_working_date', c.last_working_date, 'settlement_due_date', c.settlement_due_date,
+      'status', c.status, 'row_version', c.row_version,
+      'open_tasks', (select count(*) from public.offboarding_tasks t where t.case_id = c.id and t.is_required and t.status = 'not_started'),
+      'overdue_tasks', (select count(*) from public.offboarding_tasks t where t.case_id = c.id and t.status = 'not_started' and t.due_date < v_today))
+      order by c.last_working_date)
+    from public.offboarding_cases c join public.employees e on e.id = c.employee_id
+   where c.entity_id = p_entity_id and (p_status = 'all' or c.status = p_status)
+     and (v_role <> 'location_manager' or c.location_id = public.my_location())), '[]'::jsonb);
+end;
+$$;
+
+-- ------------------------------------------------------ finish / cancel
+create or replace function public.complete_offboarding(p_case_id uuid, p_notes text default null)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare
+  c public.offboarding_cases;
+  e public.employees;
+  v_open text;
+  v_inst public.onboarding_instances;
+  v_today date := (now() at time zone 'Asia/Dubai')::date;
+begin
+  select * into c from public.offboarding_cases where id = p_case_id for update;
+  if c.id is null then raise exception 'Case not found' using errcode = 'P0002'; end if;
+  if not public._off_can(c.id, 'manage') then raise exception 'Only the owner or entity admin can finish offboarding' using errcode = '42501'; end if;
+  if c.status <> 'open' then return jsonb_build_object('ok', true, 'already', true); end if;
+  if c.last_working_date > v_today then
+    raise exception 'The last working day (%) has not passed yet', to_char(c.last_working_date, 'DD Mon YYYY') using errcode = '22023';
+  end if;
+  select string_agg(label, ', ' order by sort_order) into v_open from public.offboarding_tasks
+   where case_id = c.id and is_required and status = 'not_started';
+  if v_open is not null then raise exception 'Still open: %', v_open using errcode = '22023'; end if;
+
+  select * into e from public.employees where id = c.employee_id;
+  if e.employment_status = 'active' then
+    perform public.set_employee_status(e.id, 'inactive', 'End of employment (' || replace(c.separation_type, '_', ' ') || ')');
+  end if;
+  -- An onboarding still running ends with the employment.
+  select * into v_inst from public.onboarding_instances where employee_id = e.id and status not in ('completed', 'cancelled', 'withdrawn');
+  if v_inst.id is not null then
+    perform public._onb_set_status(v_inst.id, 'cancelled', 'Employment ended');
+    update public.onboarding_instances set ended_at = now(), ended_by = auth.uid(), end_reason = 'Employment ended (offboarding)' where id = v_inst.id;
+    update public.onboarding_tasks set status = 'cancelled', updated_at = now()
+     where instance_id = v_inst.id and status not in ('approved', 'waived', 'cancelled');
+  end if;
+  update public.employee_immigration_cases set status = 'cancelled', closed_by = auth.uid(), closed_at = now(),
+         close_reason = 'Employment ended', updated_at = now()
+   where employee_id = e.id and status = 'open';
+
+  update public.offboarding_cases set status = 'completed', closed_by = auth.uid(), closed_at = now(),
+         close_notes = nullif(btrim(coalesce(p_notes, '')), ''), row_version = row_version + 1, updated_at = now()
+   where id = c.id;
+  perform public._off_audit(c, c.id, 'offboarding_completed', null, jsonb_build_object('notes', p_notes));
+  return jsonb_build_object('ok', true, 'already', false);
+end;
+$$;
+
+create or replace function public.cancel_offboarding(p_case_id uuid, p_reason text)
+returns jsonb language plpgsql security definer set search_path to '' as $$
+declare c public.offboarding_cases;
+begin
+  select * into c from public.offboarding_cases where id = p_case_id for update;
+  if c.id is null then raise exception 'Case not found' using errcode = 'P0002'; end if;
+  if not public._off_can(c.id, 'manage') then raise exception 'Not authorized' using errcode = '42501'; end if;
+  if c.status <> 'open' then return jsonb_build_object('ok', true, 'already', true); end if;
+  if nullif(btrim(coalesce(p_reason, '')), '') is null then raise exception 'A reason is required' using errcode = '22023'; end if;
+  update public.offboarding_cases set status = 'cancelled', closed_by = auth.uid(), closed_at = now(), close_notes = btrim(p_reason),
+         row_version = row_version + 1, updated_at = now() where id = c.id;
+  perform public.payroll_set_last_working_date(c.employee_id, null, 'Offboarding cancelled: ' || btrim(p_reason));
+  perform public._off_audit(c, c.id, 'offboarding_cancelled', null, jsonb_build_object('reason', p_reason));
+  return jsonb_build_object('ok', true, 'already', false);
+end;
+$$;
+
+-- --------------------------------------------------------- reminders
+create or replace function public._off_reminders(p_today date)
+returns integer language plpgsql security definer set search_path to '' as $$
+declare r record; x record; n integer := 0;
+begin
+  -- Overdue checklist items, per branch and owner.
+  for r in select c.entity_id, c.location_id, t.owner_role, count(*) cnt, max(p_today - t.due_date) worst, (array_agg(c.id))[1] first_case
+             from public.offboarding_tasks t join public.offboarding_cases c on c.id = t.case_id
+            where c.status = 'open' and t.status = 'not_started' and t.due_date < p_today
+            group by 1, 2, 3 loop
+    for x in select p.id from public.profiles p where p.is_active
+               and ((r.owner_role = 'location_manager' and p.role = 'location_manager' and p.location_id = r.location_id)
+                 or (p.role = 'entity_admin' and p.entity_id = r.entity_id and (r.owner_role <> 'location_manager' or r.worst >= 2))) loop
+      perform public.create_notification(r.entity_id, x.id, null, 'offboarding_task_overdue', 'Offboarding tasks overdue',
+        format('%s overdue %s task(s), oldest %s day(s).', r.cnt, replace(r.owner_role, '_', ' '), r.worst),
+        'offboarding_case', r.first_case, 'normal', format('off:overdue:%s:%s:%s:%s', r.location_id, r.owner_role, x.id, p_today));
+      n := n + 1;
+    end loop;
+  end loop;
+  -- Final settlement due within 3 days and not yet marked paid.
+  for r in select c.*, e.full_name from public.offboarding_cases c join public.employees e on e.id = c.employee_id
+            where c.status = 'open' and c.settlement_due_date <= p_today + 3
+              and exists (select 1 from public.offboarding_tasks t where t.case_id = c.id and t.item_key = 'final_settlement' and t.status = 'not_started') loop
+    for x in select p.id from public.profiles p where p.is_active and p.role = 'entity_admin' and p.entity_id = r.entity_id loop
+      perform public.create_notification(r.entity_id, x.id, null, 'final_settlement_due', 'Final settlement due',
+        format('%s: final settlement is due by %s (14 days after the last day).', r.full_name, to_char(r.settlement_due_date, 'DD Mon')),
+        'offboarding_case', r.id, 'high', format('off:%s:settlement:%s', r.id, x.id));
+      n := n + 1;
+    end loop;
+    begin
+      perform public.evaluate_workflow_rules('offboarding', 'final_settlement_due', r.entity_id, 'offboarding_cases', r.id,
+        jsonb_build_object('employee_id', r.employee_id, 'location_id', r.location_id, 'offboarding_case_id', r.id,
+                           'settlement_due_date', r.settlement_due_date, 'days_to_due', r.settlement_due_date - p_today));
+    exception when others then raise warning 'workflow final_settlement_due failed: %', sqlerrm;
+    end;
+  end loop;
+  return n;
+end;
+$$;
+
+create or replace function public._onb_extension_reminders(p_today date)
+returns integer language sql security definer set search_path to '' as $$
+  select public._imm_reminders(p_today) + public._off_reminders(p_today);
+$$;
+
+-- --------------------------------------------------------------- RLS
+alter table public.offboarding_cases enable row level security;
+alter table public.offboarding_tasks enable row level security;
+revoke all on public.offboarding_cases, public.offboarding_tasks from anon, authenticated;
+grant select on public.offboarding_cases, public.offboarding_tasks to authenticated;
+-- Direct reads: HR and payroll approvers. Branch managers use the RPCs
+-- (which leave out the reason).
+create policy offboarding_cases_select on public.offboarding_cases for select to authenticated
+  using ((select public.is_active_user()) and employee_id is distinct from (select public.my_employee_id())
+         and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and entity_id = (select public.my_entity()))
+              or public.payroll_can(entity_id, 'approve')));
+create policy offboarding_tasks_select on public.offboarding_tasks for select to authenticated
+  using (exists (select 1 from public.offboarding_cases c where c.id = case_id));
+
+do $$
+declare f text;
+begin
+  foreach f in array array['_off_min_notice_days(text, text, boolean, boolean)', '_off_can(uuid, text)',
+    '_off_audit(public.offboarding_cases, uuid, text, jsonb, jsonb)', '_off_generate_tasks(uuid)', '_off_reminders(date)',
+    '_onb_extension_reminders(date)'] loop
+    execute format('revoke all on function public.%s from public, anon, authenticated', f);
+  end loop;
+  foreach f in array array['start_offboarding(uuid, text, text, date, date, text, boolean, text, uuid)',
+    'update_offboarding_dates(uuid, date, date, text, integer, text)', 'complete_offboarding_task(uuid, text, text)',
+    'get_offboarding_case(uuid)', 'list_offboarding(uuid, text)', 'complete_offboarding(uuid, text)', 'cancel_offboarding(uuid, text)'] loop
+    execute format('revoke all on function public.%s from public, anon', f);
+    execute format('grant execute on function public.%s to authenticated', f);
+  end loop;
+end $$;
+
 -- ===== tests/onboarding_tests.sql
 -- ============================================================
 -- Smart Employee Onboarding — business workflow tests.
@@ -3484,12 +4534,17 @@ declare
   v_ver integer;
   v_pol record;
   v_period uuid;
+  v_emp3 uuid;
+  v_inst3 uuid;
+  v_case uuid;
+  v_id uuid;
+  v_days jsonb;
 begin
   -- ------------------------------------------------ A. setup and start
   perform pg_temp.login(v_admin);
   perform public.seed_default_onboarding_template(v_ent);
-  perform pg_temp.ok('A1 default template seeded with 19 tasks',
-    pg_temp.q_int(format('select count(*) from public.onboarding_template_tasks tt join public.onboarding_templates t on t.id = tt.template_id where t.entity_id = %L', v_ent)) = 19);
+  perform pg_temp.ok('A1 default template seeded with 20 tasks',
+    pg_temp.q_int(format('select count(*) from public.onboarding_template_tasks tt join public.onboarding_templates t on t.id = tt.template_id where t.entity_id = %L', v_ent)) = 20);
 
   j := public.start_onboarding_direct_hire(v_ent, 'ONB New Hire', 'onb.new@example.test', '+971 50 123 4567', 'female',
          v_l1, v_pos, 'full_time', v_start, v_mgr, 'Walk-in hire after trial shift');
@@ -3499,7 +4554,7 @@ begin
   perform pg_temp.put('emp', v_emp::text);
   perform pg_temp.ok('A2 direct hire creates pre-boarding employee + onboarding',
     pg_temp.q_text(format('select employment_status::text from public.employees where id = %L', v_emp)) = 'pre_boarding'
-    and (j ->> 'task_count')::int = 13, j::text);
+    and (j ->> 'task_count')::int = 14, j::text);
   perform pg_temp.ok('A3 employee number assigned',
     pg_temp.q_text(format('select employee_number from public.employees where id = %L', v_emp)) = 'EMP-0001');
 
@@ -3763,6 +4818,163 @@ begin
   perform pg_temp.ok('F1 withdrawal keeps record, inactivates, cancels tasks',
     pg_temp.q_text(format('select employment_status::text from public.employees where id = %L', (j ->> 'employee_id'))) = 'inactive'
     and pg_temp.q_int(format('select count(*) from public.onboarding_tasks where instance_id = %L and status <> ''cancelled''', v_inst)) = 0);
+
+  -- ------------------------------------------------ G. jobs, templates, availability
+  perform pg_temp.login(v_admin);
+  v_id := public.upsert_position(v_ent, null, 'ONB Supervisor', 'Floor', 'Runs the shift and opens the store.');
+  perform pg_temp.ok('G1 admin creates a job with a description',
+    pg_temp.q_text(format('select description from public.positions where id = %L', v_id)) = 'Runs the shift and opens the store.');
+  begin
+    perform public.upsert_position(v_ent, null, 'onb supervisor', null, null);
+    perform pg_temp.ok('G2 duplicate job title refused', false);
+  exception when others then
+    perform pg_temp.ok('G2 duplicate job title refused', sqlstate = '23505', sqlerrm);
+  end;
+  perform pg_temp.login(v_lm);
+  begin
+    perform public.upsert_position(v_ent, v_id, 'X', null, null);
+    perform pg_temp.ok('G3 branch manager cannot edit jobs', false);
+  exception when others then
+    perform pg_temp.ok('G3 branch manager cannot edit jobs', sqlstate = '42501', sqlerrm);
+  end;
+  perform pg_temp.login(v_admin);
+  v_id := public.create_onboarding_template(v_ent, 'ONB Part-time', 'Short checklist',
+    '[{"item_key":"availability","item_label":"Availability","section":"availability","kind":"availability","owner_role":"employee"},
+      {"item_key":"briefing","item_label":"Briefing","section":"operations","owner_role":"location_manager","depends_on":["availability"]}]'::jsonb,
+    array['part_time']::public.employment_type[], null);
+  v_id := public.replace_onboarding_template(v_id, null, null, null, array[]::public.employment_type[], null);
+  perform pg_temp.ok('G4 template edit makes version 2 and an empty filter clears it',
+    pg_temp.q_text(format('select version_number::text || coalesce(array_length(applies_to_employment_types, 1)::text, ''none'') from public.onboarding_templates where id = %L', v_id)) = '2none');
+  begin
+    perform public.create_onboarding_template(v_ent, 'ONB Loop', null,
+      '[{"item_key":"a","item_label":"A","section":"operations","owner_role":"hr","depends_on":["b"]},
+        {"item_key":"b","item_label":"B","section":"operations","owner_role":"hr","depends_on":["a"]}]'::jsonb, null, null);
+    perform pg_temp.ok('G5 dependency loop refused', false);
+  exception when others then
+    perform pg_temp.ok('G5 dependency loop refused', sqlstate = '22023', sqlerrm);
+  end;
+  perform public.deactivate_onboarding_template(v_id);
+
+  perform pg_temp.login('c1000000-0000-4000-8000-000000000009');
+  select jsonb_agg(jsonb_build_object('day_of_week', d, 'is_available', d <> 5, 'start_time', '08:00', 'end_time', '16:00')) into v_days
+    from generate_series(0, 6) d;
+  j := public.save_my_availability(v_days);
+  perform pg_temp.ok('G6 new starter confirms availability',
+    pg_temp.q_int(format('select count(*) from public.employee_availability where employee_id = %L and is_available', v_emp)) = 6
+    and pg_temp.q_text(format('select (availability_confirmed_at is not null)::text from public.employees where id = %L', v_emp)) = 'true');
+  begin
+    perform public.save_my_availability('[{"day_of_week":1,"is_available":true}]'::jsonb);
+    perform pg_temp.ok('G7 availability needs all seven days', false);
+  exception when others then
+    perform pg_temp.ok('G7 availability needs all seven days', sqlstate = '22023', sqlerrm);
+  end;
+  perform pg_temp.ok('G8 availability task completed from the saved availability',
+    pg_temp.q_text(format('select status from public.onboarding_tasks where instance_id = %L and item_key = ''availability''',
+      pg_temp.get('inst'))) = 'approved');
+
+  -- ------------------------------------------------ H. work permit / visa
+  perform pg_temp.login(v_admin);
+  j := public.start_onboarding_direct_hire(v_ent, 'ONB Third Hire', 'onb.third@example.test', null, null, v_l1, v_pos, 'full_time',
+         v_start, v_mgr, 'Hired from abroad');
+  v_inst3 := (j ->> 'onboarding_instance_id')::uuid;
+  v_emp3 := (j ->> 'employee_id')::uuid;
+  j := public.open_immigration_case(v_emp3, 'outside_uae', null);
+  v_case := (j ->> 'case_id')::uuid;
+  perform pg_temp.ok('H1 visa case from abroad has 11 steps',
+    pg_temp.q_int(format('select count(*) from public.employee_immigration_steps where case_id = %L', v_case)) = 11);
+  j := public.calculate_onboarding_readiness(v_inst3);
+  perform pg_temp.ok('H2 work permit blocks activation',
+    exists (select 1 from jsonb_array_elements(j -> 'blockers') b where b ->> 'code' = 'immigration_work_permit'), left(j::text, 200));
+  perform pg_temp.login(v_lm);
+  begin
+    perform public.get_immigration_case(v_emp3);
+    perform pg_temp.ok('H3 branch manager cannot open visa details', false);
+  exception when others then
+    perform pg_temp.ok('H3 branch manager cannot open visa details', sqlstate = '42501', sqlerrm);
+  end;
+  j := public.calculate_onboarding_readiness(v_inst3);
+  perform pg_temp.ok('H4 branch manager sees a generic visa blocker only',
+    j::text like '%Work permit paperwork is outstanding%' and j::text not like '%MOHRE%', left(j::text, 200));
+  perform pg_temp.login(v_admin);
+  select id into v_id from public.employee_immigration_steps where case_id = v_case and step_key = 'work_permit';
+  perform public.update_immigration_step(v_id, 'done', 'WP-123456', null, null, null);
+  perform pg_temp.ok('H5 work permit number recorded on the case',
+    pg_temp.q_text(format('select work_permit_number from public.employee_immigration_cases where id = %L', v_case)) = 'WP-123456');
+  begin
+    perform public.update_immigration_step(v_id, 'not_needed', null, null, null, null);
+    perform pg_temp.ok('H6 skipping a step needs a note', false);
+  exception when others then
+    perform pg_temp.ok('H6 skipping a step needs a note', sqlstate = '22023', sqlerrm);
+  end;
+  perform public.change_immigration_track(v_case, 'transfer', 'Already in the UAE with another employer');
+  perform pg_temp.ok('H7 track change adds transfer step and drops entry steps',
+    pg_temp.q_int(format('select count(*) from public.employee_immigration_steps where case_id = %L and step_key = ''previous_permit_cancelled''', v_case)) = 1
+    and pg_temp.q_text(format('select status from public.employee_immigration_steps where case_id = %L and step_key = ''entry_permit''', v_case)) = 'not_needed');
+  begin
+    perform public.close_immigration_case(v_case, 'completed', null);
+    perform pg_temp.ok('H8 cannot complete a case with open steps', false);
+  exception when others then
+    perform pg_temp.ok('H8 cannot complete a case with open steps', sqlstate = '22023', sqlerrm);
+  end;
+
+  -- ------------------------------------------------ I. offboarding
+  begin
+    perform public.start_offboarding(v_emp, 'resignation', 'employee', (now() at time zone 'Asia/Dubai')::date,
+      (now() at time zone 'Asia/Dubai')::date + 10, 'Moving to another cafe', false, null, null);
+    perform pg_temp.ok('I1 resignation in probation to a UAE employer needs one month', false);
+  exception when others then
+    perform pg_temp.ok('I1 resignation in probation to a UAE employer needs one month', sqlstate = '22023' and sqlerrm like '%30 days%', sqlerrm);
+  end;
+  j := public.start_offboarding(v_emp, 'resignation', 'employee', (now() at time zone 'Asia/Dubai')::date,
+      (now() at time zone 'Asia/Dubai')::date + 10, 'Moving to another cafe', false, 'Notice waived in writing by the employer', null);
+  v_case := (j ->> 'case_id')::uuid;
+  perform pg_temp.ok('I2 offboarding starts with shortfall reason, in probation',
+    (j ->> 'in_probation')::boolean and (j ->> 'min_notice_days')::int = 30, j::text);
+  perform pg_temp.ok('I3 last working day passed to payroll',
+    pg_temp.q_text(format('select last_working_date::text from public.employees where id = %L', v_emp)) = ((now() at time zone 'Asia/Dubai')::date + 10)::text);
+  begin
+    perform public.start_offboarding(v_emp, 'resignation', 'employee', (now() at time zone 'Asia/Dubai')::date,
+      (now() at time zone 'Asia/Dubai')::date + 40, 'x', false, null, null);
+    perform pg_temp.ok('I4 only one open offboarding', false);
+  exception when others then
+    perform pg_temp.ok('I4 only one open offboarding', sqlstate = '23505', sqlerrm);
+  end;
+  perform pg_temp.login(v_lm);
+  j := public.get_offboarding_case(v_case);
+  perform pg_temp.ok('I5 branch manager sees own tasks, no reason or settlement',
+    not (j -> 'case' ? 'reason') and j -> 'settlement' = 'null'::jsonb
+    and not exists (select 1 from jsonb_array_elements(j -> 'tasks') t where t ->> 'owner_role' <> 'location_manager'), left(j::text, 200));
+  for v_id in select id from public.offboarding_tasks where case_id = v_case and owner_role = 'location_manager' loop
+    perform public.complete_offboarding_task(v_id, 'done', null);
+  end loop;
+  select id into v_id from public.offboarding_tasks where case_id = v_case and item_key = 'final_settlement';
+  begin
+    perform public.complete_offboarding_task(v_id, 'done', null);
+    perform pg_temp.ok('I6 branch manager cannot mark the final settlement', false);
+  exception when others then
+    perform pg_temp.ok('I6 branch manager cannot mark the final settlement', sqlstate = '42501', sqlerrm);
+  end;
+  perform pg_temp.login(v_admin);
+  j := public.get_offboarding_case(v_case);
+  perform pg_temp.ok('I7 HR sees settlement preview (under a year: no gratuity)',
+    (j -> 'settlement' -> 'gratuity' ->> 'amount')::numeric = 0 or (j -> 'settlement' -> 'gratuity' ->> 'ok') = 'false', left((j -> 'settlement')::text, 200));
+  begin
+    perform public.complete_offboarding(v_case, null);
+    perform pg_temp.ok('I8 cannot finish before the last working day', false);
+  exception when others then
+    perform pg_temp.ok('I8 cannot finish before the last working day', sqlstate = '22023', sqlerrm);
+  end;
+  perform public.update_offboarding_dates(v_case, (now() at time zone 'Asia/Dubai')::date, (now() at time zone 'Asia/Dubai')::date,
+    'Agreed early exit', pg_temp.q_int(format('select row_version from public.offboarding_cases where id = %L', v_case))::int, null);
+  for v_id in select id from public.offboarding_tasks where case_id = v_case and is_required and status = 'not_started' loop
+    perform public.complete_offboarding_task(v_id, 'done', null);
+  end loop;
+  j := public.complete_offboarding(v_case, 'All returned');
+  perform pg_temp.ok('I9 finishing inactivates the employee and ends the login',
+    pg_temp.q_text(format('select employment_status::text from public.employees where id = %L', v_emp)) = 'inactive'
+    and pg_temp.q_text('select is_active::text from public.profiles where id = ''c1000000-0000-4000-8000-000000000009''') = 'false');
+  perform pg_temp.ok('I10 the running onboarding ends with the employment',
+    pg_temp.q_text(format('select status from public.onboarding_instances where id = %L', pg_temp.get('inst'))) = 'cancelled');
 end $t$;
 
 reset role;

@@ -18,6 +18,8 @@ comment on column public.positions.description is
 alter table public.employees add column if not exists employee_number text;
 alter table public.employees add column if not exists residential_address text;
 alter table public.employees add column if not exists reporting_manager_employee_id uuid references public.employees(id);
+-- Set when the employee confirms their weekly availability (onboarding portal).
+alter table public.employees add column if not exists availability_confirmed_at timestamptz;
 create unique index if not exists employees_number_per_entity
   on public.employees (entity_id, employee_number) where employee_number is not null;
 
@@ -78,7 +80,7 @@ create table public.onboarding_template_tasks (
                                            'operations', 'employment', 'payroll', 'day_one', 'follow_up')),
   phase text not null default 'pre_activation' check (phase in ('pre_activation', 'day_one', 'initial_period')),
   kind text not null default 'manual' check (kind in ('manual', 'profile', 'document', 'acknowledgement',
-                                                      'contract_acceptance', 'payment_details', 'compensation')),
+                                                      'contract_acceptance', 'payment_details', 'compensation', 'availability')),
   owner_role text not null check (owner_role in ('employee', 'location_manager', 'hr', 'payroll', 'approver')),
   reviewer_role text check (reviewer_role in ('location_manager', 'hr', 'payroll')),
   doc_type public.document_type,

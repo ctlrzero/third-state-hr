@@ -227,3 +227,69 @@ export const PROFILE_FIELDS: { key: string; label: string; type: 'text' | 'date'
 export function missingProfileFields(p: Record<string, string | null | undefined>): string[] {
   return PROFILE_FIELDS.filter((f) => f.required && !String(p[f.key] ?? '').trim()).map((f) => f.label)
 }
+
+// ------------------------------------------------------ template editor
+/** "Upload the signed contract!" → "upload_the_signed_contract" (the server's key rule). */
+export function taskKey(label: string): string {
+  return (
+    label
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 40) || 'task'
+  )
+}
+
+export interface EditableTask {
+  item_key: string
+  item_label: string
+  kind: string
+  doc_type?: string | null
+  policy_key?: string | null
+  depends_on: string[]
+  is_statutory: boolean
+  is_required: boolean
+}
+
+/**
+ * Client-side mirror of the server's template checks, so the editor can
+ * point at the exact row before saving. The server re-checks everything.
+ */
+export function validateTemplateTasks(tasks: EditableTask[]): string[] {
+  const errs: string[] = []
+  if (tasks.length === 0) errs.push('Add at least one task.')
+  const keys = new Set<string>()
+  for (const t of tasks) {
+    if (!t.item_label.trim()) errs.push('Every task needs a name.')
+    if (!/^[a-z0-9_]+$/.test(t.item_key)) errs.push(`“${t.item_label}”: key must be lowercase letters, digits and _.`)
+    if (keys.has(t.item_key)) errs.push(`Two tasks share the key “${t.item_key}”. Rename one.`)
+    keys.add(t.item_key)
+    if (t.kind === 'document' && !t.doc_type) errs.push(`“${t.item_label}”: choose which document.`)
+    if (t.kind === 'acknowledgement' && !t.policy_key) errs.push(`“${t.item_label}”: choose which policy.`)
+  }
+  for (const t of tasks) for (const d of t.depends_on) if (!keys.has(d)) errs.push(`“${t.item_label}” waits for a task that no longer exists.`)
+  // Loops: depth-first search over depends_on.
+  const by = new Map(tasks.map((t) => [t.item_key, t.depends_on]))
+  const state = new Map<string, 1 | 2>()
+  const visit = (k: string): boolean => {
+    if (state.get(k) === 1) return true
+    if (state.get(k) === 2) return false
+    state.set(k, 1)
+    for (const d of by.get(k) ?? []) if (by.has(d) && visit(d)) return true
+    state.set(k, 2)
+    return false
+  }
+  if (tasks.some((t) => visit(t.item_key))) errs.push('Some tasks wait for each other in a loop. Remove one of the “waits for” links.')
+  return [...new Set(errs)]
+}
+
+// ------------------------------------------------ work permit / visa
+export const TRACK_LABEL = {
+  outside_uae: 'New visa — employee outside the UAE',
+  inside_uae: 'New visa — employee already in the UAE (change of status)',
+  transfer: 'Transfer from another UAE employer',
+  own_visa: 'Has own residence visa (family / golden) — work permit only',
+  uae_national: 'UAE national',
+  gcc_national: 'GCC national',
+} as const

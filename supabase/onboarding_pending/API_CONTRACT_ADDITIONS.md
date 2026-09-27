@@ -121,3 +121,58 @@ The tables are readable in scope as follows:
 | `employee_payment_details` | PAY and SELF only |
 | `employee_contract_acceptances` | O, EA, SELF; never LM |
 | `employee_probation_reviews` | management only |
+
+### 12.9 Jobs and availability (migration 011)
+
+| RPC | Args | Roles | Returns |
+|---|---|---|---|
+| `upsert_position` | `p_entity_id, p_position_id` (null = new), `p_title, p_department, p_description` | O, EA | `uuid` (title unique per company) |
+| `get_my_availability` | none | SELF | `jsonb {confirmed_at, days[{day_of_week 0=Sun…6, is_available, start_time, end_time}]}` |
+| `save_my_availability` | `p_days jsonb` (exactly 7 days) | SELF with an open onboarding | `jsonb {ok}`; completes the `availability` task |
+
+Template editing uses the existing `create_onboarding_template` / `replace_onboarding_template`. In
+`replace_onboarding_template`, an empty array for employment types or positions now clears that
+filter (null keeps it). Task kind `availability` was added.
+
+`record_probation_review` `p_ratings`: `{punctuality, job_skills, customer_service, teamwork, hygiene_safety}`, each 1–5.
+
+### 12.10 Work permit and visa (migration 012) — O, EA only
+
+| RPC | Args | Returns |
+|---|---|---|
+| `get_immigration_case` | `p_employee_id` | `jsonb {ok, suggested_track, case \| null, steps[]}` |
+| `list_immigration_cases` | `p_entity_id, p_status = 'open'` (`open`, `completed`, `cancelled`, `all`) | `jsonb[]` with done/total, blocking_open, overdue, next_step |
+| `open_immigration_case` | `p_employee_id, p_track, p_notes = null` | `jsonb {ok, already_open, case_id}` |
+| `change_immigration_track` | `p_case_id, p_track, p_reason` | `jsonb {ok}` |
+| `update_immigration_step` | `p_step_id, p_status, p_reference, p_expiry_date, p_due_date, p_notes` | `jsonb {ok, status}` (not_needed / failed need a note) |
+| `set_immigration_step_blocking` | `p_step_id, p_is_blocking, p_reason` | `jsonb {ok}` |
+| `update_immigration_case` | `p_case_id, p jsonb` (mohre_person_code, work_permit_number, uid_number, visa_file_number, notes) | `jsonb {ok}` |
+| `close_immigration_case` | `p_case_id, p_status` (completed / cancelled), `p_reason` | `jsonb {ok, already}` |
+| `get_my_immigration` | none (SELF) | `jsonb {ok, steps[{label, status, completed_at}] \| null}` |
+
+`p_track` is one of: `outside_uae`, `inside_uae`, `transfer`, `own_visa`, `uae_national`, `gcc_national`.
+
+Readiness adds a blocker `immigration_<step_key>` for each open blocking or failed step. Branch
+managers see this as "Work permit paperwork is outstanding".
+
+### 12.11 Offboarding (migration 013)
+
+| RPC | Args | Roles | Returns |
+|---|---|---|---|
+| `start_offboarding` | `p_employee_id, p_type, p_initiated_by, p_notice_date, p_last_working_date, p_reason, p_leaving_uae = false, p_notice_shortfall_reason = null, p_source_exception_id = null` | O, EA; active employees only | `jsonb {ok, case_id, notice_days, min_notice_days, in_probation, settlement_due_date}` |
+| `update_offboarding_dates` | `p_case_id, p_notice_date, p_last_working_date, p_reason, p_expected_version, p_notice_shortfall_reason = null` | O, EA | `jsonb {ok}` |
+| `complete_offboarding_task` | `p_task_id, p_status` (done / not_needed / not_started), `p_notes` | the task's owner role (LM own branch / HR / PAY); only HR skips a required step | `jsonb {ok, status}` |
+| `get_offboarding_case` | `p_case_id` | O, EA, PAY, LM (branch checklist only; no reason, no settlement) | `jsonb {case, employee, permissions, notice_days, tasks, future_published_shifts, settlement?, timeline?}` |
+| `list_offboarding` | `p_entity_id, p_status = 'open'` | O, EA, LM (branch), PAY | `jsonb[]` |
+| `complete_offboarding` | `p_case_id, p_notes = null` | O, EA; after the last day, required checklist done | `jsonb {ok, already}`; employee → inactive |
+| `cancel_offboarding` | `p_case_id, p_reason` | O, EA | `jsonb {ok, already}`; clears the last working day |
+
+`p_type` is one of: `resignation`, `termination`, `dismissal_art44`, `end_of_contract`,
+`mutual_agreement`, `probation_not_confirmed`, `no_show`, `retirement`, `death`, `other`.
+
+`p_initiated_by` is one of: `employee`, `employer`, `mutual`, `none`.
+
+The workflow catalog adds these events:
+
+- onboarding module: `immigration_step_overdue`
+- new `offboarding` module: `offboarding_started`, `final_settlement_due`

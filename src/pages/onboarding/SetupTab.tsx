@@ -20,6 +20,8 @@ import {
 } from '../../lib/api/onboarding'
 import { OWNER_LABEL, PHASE_LABEL, SECTION_LABEL } from '../../lib/onboarding'
 import { Section } from './shared'
+import TemplateEditor from './TemplateEditor'
+import JobsCard from './JobsCard'
 
 /** Company onboarding setup: rules, employee numbers, templates, policies. Owner / entity admin only. */
 export default function SetupTab({ entityId, onChanged }: { entityId: string; onChanged: () => void }) {
@@ -30,6 +32,7 @@ export default function SetupTab({ entityId, onChanged }: { entityId: string; on
   const [templates, setTemplates] = useState<OnboardingTemplate[] | null>(null)
   const [policies, setPolicies] = useState<OnboardingPolicy[] | null>(null)
   const [viewing, setViewing] = useState<OnboardingTemplate | null>(null)
+  const [editor, setEditor] = useState<{ template: OnboardingTemplate | null; copyFrom: OnboardingTemplate | null } | null>(null)
   const [editingPolicy, setEditingPolicy] = useState<OnboardingPolicy | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -79,11 +82,16 @@ export default function SetupTab({ entityId, onChanged }: { entityId: string; on
         title="Templates"
         id="setup-templates"
         actions={
-          active.length === 0 && (
-            <button className="btn-primary min-h-9" disabled={busy} onClick={() => run(() => seedDefaultTemplate(entityId), 'Standard template added with 19 tasks.')}>
-              Add standard template
+          <>
+            {active.length === 0 && (
+              <button className="btn-primary min-h-9" disabled={busy} onClick={() => run(() => seedDefaultTemplate(entityId), 'Standard template added with 20 tasks.')}>
+                Add standard template
+              </button>
+            )}
+            <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setEditor({ template: null, copyFrom: null })}>
+              New template
             </button>
-          )
+          </>
         }
       >
         {templates.length === 0 ? (
@@ -104,6 +112,14 @@ export default function SetupTab({ entityId, onChanged }: { entityId: string; on
                   <StatusBadge status={t.is_active ? 'active' : 'inactive'} />
                   <button className="btn-ghost min-h-9" onClick={() => setViewing(t)}>
                     View tasks
+                  </button>
+                  {t.is_active && (
+                    <button className="btn-ghost min-h-9" onClick={() => setEditor({ template: t, copyFrom: null })}>
+                      Edit
+                    </button>
+                  )}
+                  <button className="btn-ghost min-h-9" onClick={() => setEditor({ template: null, copyFrom: t })}>
+                    Copy
                   </button>
                   {t.is_active && (
                     <button
@@ -144,10 +160,26 @@ export default function SetupTab({ entityId, onChanged }: { entityId: string; on
         )}
       </Section>
 
+      <JobsCard entityId={entityId} />
+
       <SettingsCard settings={settings} isOwner={isOwner} busy={busy} onSave={(s) => run(() => setSettings(entityId, s), 'Onboarding rules saved.')} />
       <NumberingCard numbering={numbering} busy={busy} onSave={(n) => run(() => setNumbering(entityId, n.prefix, n.next_value, n.pad_width), 'Employee numbering saved.')} />
 
       {viewing && <TemplateTasks template={viewing} onClose={() => setViewing(null)} />}
+      {editor && (
+        <TemplateEditor
+          entityId={entityId}
+          template={editor.template}
+          copyFrom={editor.copyFrom}
+          onClose={() => setEditor(null)}
+          onSaved={async (m) => {
+            setEditor(null)
+            setNotice(m)
+            await load()
+            onChanged()
+          }}
+        />
+      )}
       {editingPolicy && (
         <PolicyEditor
           policy={editingPolicy}
@@ -285,7 +317,6 @@ function TemplateTasks({ template, onClose }: { template: OnboardingTemplate; on
           ))}
         </ol>
       )}
-      <p className="text-xs text-muted">Custom templates can be created through the create_onboarding_template API; an in-app editor is not built yet.</p>
     </Modal>
   )
 }

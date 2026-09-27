@@ -9,6 +9,9 @@ import {
   maxProbationEnd,
   missingProfileFields,
   startsInLabel,
+  taskKey,
+  validateTemplateTasks,
+  type EditableTask,
 } from './onboarding'
 import type { OnboardingTask } from './api/onboarding'
 
@@ -106,5 +109,34 @@ describe('profile completeness', () => {
       'Emergency contact name',
       'Emergency contact phone',
     ])
+  })
+})
+
+const et = (k: string, deps: string[] = [], extra: Partial<EditableTask> = {}): EditableTask => ({
+  item_key: k,
+  item_label: k,
+  kind: 'manual',
+  depends_on: deps,
+  is_statutory: false,
+  is_required: true,
+  ...extra,
+})
+
+describe('template editor checks', () => {
+  it('makes server-safe keys', () => {
+    expect(taskKey('Upload the signed contract!')).toBe('upload_the_signed_contract')
+    expect(taskKey('   ')).toBe('task')
+  })
+  it('accepts a valid list', () => {
+    expect(validateTemplateTasks([et('a'), et('b', ['a'])])).toEqual([])
+  })
+  it('finds duplicates, missing links and loops', () => {
+    expect(validateTemplateTasks([et('a'), et('a')]).join()).toContain('share the key')
+    expect(validateTemplateTasks([et('a', ['zz'])]).join()).toContain('no longer exists')
+    expect(validateTemplateTasks([et('a', ['b']), et('b', ['a'])]).join()).toContain('loop')
+  })
+  it('needs a document / policy for those kinds', () => {
+    expect(validateTemplateTasks([et('a', [], { kind: 'document' })]).join()).toContain('which document')
+    expect(validateTemplateTasks([et('a', [], { kind: 'acknowledgement' })]).join()).toContain('which policy')
   })
 })

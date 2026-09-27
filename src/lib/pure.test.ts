@@ -207,6 +207,8 @@ describe('nav mapping', () => {
     const { primary } = mobileNavForRole('staff', { hasOnboarding: true })
     expect(primary.map((i) => i.label)).toEqual(['Home', 'Onboarding', 'Schedule', 'Leave'])
     expect(canAccessRoute('staff', '/onboarding')).toBe(true)
+    expect(mobileNavForRole('location_manager').primary.map((i) => i.to)).toEqual(['/', '/employees', '/schedules', '/attendance'])
+    expect(canAccessRoute('staff', '/offboarding')).toBe(false)
   })
   it('admins see Workflows and Admin; staff do not', () => {
     expect(navForRole('entity_admin').map((i) => i.to)).toEqual(expect.arrayContaining(['/workflows', '/admin', '/payroll']))

@@ -130,8 +130,10 @@ returns boolean language sql immutable set search_path to '' as $$
   select case
     when p_from = p_to then false
     when p_from in ('completed', 'cancelled', 'withdrawn') then false
-    when p_to in ('cancelled', 'withdrawn') then p_from in ('initiated', 'awaiting_employee', 'under_review',
-                                                           'changes_required', 'blocked', 'ready_for_activation')
+    when p_to = 'withdrawn' then p_from in ('initiated', 'awaiting_employee', 'under_review',
+                                           'changes_required', 'blocked', 'ready_for_activation')
+    -- After start, only offboarding cancels an onboarding (employment ended before closure).
+    when p_to = 'cancelled' then p_from not in ('completed', 'cancelled', 'withdrawn')
     when p_from in ('initiated', 'awaiting_employee', 'under_review', 'changes_required', 'blocked', 'ready_for_activation')
       then p_to in ('initiated', 'awaiting_employee', 'under_review', 'changes_required', 'blocked', 'ready_for_activation', 'activated')
            and (p_to <> 'activated' or p_from = 'ready_for_activation')
@@ -229,7 +231,7 @@ begin
   select * into i from public.onboarding_instances where id = p_instance_id;
   select * into e from public.employees where id = i.employee_id;
   for t in select * from public.onboarding_tasks where instance_id = i.id
-             and kind in ('document', 'acknowledgement', 'contract_acceptance', 'payment_details', 'compensation')
+             and kind in ('document', 'acknowledgement', 'contract_acceptance', 'payment_details', 'compensation', 'availability')
              and status not in ('waived', 'cancelled')
   loop
     v_new := t.status;
@@ -265,6 +267,8 @@ begin
        where employee_id = e.id order by submitted_at desc limit 1;
       v_new := case v_pay.status when 'verified' then 'approved' when 'submitted' then 'submitted'
                                  when 'rejected' then 'changes_required' else 'not_started' end;
+    elsif t.kind = 'availability' then
+      v_new := case when e.availability_confirmed_at is not null then 'approved' else 'not_started' end;
     elsif t.kind = 'compensation' then
       select status into v_comp from public.onboarding_pending_compensation where instance_id = i.id;
       v_new := case v_comp.status when 'approved' then 'approved' when 'pending_review' then 'submitted'
@@ -278,6 +282,13 @@ begin
     end if;
   end loop;
 end;
+$$;
+
+-- Extension point for readiness: later migrations replace this function to
+-- add their own blockers/warnings without redefining the engine below.
+create or replace function public._onb_extension_checks(p_instance_id uuid, p_audience text)
+returns jsonb language sql stable security definer set search_path to '' as $$
+  select jsonb_build_object('blockers', '[]'::jsonb, 'warnings', '[]'::jsonb);
 $$;
 
 -- ---------------------------------------------------- readiness engine
@@ -371,6 +382,13 @@ begin
     end if;
   end loop;
 
+  -- Checks added by later modules (work permit / visa tracking in 012).
+  declare v_ext jsonb := public._onb_extension_checks(p_instance_id, p_audience);
+  begin
+    b := b || coalesce(v_ext -> 'blockers', '[]'::jsonb);
+    w := w || coalesce(v_ext -> 'warnings', '[]'::jsonb);
+  end;
+
   -- Invitation / login
   select * into v_inv from public.onboarding_invitations where instance_id = i.id order by issued_at desc limit 1;
   if e.auth_user_id is null then
@@ -459,7 +477,8 @@ begin
   foreach f in array array['_onb_settings(uuid)', '_onb_can(uuid, text)', '_onb_require(uuid, text)', '_onb_is_self(uuid)',
     '_onb_can_own(uuid, text)', '_onb_can_review(uuid, text)', '_onb_op()', '_onb_audit(uuid, text, uuid, text, jsonb, jsonb)',
     '_onb_transition_allowed(text, text)', '_onb_set_status(uuid, text, text)', '_onb_touch(uuid)',
-    '_onb_generate_tasks(uuid, text)', '_onb_sync_derived(uuid)', '_onb_readiness(uuid, text)', '_onb_recompute(uuid)'] loop
+    '_onb_generate_tasks(uuid, text)', '_onb_sync_derived(uuid)', '_onb_readiness(uuid, text)', '_onb_recompute(uuid)',
+    '_onb_extension_checks(uuid, text)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
   end loop;
 end $$;

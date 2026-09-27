@@ -31,6 +31,8 @@ import {
 import { docTypeLabel } from '../../lib/documents'
 import { fmtDate, todayDubai } from '../../lib/format'
 import { ProgressBar, TaskStatusBadge } from './shared'
+import AvailabilityStep from './AvailabilityStep'
+import { getMyImmigration, type ImmigrationStepStatus } from '../../lib/api/onboarding'
 
 // The new starter's own portal. Everything resolves from the login on the
 // server (get_my_onboarding); nothing here sends an employee id. Details
@@ -126,10 +128,12 @@ export default function MyOnboarding() {
           {byKind('payment_details').length > 0 && <PaymentStep data={data} onDone={say} onError={setError} />}
           {data.policies.length > 0 && <PoliciesStep data={data} onDone={say} onError={setError} />}
           {byKind('contract_acceptance').length > 0 && <ContractStep data={data} onDone={say} onError={setError} />}
+          {tasks.some((t) => t.kind === 'availability') && <AvailabilityStep n={6} onDone={say} onError={setError} />}
           <ManualSteps tasks={tasks.filter((t) => t.kind === 'manual' && t.owner_role === 'employee' && t.phase === 'pre_activation')} onDone={say} onError={setError} />
         </>
       )}
 
+      {!['completed', 'cancelled', 'withdrawn'].includes(data.status) && <VisaProgress />}
       <AboutCard data={data} />
     </div>
   )
@@ -596,6 +600,34 @@ function AboutCard({ data }: { data: MyOnb }) {
         <dd className="text-ink">{data.profile.employee_number ?? '—'}</dd>
       </dl>
       {data.position?.description && <p className="whitespace-pre-wrap text-ink">{data.position.description}</p>}
+    </section>
+  )
+}
+
+/** Work permit / visa progress, read-only (HR updates it). */
+function VisaProgress() {
+  const [steps, setSteps] = useState<{ label: string; status: ImmigrationStepStatus; completed_at: string | null }[] | null>(null)
+  useEffect(() => {
+    getMyImmigration().then((r) => setSteps(r.data))
+  }, [])
+  if (!steps || steps.length === 0) return null
+  const done = steps.filter((s) => s.status === 'done').length
+  return (
+    <section className="card space-y-3">
+      <h2 className="text-base font-semibold text-ink">Work permit and visa</h2>
+      <ProgressBar percent={(100 * done) / steps.length} label={`${done} of ${steps.length} steps done`} />
+      <ul className="space-y-1 text-sm">
+        {steps.map((s) => (
+          <li key={s.label} className="flex items-center justify-between gap-2">
+            <span className={s.status === 'done' ? 'text-muted line-through' : 'text-ink'}>{s.label}</span>
+            <StatusBadge
+              status={s.status === 'done' ? 'Done' : s.status === 'in_progress' ? 'In progress' : s.status === 'failed' ? 'Problem' : 'Waiting'}
+              tone={s.status === 'done' ? 'success' : s.status === 'failed' ? 'risk' : s.status === 'in_progress' ? 'info' : 'neutral'}
+            />
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted">HR arranges these with MOHRE and immigration. They will tell you when you need to attend the medical test or Emirates ID biometrics.</p>
     </section>
   )
 }

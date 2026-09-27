@@ -90,12 +90,17 @@ declare
   v_ver integer;
   v_pol record;
   v_period uuid;
+  v_emp3 uuid;
+  v_inst3 uuid;
+  v_case uuid;
+  v_id uuid;
+  v_days jsonb;
 begin
   -- ------------------------------------------------ A. setup and start
   perform pg_temp.login(v_admin);
   perform public.seed_default_onboarding_template(v_ent);
-  perform pg_temp.ok('A1 default template seeded with 19 tasks',
-    pg_temp.q_int(format('select count(*) from public.onboarding_template_tasks tt join public.onboarding_templates t on t.id = tt.template_id where t.entity_id = %L', v_ent)) = 19);
+  perform pg_temp.ok('A1 default template seeded with 20 tasks',
+    pg_temp.q_int(format('select count(*) from public.onboarding_template_tasks tt join public.onboarding_templates t on t.id = tt.template_id where t.entity_id = %L', v_ent)) = 20);
 
   j := public.start_onboarding_direct_hire(v_ent, 'ONB New Hire', 'onb.new@example.test', '+971 50 123 4567', 'female',
          v_l1, v_pos, 'full_time', v_start, v_mgr, 'Walk-in hire after trial shift');
@@ -105,7 +110,7 @@ begin
   perform pg_temp.put('emp', v_emp::text);
   perform pg_temp.ok('A2 direct hire creates pre-boarding employee + onboarding',
     pg_temp.q_text(format('select employment_status::text from public.employees where id = %L', v_emp)) = 'pre_boarding'
-    and (j ->> 'task_count')::int = 13, j::text);
+    and (j ->> 'task_count')::int = 14, j::text);
   perform pg_temp.ok('A3 employee number assigned',
     pg_temp.q_text(format('select employee_number from public.employees where id = %L', v_emp)) = 'EMP-0001');
 
@@ -369,6 +374,163 @@ begin
   perform pg_temp.ok('F1 withdrawal keeps record, inactivates, cancels tasks',
     pg_temp.q_text(format('select employment_status::text from public.employees where id = %L', (j ->> 'employee_id'))) = 'inactive'
     and pg_temp.q_int(format('select count(*) from public.onboarding_tasks where instance_id = %L and status <> ''cancelled''', v_inst)) = 0);
+
+  -- ------------------------------------------------ G. jobs, templates, availability
+  perform pg_temp.login(v_admin);
+  v_id := public.upsert_position(v_ent, null, 'ONB Supervisor', 'Floor', 'Runs the shift and opens the store.');
+  perform pg_temp.ok('G1 admin creates a job with a description',
+    pg_temp.q_text(format('select description from public.positions where id = %L', v_id)) = 'Runs the shift and opens the store.');
+  begin
+    perform public.upsert_position(v_ent, null, 'onb supervisor', null, null);
+    perform pg_temp.ok('G2 duplicate job title refused', false);
+  exception when others then
+    perform pg_temp.ok('G2 duplicate job title refused', sqlstate = '23505', sqlerrm);
+  end;
+  perform pg_temp.login(v_lm);
+  begin
+    perform public.upsert_position(v_ent, v_id, 'X', null, null);
+    perform pg_temp.ok('G3 branch manager cannot edit jobs', false);
+  exception when others then
+    perform pg_temp.ok('G3 branch manager cannot edit jobs', sqlstate = '42501', sqlerrm);
+  end;
+  perform pg_temp.login(v_admin);
+  v_id := public.create_onboarding_template(v_ent, 'ONB Part-time', 'Short checklist',
+    '[{"item_key":"availability","item_label":"Availability","section":"availability","kind":"availability","owner_role":"employee"},
+      {"item_key":"briefing","item_label":"Briefing","section":"operations","owner_role":"location_manager","depends_on":["availability"]}]'::jsonb,
+    array['part_time']::public.employment_type[], null);
+  v_id := public.replace_onboarding_template(v_id, null, null, null, array[]::public.employment_type[], null);
+  perform pg_temp.ok('G4 template edit makes version 2 and an empty filter clears it',
+    pg_temp.q_text(format('select version_number::text || coalesce(array_length(applies_to_employment_types, 1)::text, ''none'') from public.onboarding_templates where id = %L', v_id)) = '2none');
+  begin
+    perform public.create_onboarding_template(v_ent, 'ONB Loop', null,
+      '[{"item_key":"a","item_label":"A","section":"operations","owner_role":"hr","depends_on":["b"]},
+        {"item_key":"b","item_label":"B","section":"operations","owner_role":"hr","depends_on":["a"]}]'::jsonb, null, null);
+    perform pg_temp.ok('G5 dependency loop refused', false);
+  exception when others then
+    perform pg_temp.ok('G5 dependency loop refused', sqlstate = '22023', sqlerrm);
+  end;
+  perform public.deactivate_onboarding_template(v_id);
+
+  perform pg_temp.login('c1000000-0000-4000-8000-000000000009');
+  select jsonb_agg(jsonb_build_object('day_of_week', d, 'is_available', d <> 5, 'start_time', '08:00', 'end_time', '16:00')) into v_days
+    from generate_series(0, 6) d;
+  j := public.save_my_availability(v_days);
+  perform pg_temp.ok('G6 new starter confirms availability',
+    pg_temp.q_int(format('select count(*) from public.employee_availability where employee_id = %L and is_available', v_emp)) = 6
+    and pg_temp.q_text(format('select (availability_confirmed_at is not null)::text from public.employees where id = %L', v_emp)) = 'true');
+  begin
+    perform public.save_my_availability('[{"day_of_week":1,"is_available":true}]'::jsonb);
+    perform pg_temp.ok('G7 availability needs all seven days', false);
+  exception when others then
+    perform pg_temp.ok('G7 availability needs all seven days', sqlstate = '22023', sqlerrm);
+  end;
+  perform pg_temp.ok('G8 availability task completed from the saved availability',
+    pg_temp.q_text(format('select status from public.onboarding_tasks where instance_id = %L and item_key = ''availability''',
+      pg_temp.get('inst'))) = 'approved');
+
+  -- ------------------------------------------------ H. work permit / visa
+  perform pg_temp.login(v_admin);
+  j := public.start_onboarding_direct_hire(v_ent, 'ONB Third Hire', 'onb.third@example.test', null, null, v_l1, v_pos, 'full_time',
+         v_start, v_mgr, 'Hired from abroad');
+  v_inst3 := (j ->> 'onboarding_instance_id')::uuid;
+  v_emp3 := (j ->> 'employee_id')::uuid;
+  j := public.open_immigration_case(v_emp3, 'outside_uae', null);
+  v_case := (j ->> 'case_id')::uuid;
+  perform pg_temp.ok('H1 visa case from abroad has 11 steps',
+    pg_temp.q_int(format('select count(*) from public.employee_immigration_steps where case_id = %L', v_case)) = 11);
+  j := public.calculate_onboarding_readiness(v_inst3);
+  perform pg_temp.ok('H2 work permit blocks activation',
+    exists (select 1 from jsonb_array_elements(j -> 'blockers') b where b ->> 'code' = 'immigration_work_permit'), left(j::text, 200));
+  perform pg_temp.login(v_lm);
+  begin
+    perform public.get_immigration_case(v_emp3);
+    perform pg_temp.ok('H3 branch manager cannot open visa details', false);
+  exception when others then
+    perform pg_temp.ok('H3 branch manager cannot open visa details', sqlstate = '42501', sqlerrm);
+  end;
+  j := public.calculate_onboarding_readiness(v_inst3);
+  perform pg_temp.ok('H4 branch manager sees a generic visa blocker only',
+    j::text like '%Work permit paperwork is outstanding%' and j::text not like '%MOHRE%', left(j::text, 200));
+  perform pg_temp.login(v_admin);
+  select id into v_id from public.employee_immigration_steps where case_id = v_case and step_key = 'work_permit';
+  perform public.update_immigration_step(v_id, 'done', 'WP-123456', null, null, null);
+  perform pg_temp.ok('H5 work permit number recorded on the case',
+    pg_temp.q_text(format('select work_permit_number from public.employee_immigration_cases where id = %L', v_case)) = 'WP-123456');
+  begin
+    perform public.update_immigration_step(v_id, 'not_needed', null, null, null, null);
+    perform pg_temp.ok('H6 skipping a step needs a note', false);
+  exception when others then
+    perform pg_temp.ok('H6 skipping a step needs a note', sqlstate = '22023', sqlerrm);
+  end;
+  perform public.change_immigration_track(v_case, 'transfer', 'Already in the UAE with another employer');
+  perform pg_temp.ok('H7 track change adds transfer step and drops entry steps',
+    pg_temp.q_int(format('select count(*) from public.employee_immigration_steps where case_id = %L and step_key = ''previous_permit_cancelled''', v_case)) = 1
+    and pg_temp.q_text(format('select status from public.employee_immigration_steps where case_id = %L and step_key = ''entry_permit''', v_case)) = 'not_needed');
+  begin
+    perform public.close_immigration_case(v_case, 'completed', null);
+    perform pg_temp.ok('H8 cannot complete a case with open steps', false);
+  exception when others then
+    perform pg_temp.ok('H8 cannot complete a case with open steps', sqlstate = '22023', sqlerrm);
+  end;
+
+  -- ------------------------------------------------ I. offboarding
+  begin
+    perform public.start_offboarding(v_emp, 'resignation', 'employee', (now() at time zone 'Asia/Dubai')::date,
+      (now() at time zone 'Asia/Dubai')::date + 10, 'Moving to another cafe', false, null, null);
+    perform pg_temp.ok('I1 resignation in probation to a UAE employer needs one month', false);
+  exception when others then
+    perform pg_temp.ok('I1 resignation in probation to a UAE employer needs one month', sqlstate = '22023' and sqlerrm like '%30 days%', sqlerrm);
+  end;
+  j := public.start_offboarding(v_emp, 'resignation', 'employee', (now() at time zone 'Asia/Dubai')::date,
+      (now() at time zone 'Asia/Dubai')::date + 10, 'Moving to another cafe', false, 'Notice waived in writing by the employer', null);
+  v_case := (j ->> 'case_id')::uuid;
+  perform pg_temp.ok('I2 offboarding starts with shortfall reason, in probation',
+    (j ->> 'in_probation')::boolean and (j ->> 'min_notice_days')::int = 30, j::text);
+  perform pg_temp.ok('I3 last working day passed to payroll',
+    pg_temp.q_text(format('select last_working_date::text from public.employees where id = %L', v_emp)) = ((now() at time zone 'Asia/Dubai')::date + 10)::text);
+  begin
+    perform public.start_offboarding(v_emp, 'resignation', 'employee', (now() at time zone 'Asia/Dubai')::date,
+      (now() at time zone 'Asia/Dubai')::date + 40, 'x', false, null, null);
+    perform pg_temp.ok('I4 only one open offboarding', false);
+  exception when others then
+    perform pg_temp.ok('I4 only one open offboarding', sqlstate = '23505', sqlerrm);
+  end;
+  perform pg_temp.login(v_lm);
+  j := public.get_offboarding_case(v_case);
+  perform pg_temp.ok('I5 branch manager sees own tasks, no reason or settlement',
+    not (j -> 'case' ? 'reason') and j -> 'settlement' = 'null'::jsonb
+    and not exists (select 1 from jsonb_array_elements(j -> 'tasks') t where t ->> 'owner_role' <> 'location_manager'), left(j::text, 200));
+  for v_id in select id from public.offboarding_tasks where case_id = v_case and owner_role = 'location_manager' loop
+    perform public.complete_offboarding_task(v_id, 'done', null);
+  end loop;
+  select id into v_id from public.offboarding_tasks where case_id = v_case and item_key = 'final_settlement';
+  begin
+    perform public.complete_offboarding_task(v_id, 'done', null);
+    perform pg_temp.ok('I6 branch manager cannot mark the final settlement', false);
+  exception when others then
+    perform pg_temp.ok('I6 branch manager cannot mark the final settlement', sqlstate = '42501', sqlerrm);
+  end;
+  perform pg_temp.login(v_admin);
+  j := public.get_offboarding_case(v_case);
+  perform pg_temp.ok('I7 HR sees settlement preview (under a year: no gratuity)',
+    (j -> 'settlement' -> 'gratuity' ->> 'amount')::numeric = 0 or (j -> 'settlement' -> 'gratuity' ->> 'ok') = 'false', left((j -> 'settlement')::text, 200));
+  begin
+    perform public.complete_offboarding(v_case, null);
+    perform pg_temp.ok('I8 cannot finish before the last working day', false);
+  exception when others then
+    perform pg_temp.ok('I8 cannot finish before the last working day', sqlstate = '22023', sqlerrm);
+  end;
+  perform public.update_offboarding_dates(v_case, (now() at time zone 'Asia/Dubai')::date, (now() at time zone 'Asia/Dubai')::date,
+    'Agreed early exit', pg_temp.q_int(format('select row_version from public.offboarding_cases where id = %L', v_case))::int, null);
+  for v_id in select id from public.offboarding_tasks where case_id = v_case and is_required and status = 'not_started' loop
+    perform public.complete_offboarding_task(v_id, 'done', null);
+  end loop;
+  j := public.complete_offboarding(v_case, 'All returned');
+  perform pg_temp.ok('I9 finishing inactivates the employee and ends the login',
+    pg_temp.q_text(format('select employment_status::text from public.employees where id = %L', v_emp)) = 'inactive'
+    and pg_temp.q_text('select is_active::text from public.profiles where id = ''c1000000-0000-4000-8000-000000000009''') = 'false');
+  perform pg_temp.ok('I10 the running onboarding ends with the employment',
+    pg_temp.q_text(format('select status from public.onboarding_instances where id = %L', pg_temp.get('inst'))) = 'cancelled');
 end $t$;
 
 reset role;

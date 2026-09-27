@@ -11,7 +11,7 @@ import type { UserRole } from '../types/db'
 // The page also loads workflow_trigger_catalog() at runtime and hides any
 // trigger/field this static list has that the live DB does not.
 
-export type WorkflowModule = 'leave' | 'document' | 'attendance' | 'schedule' | 'payroll' | 'recruitment' | 'onboarding'
+export type WorkflowModule = 'leave' | 'document' | 'attendance' | 'schedule' | 'payroll' | 'recruitment' | 'onboarding' | 'offboarding'
 export type WorkflowOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains'
 export type WorkflowActionType = 'notify_role' | 'notify_employee'
 
@@ -41,6 +41,7 @@ export const MODULE_LABEL: Record<WorkflowModule, string> = {
   payroll: 'Payroll',
   recruitment: 'Recruiting',
   onboarding: 'Onboarding',
+  offboarding: 'Offboarding',
 }
 
 const YES_NO = [
@@ -119,6 +120,45 @@ const ONBOARDING_TRIGGERS: TriggerDef[] = [
     event: 'probation_review_due',
     label: 'Probation review due',
     phrase: 'a probation review is due',
+    fields: [{ key: 'days_to_due', label: 'Days until due', phrase: 'days until due', kind: 'number' }],
+  },
+  {
+    module: 'onboarding',
+    event: 'immigration_step_overdue',
+    label: 'Visa / work permit step overdue',
+    phrase: 'a visa or work permit step is overdue',
+    fields: [{ key: 'days_overdue', label: 'Days overdue', phrase: 'days overdue', kind: 'number' }],
+  },
+  {
+    module: 'offboarding',
+    event: 'offboarding_started',
+    label: 'Offboarding started',
+    phrase: 'an employee starts leaving',
+    fields: [
+      {
+        key: 'separation_type',
+        label: 'Type',
+        phrase: 'leaving type',
+        kind: 'enum',
+        options: [
+          { value: 'resignation', label: 'Resignation' },
+          { value: 'termination', label: 'Termination' },
+          { value: 'dismissal_art44', label: 'Dismissal (Art. 44)' },
+          { value: 'end_of_contract', label: 'End of contract' },
+          { value: 'mutual_agreement', label: 'Mutual agreement' },
+          { value: 'probation_not_confirmed', label: 'Probation not confirmed' },
+          { value: 'no_show', label: 'No-show' },
+          { value: 'retirement', label: 'Retirement' },
+        ],
+      },
+      { key: 'last_working_date', label: 'Last working day (YYYY-MM-DD)', phrase: 'last working day', kind: 'date' },
+    ],
+  },
+  {
+    module: 'offboarding',
+    event: 'final_settlement_due',
+    label: 'Final settlement due',
+    phrase: 'a final settlement is due within 3 days',
     fields: [{ key: 'days_to_due', label: 'Days until due', phrase: 'days until due', kind: 'number' }],
   },
 ]

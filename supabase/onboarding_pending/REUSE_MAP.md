@@ -34,3 +34,18 @@ Recruiting is not rewritten.
 7. Day one: started, no-show or delayed. Then initial-period tasks, then closure.
 8. Probation: scheduled at activation, review, decision, extension capped at 6 months.
 9. Reminders and escalation, invitation expiry, probation-due events.
+
+## Second round (011–013)
+
+| Existing piece | Reused for |
+|---|---|
+| `positions` (+ `description`) | Jobs editor (`upsert_position`, audited); the portal's job description |
+| `employee_availability` (0 = Sunday, seeded 7 days on insert) | The new starter sets their own week during onboarding. Outside onboarding, only managers edit it, as before |
+| `employee_probation_reviews.ratings` | Ratings in the review dialog (no schema change) |
+| `payroll_set_last_working_date` (payroll v2) | Offboarding sets and changes the last working day, so payroll prorates and settles |
+| `payroll_gratuity_preview` (payroll v2) | Gratuity estimate on the offboarding case (payroll approvers) |
+| Payroll off-cycle / final settlement | The final settlement is paid there; offboarding tracks the 14-day deadline |
+| `set_employee_status` | Finishing offboarding inactivates the employee (login closed, grants revoked, draft shifts cancelled) |
+| Onboarding exceptions `no_show` / `probation_not_confirmed` | "Start offboarding" from the problem; the problem resolves when offboarding starts |
+| Readiness engine | `_onb_extension_checks` hook: visa blocking steps appear as readiness blockers |
+| Daily reminders | `_onb_extension_reminders` hook: overdue visa steps, overdue offboarding tasks, settlement due |

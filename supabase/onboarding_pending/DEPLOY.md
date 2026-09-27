@@ -10,9 +10,9 @@ call them.
 ## 0. Validate first (nothing is kept)
 
 Open `tests/validate_all_rolled_back.sql`, paste the whole file into **SQL Editor**, and run it.
-It applies 001–010, runs the 58 checks as each persona, and then rolls everything back.
+It applies 001–013, runs the 84 checks as each persona, and then rolls everything back.
 
-- **Expected result:** an error that starts `ONBOARDING_TESTS 58 passed / 58 total || FAILED: none`.
+- **Expected result:** an error that starts `ONBOARDING_TESTS 84 passed / 84 total || FAILED: none`.
 - **Any other error means a bug.** Send me the full message. Nothing was kept.
 
 Confirm nothing was kept:
@@ -21,7 +21,7 @@ Confirm nothing was kept:
 select to_regclass('public.onboarding_instances');   -- expect null
 ```
 
-## 1. Apply 001–009
+## 1. Apply 001–009, then 011–013
 
 Run each file in order, one at a time, in SQL Editor (or `supabase db push` after copying them
 into `supabase/migrations/` with timestamps). Each file is one transaction.
@@ -37,8 +37,11 @@ into `supabase/migrations/` with timestamps). Each file is one transaction.
 | 7 | `007_onboarding_build_e_dayone_probation.sql` | |
 | 8 | `008_onboarding_workflow_reminders.sql` | Replaces `workflow_trigger_catalog()` (existing events unchanged) and widens `workflow_rules_module_check` |
 | 9 | `009_onboarding_rls_storage.sql` | Adds policies, including 2 on `storage.objects` |
+| 10 | `011_onboarding_jobs_availability.sql` | Jobs and availability |
+| 11 | `012_onboarding_immigration.sql` | Work permit / visa tracking (2 tables) |
+| 12 | `013_offboarding.sql` | Offboarding (2 tables). Needs payroll v2 (`payroll_set_last_working_date`, `payroll_gratuity_preview`) |
 
-After 001–009 the live app works exactly as before. The profile's Activate button still works,
+After these the live app works exactly as before. The profile's Activate button still works,
 and nothing calls the new RPCs until onboarding screens exist.
 
 **Do not run 010 yet.**
@@ -55,13 +58,14 @@ redirect that button.
 ## 3. Checks after deploying
 
 ```sql
--- 18 new tables, all with RLS on
+-- 22 new tables, all with RLS on
 select count(*) from pg_tables where schemaname = 'public' and rowsecurity
    and tablename in ('onboarding_settings','employee_numbering','onboarding_templates','onboarding_template_tasks',
    'onboarding_policies','onboarding_instances','onboarding_tasks','onboarding_task_dependencies',
    'onboarding_pending_compensation','employee_payment_details','onboarding_invitations','onboarding_section_submissions',
    'onboarding_reviews','onboarding_exceptions','employee_acknowledgements','employee_contract_acceptances',
-   'employee_probation_periods','employee_probation_reviews');                       -- expect 18
+   'employee_probation_periods','employee_probation_reviews','employee_immigration_cases','employee_immigration_steps',
+   'offboarding_cases','offboarding_tasks');                                         -- expect 22
 
 -- internal helpers are not callable by the app
 select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname like '\_onb\_%'
@@ -70,10 +74,11 @@ select count(*) from pg_proc where pronamespace = 'public'::regnamespace and pro
 -- the app can write to none of the new tables directly
 select count(*) from information_schema.role_table_grants where grantee in ('anon','authenticated')
    and table_name like any (array['onboarding%','employee_payment_details','employee_acknowledgements',
-   'employee_contract_acceptances','employee_probation%','employee_numbering'])
+   'employee_contract_acceptances','employee_probation%','employee_numbering','employee_immigration%','offboarding%'])
    and privilege_type <> 'SELECT';                                                   -- expect 0
 
-select public.workflow_trigger_catalog() -> 'onboarding';                            -- 7 events
+select public.workflow_trigger_catalog() -> 'onboarding';                            -- 8 events
+select public.workflow_trigger_catalog() -> 'offboarding';                           -- 2 events
 ```
 
 Then run the Supabase security advisor and confirm there are no new warnings.
@@ -81,7 +86,7 @@ Then run the Supabase security advisor and confirm there are no new warnings.
 ## 4. First-time setup (per company, as owner or entity admin, from the app or SQL)
 
 1. `select public.seed_default_onboarding_template('<entity_id>');` creates the UAE café
-   template (19 tasks) and 3 placeholder policies.
+   template (20 tasks) and 3 placeholder policies.
 2. Replace the placeholder policy text with the real text:
    `select public.upsert_onboarding_policy('<entity_id>', 'employee_handbook', '1', 'Employee handbook', '<text>');`
    Do the same for `privacy_notice` and `food_safety_sop`.
@@ -127,7 +132,8 @@ Everything else is additive. To remove it completely, drop the new tables and fu
 
 ```sql
 begin;
-drop table if exists public.employee_probation_reviews, public.employee_probation_periods,
+drop table if exists public.offboarding_tasks, public.offboarding_cases, public.employee_immigration_steps,
+  public.employee_immigration_cases, public.employee_probation_reviews, public.employee_probation_periods,
   public.employee_contract_acceptances, public.employee_acknowledgements, public.onboarding_exceptions,
   public.onboarding_reviews, public.onboarding_section_submissions, public.onboarding_invitations,
   public.employee_payment_details, public.onboarding_pending_compensation, public.onboarding_task_dependencies,
@@ -140,10 +146,13 @@ drop policy if exists doc_bucket_read_preboarding_self on storage.objects;
 -- definitions quoted in 008 minus 'onboarding'), and drop the onboarding functions:
 -- select 'drop function '||oid::regprocedure||';' from pg_proc where pronamespace='public'::regnamespace
 --   and (proname like '%onboarding%' or proname like '\_onb\_%' or proname like '%probation%'
+--        or proname like '%immigration%' or proname like '\_imm\_%' or proname like '%offboarding%' or proname like '\_off\_%'
+--        or proname in ('upsert_position','get_my_availability','save_my_availability','start_offboarding','update_offboarding_dates')
 --        or proname in ('verify_payment_details','save_my_payment_details','approve_and_activate_employee',
 --                       'accept_employment_contract','get_my_contract','get_my_job_description','set_employee_numbering'));
 commit;
 ```
 
 The added columns (`positions.description`, `employees.employee_number`, `residential_address`,
-`reporting_manager_employee_id`) are harmless to leave in place.
+`reporting_manager_employee_id`, `availability_confirmed_at`) are harmless to leave in place. Do not drop
+`seed_employee_availability` — it is an existing function.

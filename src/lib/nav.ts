@@ -10,6 +10,7 @@ export type NavIcon =
   | 'home'
   | 'people'
   | 'onboarding'
+  | 'offboarding'
   | 'profile'
   | 'interviews'
   | 'documents'
@@ -43,6 +44,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   // Managers see the dashboard; staff see their own onboarding (or pay/bank
   // reviews with payroll permission). Every RPC re-checks scope.
   '/onboarding': ALL,
+  '/offboarding': MANAGERS,
   '/me': ALL,
   '/my-interviews': ALL,
   '/documents': ALL,
@@ -85,6 +87,7 @@ const MANAGEMENT_NAV: NavItem[] = [
   { label: 'Home', to: '/', icon: 'home', roles: MANAGERS },
   { label: 'People', to: '/employees', icon: 'people', roles: MANAGERS },
   { label: 'Onboarding', to: '/onboarding', icon: 'onboarding', roles: MANAGERS },
+  { label: 'Offboarding', to: '/offboarding', icon: 'offboarding', roles: MANAGERS },
   { label: 'Schedules', to: '/schedules', icon: 'schedule', roles: MANAGERS },
   { label: 'Attendance', to: '/attendance', icon: 'attendance', roles: MANAGERS },
   { label: 'Leave', to: '/leave', icon: 'leave', roles: MANAGERS },
@@ -136,5 +139,9 @@ export function mobileNavForRole(
       more: items.filter((i) => !primaryPaths.includes(i.to)),
     }
   }
-  return { primary: items.slice(0, 4), more: items.slice(4) }
+  // Managers keep Home, People, Schedules, Attendance in the bar; Onboarding
+  // and Offboarding live in More on phones.
+  const managerPrimary = ['/', '/employees', '/schedules', '/attendance']
+  const primary = managerPrimary.map((p) => items.find((i) => i.to === p)).filter((i): i is NavItem => Boolean(i))
+  return { primary, more: items.filter((i) => !primary.includes(i)) }
 }

@@ -115,13 +115,22 @@ export default function ProbationTab({ entityId, canDecide }: { entityId: string
   )
 }
 
+const RATING_AREAS = [
+  { key: 'punctuality', label: 'Punctuality and attendance' },
+  { key: 'job_skills', label: 'Job skills' },
+  { key: 'customer_service', label: 'Customer service' },
+  { key: 'teamwork', label: 'Teamwork' },
+  { key: 'hygiene_safety', label: 'Hygiene and food safety' },
+]
+
 function ReviewDialog({ row, onClose, onDone }: { row: ProbationDueRow; onClose: () => void; onDone: () => void }) {
   const [rec, setRec] = useState<'confirm' | 'extend' | 'not_confirm'>('confirm')
   const [comments, setComments] = useState('')
+  const [ratings, setRatings] = useState<Record<string, number>>({})
   const [err, setErr] = useState<string | null>(null)
   async function save() {
     if (!comments.trim()) return setErr('Add your comments.')
-    const r = await recordProbationReview(row.period_id, rec, comments.trim())
+    const r = await recordProbationReview(row.period_id, rec, comments.trim(), Object.keys(ratings).length ? ratings : null)
     if (r.error) setErr(r.error)
     else onDone()
   }
@@ -149,6 +158,29 @@ function ReviewDialog({ row, onClose, onDone }: { row: ProbationDueRow; onClose:
           <option value="not_confirm">Do not confirm</option>
         </select>
       </label>
+      <fieldset className="space-y-2">
+        <legend className="label">Ratings (1 = poor, 5 = excellent)</legend>
+        {RATING_AREAS.map((a) => (
+          <div key={a.key} className="flex items-center justify-between gap-2 text-sm">
+            <span id={`rate-${a.key}`}>{a.label}</span>
+            <span className="flex gap-1" role="radiogroup" aria-labelledby={`rate-${a.key}`}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  role="radio"
+                  aria-checked={ratings[a.key] === n}
+                  aria-label={`${n}`}
+                  className={`h-9 w-9 rounded-lg border text-sm font-semibold ${ratings[a.key] === n ? 'border-brand-blue bg-brand-blue text-white' : 'border-border text-ink'}`}
+                  onClick={() => setRatings({ ...ratings, [a.key]: n })}
+                >
+                  {n}
+                </button>
+              ))}
+            </span>
+          </div>
+        ))}
+      </fieldset>
       <label className="block">
         <span className="label">Comments *</span>
         <textarea className="input min-h-24" value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Reliability, skills, attitude, examples." />

@@ -23,7 +23,7 @@ export type OnboardingStatus =
 export type TaskStatus = 'not_started' | 'in_progress' | 'submitted' | 'changes_required' | 'approved' | 'waived' | 'cancelled'
 export type OwnerRole = 'employee' | 'location_manager' | 'hr' | 'payroll' | 'approver'
 export type ReviewerRole = 'location_manager' | 'hr' | 'payroll'
-export type TaskKind = 'manual' | 'profile' | 'document' | 'acknowledgement' | 'contract_acceptance' | 'payment_details' | 'compensation'
+export type TaskKind = 'manual' | 'profile' | 'document' | 'acknowledgement' | 'contract_acceptance' | 'payment_details' | 'compensation' | 'availability'
 export type Phase = 'pre_activation' | 'day_one' | 'initial_period'
 export type ListTab =
   | 'all'
@@ -647,12 +647,17 @@ export const recordDayOne = (instanceId: string, outcome: 'started' | 'no_show' 
 export const closeOnboarding = (instanceId: string, notes: string | null) =>
   callRpc<{ ok: boolean }>('close_onboarding', { p_instance_id: instanceId, p_notes: notes })
 
-export const recordProbationReview = (periodId: string, recommendation: 'confirm' | 'extend' | 'not_confirm', comments: string) =>
+export const recordProbationReview = (
+  periodId: string,
+  recommendation: 'confirm' | 'extend' | 'not_confirm',
+  comments: string,
+  ratings: Record<string, number> | null
+) =>
   callRpc<{ ok: boolean }>('record_probation_review', {
     p_period_id: periodId,
     p_recommendation: recommendation,
     p_comments: comments,
-    p_ratings: null,
+    p_ratings: ratings,
   })
 
 export const decideProbation = (
@@ -669,3 +674,163 @@ export const decideProbation = (
     p_new_end_date: newEndDate,
     p_reason: reason,
   })
+
+// --------------------------------------------------- jobs (migration 011)
+export interface Position {
+  id: string
+  title: string
+  department: string | null
+  description: string | null
+}
+
+export async function listPositions(entityId: string): Promise<ApiResult<Position[]>> {
+  const { data, error } = await supabase.from('positions').select('id, title, department, description').eq('entity_id', entityId).order('title')
+  return { data: (data ?? []) as Position[], error: error ? error.message : null }
+}
+
+export const upsertPosition = (entityId: string, id: string | null, title: string, department: string | null, description: string | null) =>
+  callRpc<string>('upsert_position', { p_entity_id: entityId, p_position_id: id, p_title: title, p_department: department, p_description: description })
+
+// ----------------------------------------------------- template editor
+export interface TemplateTaskInput {
+  item_key: string
+  item_label: string
+  description?: string | null
+  section: string
+  phase: Phase
+  kind: TaskKind
+  owner_role: OwnerRole
+  reviewer_role?: ReviewerRole | null
+  doc_type?: string | null
+  policy_key?: string | null
+  is_required: boolean
+  is_statutory: boolean
+  is_waivable?: boolean
+  due_offset_days?: number | null
+  depends_on: string[]
+  sort_order?: number
+}
+
+export const createTemplate = (
+  entityId: string,
+  name: string,
+  description: string | null,
+  tasks: TemplateTaskInput[],
+  employmentTypes: string[] | null,
+  positionIds: string[] | null
+) =>
+  callRpc<string>('create_onboarding_template', {
+    p_entity_id: entityId,
+    p_name: name,
+    p_description: description,
+    p_tasks: tasks,
+    p_employment_types: employmentTypes,
+    p_position_ids: positionIds,
+  })
+
+// ------------------------------------------------ availability (011)
+export interface AvailabilityDay {
+  day_of_week: number
+  is_available: boolean
+  start_time: string | null
+  end_time: string | null
+}
+
+export async function getMyAvailability(): Promise<ApiResult<{ confirmed_at: string | null; days: AvailabilityDay[] }>> {
+  return callRpc<{ confirmed_at: string | null; days: AvailabilityDay[] }>('get_my_availability')
+}
+
+export const saveMyAvailability = (days: AvailabilityDay[]) => callRpc<{ ok: boolean }>('save_my_availability', { p_days: days })
+
+// --------------------------------------------- work permit / visa (012)
+export type ImmigrationTrack = 'outside_uae' | 'inside_uae' | 'transfer' | 'own_visa' | 'uae_national' | 'gcc_national'
+export type ImmigrationStepStatus = 'not_started' | 'in_progress' | 'done' | 'not_needed' | 'failed'
+
+export interface ImmigrationCase {
+  id: string
+  employee_id: string
+  track: ImmigrationTrack
+  status: 'open' | 'completed' | 'cancelled'
+  mohre_person_code: string | null
+  work_permit_number: string | null
+  uid_number: string | null
+  visa_file_number: string | null
+  notes: string | null
+  opened_at: string
+  close_reason: string | null
+}
+
+export interface ImmigrationStep {
+  id: string
+  step_key: string
+  label: string
+  sort_order: number
+  status: ImmigrationStepStatus
+  is_blocking: boolean
+  due_date: string | null
+  completed_at: string | null
+  reference_number: string | null
+  expiry_date: string | null
+  notes: string | null
+}
+
+export interface ImmigrationCaseRow {
+  case_id: string
+  employee_id: string
+  name: string
+  track: ImmigrationTrack
+  status: ImmigrationCase['status']
+  opened_at: string
+  onboarding_instance_id: string | null
+  done: number
+  total: number
+  blocking_open: number
+  overdue: number
+  next_step: string | null
+  next_due: string | null
+}
+
+export const getImmigrationCase = (employeeId: string) =>
+  callRpc<{ ok: boolean; suggested_track: ImmigrationTrack; case: ImmigrationCase | null; steps: ImmigrationStep[] }>('get_immigration_case', {
+    p_employee_id: employeeId,
+  })
+
+export const listImmigrationCases = (entityId: string, status: 'open' | 'completed' | 'cancelled' | 'all' = 'open') =>
+  callRpc<ImmigrationCaseRow[]>('list_immigration_cases', { p_entity_id: entityId, p_status: status })
+
+export const openImmigrationCase = (employeeId: string, track: ImmigrationTrack, notes: string | null) =>
+  callRpc<{ ok: boolean; case_id: string }>('open_immigration_case', { p_employee_id: employeeId, p_track: track, p_notes: notes })
+
+export const changeImmigrationTrack = (caseId: string, track: ImmigrationTrack, reason: string) =>
+  callRpc<{ ok: boolean }>('change_immigration_track', { p_case_id: caseId, p_track: track, p_reason: reason })
+
+export const updateImmigrationStep = (
+  stepId: string,
+  status: ImmigrationStepStatus,
+  reference: string | null,
+  expiryDate: string | null,
+  dueDate: string | null,
+  notes: string | null
+) =>
+  callRpc<{ ok: boolean }>('update_immigration_step', {
+    p_step_id: stepId,
+    p_status: status,
+    p_reference: reference,
+    p_expiry_date: expiryDate,
+    p_due_date: dueDate,
+    p_notes: notes,
+  })
+
+export const setImmigrationStepBlocking = (stepId: string, blocking: boolean, reason: string) =>
+  callRpc<{ ok: boolean }>('set_immigration_step_blocking', { p_step_id: stepId, p_is_blocking: blocking, p_reason: reason })
+
+export const updateImmigrationCase = (caseId: string, patch: Partial<Pick<ImmigrationCase, 'mohre_person_code' | 'work_permit_number' | 'uid_number' | 'visa_file_number' | 'notes'>>) =>
+  callRpc<{ ok: boolean }>('update_immigration_case', { p_case_id: caseId, p: patch })
+
+export const closeImmigrationCase = (caseId: string, status: 'completed' | 'cancelled', reason: string | null) =>
+  callRpc<{ ok: boolean }>('close_immigration_case', { p_case_id: caseId, p_status: status, p_reason: reason })
+
+export async function getMyImmigration(): Promise<ApiResult<{ label: string; status: ImmigrationStepStatus; completed_at: string | null }[] | null>> {
+  const r = await callRpc<{ ok: boolean; steps: { label: string; status: ImmigrationStepStatus; completed_at: string | null }[] | null }>('get_my_immigration')
+  return { data: r.data?.steps ?? null, error: r.error }
+}

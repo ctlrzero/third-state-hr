@@ -14,8 +14,9 @@ import WorkspaceDrawer from './WorkspaceDrawer'
 import ProbationTab from './ProbationTab'
 import ReportsTab from './ReportsTab'
 import SetupTab from './SetupTab'
+import VisasTab from './VisasTab'
 
-type Top = 'pipeline' | 'probation' | 'reports' | 'setup'
+type Top = 'pipeline' | 'probation' | 'visas' | 'reports' | 'setup'
 
 const LIST_TABS: { key: ListTab; label: string }[] = [
   { key: 'all', label: 'All open' },
@@ -122,6 +123,7 @@ export default function OnboardingDashboard({ payrollOnly = false }: { payrollOn
       ? []
       : [
           { key: 'probation' as const, label: 'Probation', badge: summary?.probation_reviews_due || undefined },
+          ...(isAdmin ? [{ key: 'visas' as const, label: 'Visas & permits' }] : []),
           { key: 'reports' as const, label: 'Reports' },
         ]),
     ...(isAdmin ? [{ key: 'setup' as const, label: 'Setup' }] : []),
@@ -196,6 +198,11 @@ export default function OnboardingDashboard({ payrollOnly = false }: { payrollOn
       {top === 'probation' && (
         <TabPanel id="probation">
           <ProbationTab entityId={activeEntityId} canDecide={isAdmin} />
+        </TabPanel>
+      )}
+      {top === 'visas' && isAdmin && (
+        <TabPanel id="visas">
+          <VisasTab entityId={activeEntityId} onOpen={(id) => openInstance(id)} />
         </TabPanel>
       )}
       {top === 'reports' && (

@@ -25,8 +25,11 @@ contain the problems listed below.
 | `migrations/008_onboarding_workflow_reminders.sql` | — | `onboarding` workflow module + events, daily reminder / escalation job |
 | `migrations/009_onboarding_rls_storage.sql` | — | Select-only RLS on every new table; additive storage policies for pre-boarding uploads |
 | `migrations/010_activation_guard.sql` | — | **Deploy only with the UI.** Blocks raw `pre_boarding → active` outside onboarding |
-| `tests/onboarding_tests.sql` | — | 58-check persona suite (owner, 2 admins, branch manager, payroll admin, new hire, other company); always rolls back |
-| `tests/validate_all_rolled_back.sql` | — | 001–010 + the tests in one transaction that always rolls back. Run this before deploying |
+| `migrations/011_onboarding_jobs_availability.sql` | — | Jobs with job descriptions (`upsert_position`); the new starter's weekly availability (`save_my_availability`) |
+| `migrations/012_onboarding_immigration.sql` | — | Work permit and visa processing: a case per hire, steps by situation (from abroad, inside the UAE, transfer, own visa, UAE / GCC national); blocking steps feed readiness |
+| `migrations/013_offboarding.sql` | — | Offboarding: separation type, UAE minimum notice, last working day to payroll, role checklist, final settlement due in 14 days, controlled finish |
+| `tests/onboarding_tests.sql` | — | 84-check persona suite (owner, 2 admins, branch manager, payroll admin, new hire, other company); always rolls back |
+| `tests/validate_all_rolled_back.sql` | — | 001–013 + the tests in one transaction that always rolls back. Run this before deploying |
 | `DEPLOY.md` | | Order, checks, first-time setup, cron, rollback |
 | `API_CONTRACT_ADDITIONS.md` | | Section 12 rows for `claude/API_CONTRACT.md` |
 | `REUSE_MAP.md` | | Spec §15: what is reused, what is new, and why |
@@ -100,6 +103,23 @@ They have not been checked against a live database yet, because this backend is 
   - generate day-one and first-month tasks
   - send deduplicated notifications and write one audit row with an operation id
 - **Retries are safe.** Calling activation again returns the first result.
+
+## Added in the second round
+
+- **Template editor** (Setup → Templates: New / Edit / Copy). Editing saves a new version; people already onboarding keep theirs.
+- **Jobs** (Setup → Jobs) with job descriptions that the new starter reads in the portal.
+- **Availability**: a new task type. The standard template has an optional "Your weekly availability" step, and the employee sets their own days and hours in the portal.
+- **Probation ratings**: five 1–5 ratings saved with each review.
+- **Work permit and visa tracking** (012): in the workspace, on the employee profile and in Onboarding → Visas & permits.
+  - Steps follow the person's situation.
+  - The work permit and the MOHRE labour contract (or MOHRE registration for nationals) block activation by default. HR can change this with a reason.
+  - Branch managers see only "Work permit paperwork is outstanding".
+- **Offboarding** (013, new page `/offboarding`), started from the employee profile or from a no-show / probation-not-confirmed problem.
+  - The minimum notice is enforced: 14 days or one month in probation (Art. 9), 30 days after (Art. 43). Shorter notice needs a recorded reason.
+  - The last working day goes to payroll.
+  - The checklist includes shifts, returned items, logins, final settlement, and work permit / visa cancellation or the pension notice.
+  - The final settlement is due within 14 days (Art. 53), and a gratuity estimate comes from payroll.
+  - Finishing inactivates the employee and closes their login through `set_employee_status`.
 
 ## UAE rules applied
 

@@ -179,7 +179,9 @@ begin
     version_number, supersedes_template_id, created_by)
   values (v_old.entity_id, coalesce(nullif(btrim(coalesce(p_name, '')), ''), v_old.name),
     coalesce(nullif(btrim(coalesce(p_description, '')), ''), v_old.description),
-    coalesce(p_employment_types, v_old.applies_to_employment_types), coalesce(p_position_ids, v_old.applies_to_position_ids),
+    -- null keeps the old filter; an empty array clears it (applies to everyone).
+    case when p_employment_types is null then v_old.applies_to_employment_types when cardinality(p_employment_types) = 0 then null else p_employment_types end,
+    case when p_position_ids is null then v_old.applies_to_position_ids when cardinality(p_position_ids) = 0 then null else p_position_ids end,
     v_old.version_number + 1, p_template_id, auth.uid())
   returning id into v_new;
   if p_tasks is null then
@@ -245,6 +247,7 @@ begin
     {"item_key":"contract_upload","item_label":"Upload the signed-off employment contract","section":"employment","kind":"document","doc_type":"contract","owner_role":"hr","is_statutory":true,"due_offset_days":3,"sort_order":10},
     {"item_key":"contract_acceptance","item_label":"Accept the employment contract","section":"employment","kind":"contract_acceptance","owner_role":"employee","is_statutory":true,"depends_on":["contract_upload"],"due_offset_days":6,"sort_order":11},
     {"item_key":"compensation","item_label":"Enter pay for payroll review","section":"payroll","kind":"compensation","owner_role":"hr","reviewer_role":"payroll","is_statutory":true,"due_offset_days":5,"sort_order":12},
+    {"item_key":"availability","item_label":"Your weekly availability","section":"availability","kind":"availability","owner_role":"employee","is_required":false,"due_offset_days":5,"sort_order":12},
     {"item_key":"operations_setup","item_label":"Confirm branch, first schedule, uniform and access","section":"operations","kind":"manual","owner_role":"location_manager","due_offset_days":7,"sort_order":13},
     {"item_key":"arrival","item_label":"Confirm arrival on day one","section":"day_one","phase":"day_one","kind":"manual","owner_role":"location_manager","due_offset_days":0,"sort_order":20},
     {"item_key":"induction","item_label":"Branch tour, role briefing and safety induction","section":"day_one","phase":"day_one","kind":"manual","owner_role":"location_manager","due_offset_days":0,"sort_order":21},

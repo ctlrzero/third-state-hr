@@ -11,7 +11,7 @@ begin;
 
 alter table public.workflow_rules drop constraint if exists workflow_rules_module_check;
 alter table public.workflow_rules add constraint workflow_rules_module_check
-  check (module = any (array['leave', 'document', 'attendance', 'schedule', 'payroll', 'recruitment', 'onboarding']));
+  check (module = any (array['leave', 'document', 'attendance', 'schedule', 'payroll', 'recruitment', 'onboarding', 'offboarding']));
 
 -- Same body as the live catalog (checked 27 Sep 2026) plus 'onboarding'.
 create or replace function public.workflow_trigger_catalog()
@@ -37,7 +37,11 @@ returns jsonb language sql immutable set search_path to '' as $$
       'onboarding_ready_for_activation', jsonb_build_array('employee_id', 'location_id', 'onboarding_instance_id', 'proposed_start_date'),
       'employee_activated', jsonb_build_array('employee_id', 'location_id', 'onboarding_instance_id', 'join_date'),
       'onboarding_task_overdue', jsonb_build_array('employee_id', 'location_id', 'onboarding_instance_id', 'task_id', 'owner_role', 'days_overdue'),
-      'probation_review_due', jsonb_build_array('employee_id', 'location_id', 'probation_period_id', 'review_due_date', 'days_to_due'))
+      'probation_review_due', jsonb_build_array('employee_id', 'location_id', 'probation_period_id', 'review_due_date', 'days_to_due'),
+      'immigration_step_overdue', jsonb_build_array('employee_id', 'location_id', 'immigration_case_id', 'step_key', 'days_overdue')),
+    'offboarding', jsonb_build_object(
+      'offboarding_started', jsonb_build_array('employee_id', 'location_id', 'offboarding_case_id', 'separation_type', 'last_working_date'),
+      'final_settlement_due', jsonb_build_array('employee_id', 'location_id', 'offboarding_case_id', 'settlement_due_date', 'days_to_due'))
   );
 $$;
 
@@ -88,6 +92,10 @@ create trigger workflow_on_onboarding_section after insert on public.onboarding_
   for each row execute function public.trg_onb_workflow_section();
 
 -- ----------------------------------------------------- daily reminders
+-- Extension point: 012 / 013 replace this with their own reminders.
+create or replace function public._onb_extension_reminders(p_today date)
+returns integer language sql security definer set search_path to '' as $$ select 0; $$;
+
 -- One consolidated, deduped notification per person per day. Expires
 -- stale invitations, escalates overdue items to HR after 2 days, raises
 -- probation-review-due events. Run as the database owner (pg_cron).
@@ -159,6 +167,9 @@ begin
     end;
   end loop;
 
+  -- Reminders added by later modules (visa steps in 012, offboarding in 013).
+  v_sent := v_sent + public._onb_extension_reminders(v_today);
+
   return jsonb_build_object('ok', true, 'invitations_expired', v_expired, 'notifications', v_sent, 'run_at', now());
 end;
 $$;
@@ -166,7 +177,8 @@ $$;
 do $$
 declare f text;
 begin
-  foreach f in array array['trg_onb_workflow_status()', 'trg_onb_workflow_section()', 'onboarding_send_reminders()'] loop
+  foreach f in array array['trg_onb_workflow_status()', 'trg_onb_workflow_section()', 'onboarding_send_reminders()',
+    '_onb_extension_reminders(date)'] loop
     execute format('revoke all on function public.%s from public, anon, authenticated', f);
   end loop;
 end $$;
