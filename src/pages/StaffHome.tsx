@@ -8,6 +8,8 @@ import { getMyClockStatus, type ClockStatus } from '../lib/api/attendance'
 import { CLOCK_STATE_LABEL } from '../lib/clockState'
 import { fmtDayShort, fmtTime, todayDubai } from '../lib/format'
 import type { LeaveBalance } from '../types/db'
+import { findOpenOnboarding, type OnboardingStatus } from '../lib/api/onboarding'
+import { isPreActivation, STATUS_LABEL } from '../lib/onboarding'
 
 // Staff home: the three things an employee checks most — today's clock
 // status, upcoming shifts, and leave balance. Every query is scoped to the
@@ -17,6 +19,7 @@ export default function StaffHome() {
   const [clock, setClock] = useState<ClockStatus | null | 'na'>(null)
   const [shifts, setShifts] = useState<{ id: string; shift_date: string; start_time: string; end_time: string; locations: { name: string } | null }[] | null>(null)
   const [balances, setBalances] = useState<LeaveBalance[] | null>(null)
+  const [onboarding, setOnboarding] = useState<OnboardingStatus | null>(null)
 
   useEffect(() => {
     getMyClockStatus().then((r) => setClock(r.error ? 'na' : r.data))
@@ -25,6 +28,7 @@ export default function StaffHome() {
     // shifts, not in "Next shifts". my_employee_id() resolves from auth.uid().
     supabase.rpc('my_employee_id').then(async ({ data: myEmployeeId }) => {
       if (!myEmployeeId) return setShifts([])
+      findOpenOnboarding(myEmployeeId as string).then((o) => setOnboarding(o?.status ?? null))
       const { data } = await supabase
         .from('shifts')
         .select('id, shift_date, start_time, end_time, locations(name)')
@@ -48,6 +52,17 @@ export default function StaffHome() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <h1 className="text-2xl font-semibold text-ink">Hi{firstName ? `, ${firstName}` : ''}</h1>
+
+      {onboarding && (
+        <Link to="/onboarding" className="card flex items-center justify-between gap-3 border-brand-blue/40 bg-brand-blue-soft transition hover:border-brand-blue">
+          <div>
+            <p className="text-sm text-brand-blue-text">{isPreActivation(onboarding) ? 'Before you start' : 'Your first weeks'}</p>
+            <p className="text-lg font-semibold text-ink">{isPreActivation(onboarding) ? 'Complete your joining steps' : 'Your onboarding checklist'}</p>
+            <p className="text-xs text-muted">{STATUS_LABEL[onboarding]}</p>
+          </div>
+          <span className="btn-primary">Open</span>
+        </Link>
+      )}
 
       <Link to="/clock" className="card flex items-center justify-between gap-3 transition hover:border-brand-blue/40">
         <div>

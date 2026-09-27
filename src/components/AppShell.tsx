@@ -9,6 +9,7 @@ const ICON_PATHS: Record<NavIcon, string> = {
   home: 'M3 11.5 12 4l9 7.5M5 10v9.5a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10',
   people:
     'M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7 9v-1a3.5 3.5 0 0 0-2.5-3.36M14.5 3.13a3.5 3.5 0 0 1 0 6.75',
+  onboarding: 'M15 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.5 1 2 2 4-4',
   profile: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0',
   interviews: 'M9 11l3 3L22 4M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7',
   documents: 'M8 3h6l4 4v13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Zm6 0v4h4',
@@ -42,15 +43,15 @@ const ROLE_LABEL: Record<UserRole, string> = {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, entities, activeEntityId, setActiveEntityId, hasInterviewAssignments, signOut } = useAuth()
+  const { profile, entities, activeEntityId, setActiveEntityId, hasInterviewAssignments, hasOnboarding, signOut } = useAuth()
   const [moreOpen, setMoreOpen] = useState(false)
   const location = useLocation()
   const moreButtonRef = useRef<HTMLButtonElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
 
-  const ctx = { hasInterviewAssignments }
-  const items = useMemo(() => navForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments]) // eslint-disable-line react-hooks/exhaustive-deps
-  const mobile = useMemo(() => mobileNavForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments]) // eslint-disable-line react-hooks/exhaustive-deps
+  const ctx = { hasInterviewAssignments, hasOnboarding }
+  const items = useMemo(() => navForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments, hasOnboarding]) // eslint-disable-line react-hooks/exhaustive-deps
+  const mobile = useMemo(() => mobileNavForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments, hasOnboarding]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close the More sheet on navigation; manage focus + Escape while open.
   useEffect(() => setMoreOpen(false), [location.pathname])

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -19,6 +19,7 @@ import type {
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
+import { startFromOffer } from '../lib/api/onboarding'
 import { fmtDateTime } from '../lib/format'
 
 const REQ_STATUSES: { value: RequisitionStatus; label: string }[] = [
@@ -1604,9 +1605,28 @@ function OfferSection({
 
   async function handleConvert() {
     if (!offer) return
-    if (!(await confirmDialog('Convert this accepted offer into a new employee record (pre-boarding)?'))) return
+    if (!(await confirmDialog('Start onboarding for this accepted offer? This creates the pre-boarding employee record and their onboarding checklist.'))) return
     setBusy(true)
     setError(null)
+    // Onboarding wraps convert_offer_to_employee (duplicate check, template,
+    // checklist). If the onboarding backend is not deployed yet, fall back to
+    // the plain conversion so hiring is never blocked.
+    const started = await startFromOffer(offer.id, null)
+    if (!started.error && started.data) {
+      setBusy(false)
+      onNotice(
+        started.data.already_started
+          ? 'Onboarding was already started for this offer.'
+          : 'Onboarding started. Open Onboarding to invite the new starter and enter their pay.'
+      )
+      onChange()
+      return
+    }
+    if (!started.error?.startsWith('This action is not available on the server')) {
+      setBusy(false)
+      setError(started.error)
+      return
+    }
     const { error: rpcError } = await supabase.rpc('convert_offer_to_employee', { p_offer_id: offer.id })
     setBusy(false)
     if (rpcError) {
@@ -1693,12 +1713,18 @@ function OfferSection({
               disabled={busy}
               className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
             >
-              {busy ? 'Converting…' : 'Convert to employee'}
+              {busy ? 'Starting…' : 'Start onboarding'}
             </button>
           )}
 
           {offer.converted_employee_id && (
-            <p className="text-xs text-brand-action-text">Converted to a new employee record.</p>
+            <p className="text-xs text-brand-action-text">
+              Hired — onboarding is under{' '}
+              <Link to="/onboarding" className="font-semibold underline">
+                Onboarding
+              </Link>
+              .
+            </p>
           )}
         </div>
       )}

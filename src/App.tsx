@@ -17,6 +17,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const StaffHome = lazy(() => import('./pages/StaffHome'))
 const EmployeeDirectory = lazy(() => import('./pages/EmployeeDirectory'))
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'))
+const Onboarding = lazy(() => import('./pages/Onboarding'))
 const Documents = lazy(() => import('./pages/Documents'))
 const Payroll = lazy(() => import('./pages/Payroll'))
 const Recruiting = lazy(() => import('./pages/Recruiting'))
@@ -64,6 +65,7 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: '/', element: <Home /> },
   { path: '/employees', element: <EmployeeDirectory /> },
   { path: '/employees/:id', element: <EmployeeProfile /> },
+  { path: '/onboarding', element: <Onboarding /> },
   { path: '/me', element: <MyProfile /> },
   // get_my_interviews()/get_interview_detail() resolve identity from
   // auth.uid() and RLS scopes every table, so direct navigation is safe.

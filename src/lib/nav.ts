@@ -9,6 +9,7 @@ import type { UserRole } from '../types/db'
 export type NavIcon =
   | 'home'
   | 'people'
+  | 'onboarding'
   | 'profile'
   | 'interviews'
   | 'documents'
@@ -28,7 +29,7 @@ export interface NavItem {
   to: string
   icon: NavIcon
   roles: UserRole[]
-  requires?: 'interviewAssignment'
+  requires?: 'interviewAssignment' | 'onboarding'
 }
 
 const ALL: UserRole[] = ['owner', 'entity_admin', 'location_manager', 'staff']
@@ -39,6 +40,9 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   '/': ALL,
   '/employees': MANAGERS,
   '/employees/:id': MANAGERS,
+  // Managers see the dashboard; staff see their own onboarding (or pay/bank
+  // reviews with payroll permission). Every RPC re-checks scope.
+  '/onboarding': ALL,
   '/me': ALL,
   '/my-interviews': ALL,
   '/documents': ALL,
@@ -66,6 +70,7 @@ export function canAccessRoute(role: UserRole | null | undefined, route: string)
 
 const STAFF_NAV: NavItem[] = [
   { label: 'Home', to: '/', icon: 'home', roles: ['staff'] },
+  { label: 'Onboarding', to: '/onboarding', icon: 'onboarding', roles: ['staff'], requires: 'onboarding' },
   { label: 'Schedule', to: '/schedules', icon: 'schedule', roles: ['staff'] },
   { label: 'Clock', to: '/clock', icon: 'clock', roles: ['staff'] },
   { label: 'Leave', to: '/leave', icon: 'leave', roles: ['staff'] },
@@ -79,6 +84,7 @@ const STAFF_NAV: NavItem[] = [
 const MANAGEMENT_NAV: NavItem[] = [
   { label: 'Home', to: '/', icon: 'home', roles: MANAGERS },
   { label: 'People', to: '/employees', icon: 'people', roles: MANAGERS },
+  { label: 'Onboarding', to: '/onboarding', icon: 'onboarding', roles: MANAGERS },
   { label: 'Schedules', to: '/schedules', icon: 'schedule', roles: MANAGERS },
   { label: 'Attendance', to: '/attendance', icon: 'attendance', roles: MANAGERS },
   { label: 'Leave', to: '/leave', icon: 'leave', roles: MANAGERS },
@@ -97,6 +103,7 @@ const MANAGEMENT_NAV: NavItem[] = [
 
 export interface NavContext {
   hasInterviewAssignments?: boolean
+  hasOnboarding?: boolean
 }
 
 /** Full ordered nav for a role (desktop sidebar). */
@@ -106,6 +113,7 @@ export function navForRole(role: UserRole | null | undefined, ctx: NavContext = 
   return source.filter((item) => {
     if (!item.roles.includes(role)) return false
     if (item.requires === 'interviewAssignment' && !ctx.hasInterviewAssignments) return false
+    if (item.requires === 'onboarding' && !ctx.hasOnboarding) return false
     return true
   })
 }
@@ -121,7 +129,8 @@ export function mobileNavForRole(
 ): { primary: NavItem[]; more: NavItem[] } {
   const items = navForRole(role, ctx)
   if (role === 'staff') {
-    const primaryPaths = ['/', '/schedules', '/clock', '/leave']
+    // A new starter's onboarding replaces Clock in the bar until it is closed.
+    const primaryPaths = ctx.hasOnboarding ? ['/', '/onboarding', '/schedules', '/leave'] : ['/', '/schedules', '/clock', '/leave']
     return {
       primary: primaryPaths.map((p) => items.find((i) => i.to === p)!).filter(Boolean),
       more: items.filter((i) => !primaryPaths.includes(i.to)),

@@ -201,6 +201,13 @@ describe('nav mapping', () => {
     expect(navForRole('staff').some((i) => i.to === '/my-interviews')).toBe(false)
     expect(navForRole('staff', { hasInterviewAssignments: true }).some((i) => i.to === '/my-interviews')).toBe(true)
   })
+  it('shows Onboarding to managers always and to staff only with an onboarding', () => {
+    expect(navForRole('location_manager').some((i) => i.to === '/onboarding')).toBe(true)
+    expect(navForRole('staff').some((i) => i.to === '/onboarding')).toBe(false)
+    const { primary } = mobileNavForRole('staff', { hasOnboarding: true })
+    expect(primary.map((i) => i.label)).toEqual(['Home', 'Onboarding', 'Schedule', 'Leave'])
+    expect(canAccessRoute('staff', '/onboarding')).toBe(true)
+  })
   it('admins see Workflows and Admin; staff do not', () => {
     expect(navForRole('entity_admin').map((i) => i.to)).toEqual(expect.arrayContaining(['/workflows', '/admin', '/payroll']))
     expect(canAccessRoute('staff', '/attendance')).toBe(false)

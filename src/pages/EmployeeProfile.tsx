@@ -33,6 +33,9 @@ import {
   type CompensationView,
   type PayType,
 } from '../lib/compensation'
+import { findOpenOnboarding, startForEmployee, type OnboardingStatus } from '../lib/api/onboarding'
+import { STATUS_LABEL as ONB_STATUS_LABEL } from '../lib/onboarding'
+import { ReasonModal } from './onboarding/shared'
 import type { Employee, EmployeeChangeRequest, EmployeeDocument, EmployeeStatus, LeaveBalance, LeaveRequest } from '../types/db'
 
 const EXPIRY_DOCS: { key: 'passport_exp' | 'visa_exp' | 'labor_card_exp' | 'health_card_exp'; label: string }[] = [
@@ -90,6 +93,8 @@ export default function EmployeeProfile() {
   const [notice, setNotice] = useState<string | null>(null)
   const [completeness, setCompleteness] = useState<Completeness | null>(null)
   const [statusTarget, setStatusTarget] = useState<EmployeeStatus | null>(null)
+  const [onboarding, setOnboarding] = useState<{ id: string; status: OnboardingStatus } | null>(null)
+  const [startingOnb, setStartingOnb] = useState(false)
   const [editing, setEditing] = useState(false)
   // Pay: owner / entity_admin only (get_employee_compensation re-checks).
   const [comp, setComp] = useState<CompensationView | null>(null)
@@ -147,6 +152,8 @@ export default function EmployeeProfile() {
     const c = await getEmployeeCompleteness(id)
     // Not-yet-deployed RPC → simply no completeness bar.
     if (!c.error) setCompleteness(c.data)
+    // Open onboarding (null when none, or when onboarding is not deployed).
+    setOnboarding(await findOpenOnboarding(id))
   }, [id])
 
   useEffect(() => {
@@ -175,6 +182,11 @@ export default function EmployeeProfile() {
 
   const status = (employee.employment_status ?? 'candidate') as EmployeeStatus
   const canEdit = editableFieldsFor(profile?.role).length > 0
+  // A pre-boarding employee with an onboarding is activated from it (the
+  // server enforces this once migration 010 is deployed).
+  const statusMoves = (allowedStatusMoves(profile?.role, status) as EmployeeStatus[]).filter(
+    (s) => !(onboarding && status === 'pre_boarding' && s === 'active')
+  )
 
   return (
     <div className="space-y-5">
@@ -192,6 +204,24 @@ export default function EmployeeProfile() {
           {notice}
         </Alert>
       )}
+
+      <ReasonModal
+        open={startingOnb}
+        title={`Start onboarding for ${employee.full_name}`}
+        prompt="Reason"
+        confirmLabel="Start onboarding"
+        onCancel={() => setStartingOnb(false)}
+        onConfirm={async (reason) => {
+          const r = await startForEmployee(employee.id, null, reason)
+          if (r.error) return r.error
+          setStartingOnb(false)
+          setNotice('Onboarding started.')
+          setOnboarding(await findOpenOnboarding(employee.id))
+          return null
+        }}
+      >
+        <p>Uses this employee record — no second record is created. The onboarding checklist comes from the company template.</p>
+      </ReasonModal>
 
       <header className="card space-y-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -214,7 +244,17 @@ export default function EmployeeProfile() {
                 <button className="btn-secondary" onClick={() => setEditing(true)}>
                   Edit details
                 </button>
-                {(allowedStatusMoves(profile?.role, status) as EmployeeStatus[]).map((s) => (
+                {onboarding && (
+                  <Link to={`/onboarding?open=${onboarding.id}`} className="btn-primary">
+                    Open onboarding · {ONB_STATUS_LABEL[onboarding.status]}
+                  </Link>
+                )}
+                {!onboarding && isAdmin && (status === 'pre_boarding' || status === 'candidate') && (
+                  <button className="btn-secondary" onClick={() => setStartingOnb(true)}>
+                    Start onboarding
+                  </button>
+                )}
+                {statusMoves.map((s) => (
                   <button key={s} className={s === 'inactive' ? 'btn-secondary text-brand-risk' : 'btn-primary'} onClick={() => setStatusTarget(s)}>
                     {STATUS_ACTION_LABEL[s]}
                   </button>

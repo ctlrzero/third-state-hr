@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { hasOwnOpenOnboarding } from '../lib/api/onboarding'
 import type { Entity, Profile } from '../types/db'
 
 type AuthStatus = 'loading' | 'signed-out' | 'no-assignment' | 'ready'
@@ -31,6 +32,12 @@ interface AuthContextValue {
    * those checks already allow.
    */
   hasInterviewAssignments: boolean
+  /**
+   * Staff only: shows the Onboarding nav item when the person has their own
+   * open onboarding, or can review new starters' pay (payroll approver).
+   * UI convenience; the onboarding RPCs are the real gate.
+   */
+  hasOnboarding: boolean
   noAssignmentReason: NoAssignmentReason
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
@@ -48,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [activeEntityId, setActiveEntityIdState] = useState<string | null>(null)
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [hasInterviewAssignments, setHasInterviewAssignments] = useState(false)
+  const [hasOnboarding, setHasOnboarding] = useState(false)
   const [noAssignmentReason, setNoAssignmentReason] = useState<NoAssignmentReason>(null)
   const manualSignOut = useRef(false)
 
@@ -87,6 +95,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ({ data }) => setHasInterviewAssignments(Boolean(data)),
         () => setHasInterviewAssignments(false)
       )
+
+    setHasOnboarding(false)
+    if ((profileRow as Profile).role === 'staff') {
+      const entityId = (profileRow as Profile).entity_id
+      Promise.all([
+        hasOwnOpenOnboarding(),
+        entityId ? supabase.rpc('payroll_can', { p_entity_id: entityId, p_cap: 'approve' }).then((r) => Boolean(r.data)) : Promise.resolve(false),
+      ]).then(
+        ([own, pay]) => setHasOnboarding(own || pay),
+        () => setHasOnboarding(false)
+      )
+    }
 
     // Owner has entity_id = null and is authorised to view every entity; everyone
     // else is scoped to exactly one entity by row-level security on `entities`.
@@ -197,12 +217,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       activeEntityId,
       setActiveEntityId,
       hasInterviewAssignments,
+      hasOnboarding,
       noAssignmentReason,
       signInWithPassword,
       signOut,
       refreshProfile,
     }),
-    [status, session, profile, entities, activeEntityId, hasInterviewAssignments, noAssignmentReason]
+    [status, session, profile, entities, activeEntityId, hasInterviewAssignments, hasOnboarding, noAssignmentReason]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

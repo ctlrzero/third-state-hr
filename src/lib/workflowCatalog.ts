@@ -11,7 +11,7 @@ import type { UserRole } from '../types/db'
 // The page also loads workflow_trigger_catalog() at runtime and hides any
 // trigger/field this static list has that the live DB does not.
 
-export type WorkflowModule = 'leave' | 'document' | 'attendance' | 'schedule' | 'payroll' | 'recruitment'
+export type WorkflowModule = 'leave' | 'document' | 'attendance' | 'schedule' | 'payroll' | 'recruitment' | 'onboarding'
 export type WorkflowOperator = 'eq' | 'neq' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains'
 export type WorkflowActionType = 'notify_role' | 'notify_employee'
 
@@ -40,6 +40,7 @@ export const MODULE_LABEL: Record<WorkflowModule, string> = {
   schedule: 'Schedules',
   payroll: 'Payroll',
   recruitment: 'Recruiting',
+  onboarding: 'Onboarding',
 }
 
 const YES_NO = [
@@ -54,6 +55,72 @@ export const SHIFT_CHANGE_TYPES = [
   { value: 'date_changed', label: 'Date changed' },
   { value: 'location_changed', label: 'Branch changed' },
   { value: 'time_changed', label: 'Time changed' },
+]
+
+const ONBOARDING_TRIGGERS: TriggerDef[] = [
+  {
+    module: 'onboarding',
+    event: 'onboarding_started',
+    label: 'Onboarding started',
+    phrase: 'onboarding starts for a new hire',
+    fields: [
+      {
+        key: 'source',
+        label: 'Started from',
+        phrase: 'source',
+        kind: 'enum',
+        options: [
+          { value: 'offer', label: 'Accepted offer' },
+          { value: 'direct_hire', label: 'Direct hire' },
+          { value: 'existing_employee', label: 'Existing employee' },
+        ],
+      },
+    ],
+  },
+  {
+    module: 'onboarding',
+    event: 'onboarding_section_submitted',
+    label: 'New starter submitted a section',
+    phrase: 'a new starter submits a section for review',
+    fields: [{ key: 'section', label: 'Section', phrase: 'section', kind: 'text' }],
+  },
+  { module: 'onboarding', event: 'onboarding_changes_required', label: 'Changes requested from a new starter', phrase: 'changes are requested from a new starter', fields: [] },
+  {
+    module: 'onboarding',
+    event: 'onboarding_ready_for_activation',
+    label: 'New starter ready to activate',
+    phrase: 'a new starter is ready to activate',
+    fields: [{ key: 'proposed_start_date', label: 'Start date (YYYY-MM-DD)', phrase: 'start date', kind: 'date' }],
+  },
+  { module: 'onboarding', event: 'employee_activated', label: 'Employee activated', phrase: 'a new starter is activated', fields: [] },
+  {
+    module: 'onboarding',
+    event: 'onboarding_task_overdue',
+    label: 'Onboarding tasks overdue',
+    phrase: 'onboarding tasks are overdue',
+    fields: [
+      { key: 'days_overdue', label: 'Days overdue', phrase: 'days overdue', kind: 'number' },
+      {
+        key: 'owner_role',
+        label: 'Owner',
+        phrase: 'owner',
+        kind: 'enum',
+        options: [
+          { value: 'location_manager', label: 'Branch manager' },
+          { value: 'hr', label: 'HR' },
+          { value: 'payroll', label: 'Payroll' },
+          { value: 'approver', label: 'Approver' },
+        ],
+      },
+    ],
+  },
+  {
+    module: 'onboarding',
+    event: 'probation_review_due',
+    label: 'Probation review due',
+    phrase: 'a probation review is due',
+    fields: [{ key: 'days_to_due', label: 'Days until due', phrase: 'days until due', kind: 'number' }],
+  },
 ]
 
 export const TRIGGERS: TriggerDef[] = [
@@ -119,7 +186,9 @@ export const TRIGGERS: TriggerDef[] = [
       { key: 'period_start', label: 'Period start (YYYY-MM-DD)', phrase: 'period start', kind: 'date' },
     ],
   },
+  ...ONBOARDING_TRIGGERS,
 ]
+
 
 export const OPERATORS: { value: WorkflowOperator; label: string; symbol: string; numericOnly?: boolean }[] = [
   { value: 'eq', label: 'equals', symbol: '=' },
