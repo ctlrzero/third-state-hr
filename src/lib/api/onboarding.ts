@@ -772,6 +772,8 @@ export interface ImmigrationStep {
   reference_number: string | null
   expiry_date: string | null
   notes: string | null
+  fee_amount: number | null
+  fee_paid_by: 'company' | 'employee' | null
 }
 
 export interface ImmigrationCaseRow {
@@ -810,7 +812,9 @@ export const updateImmigrationStep = (
   reference: string | null,
   expiryDate: string | null,
   dueDate: string | null,
-  notes: string | null
+  notes: string | null,
+  feeAmount: number | null = null,
+  feePaidBy: 'company' | 'employee' | null = null
 ) =>
   callRpc<{ ok: boolean }>('update_immigration_step', {
     p_step_id: stepId,
@@ -819,6 +823,8 @@ export const updateImmigrationStep = (
     p_expiry_date: expiryDate,
     p_due_date: dueDate,
     p_notes: notes,
+    p_fee_amount: feeAmount,
+    p_fee_paid_by: feePaidBy,
   })
 
 export const setImmigrationStepBlocking = (stepId: string, blocking: boolean, reason: string) =>
@@ -826,6 +832,18 @@ export const setImmigrationStepBlocking = (stepId: string, blocking: boolean, re
 
 export const updateImmigrationCase = (caseId: string, patch: Partial<Pick<ImmigrationCase, 'mohre_person_code' | 'work_permit_number' | 'uid_number' | 'visa_file_number' | 'notes'>>) =>
   callRpc<{ ok: boolean }>('update_immigration_case', { p_case_id: caseId, p: patch })
+
+export interface ImmigrationCostRow {
+  employee_id: string
+  name: string
+  case_id: string
+  company_paid: number
+  employee_paid: number
+}
+
+// Company-paid vs employee-paid visa/work-permit fee totals, HR/payroll only.
+export const immigrationCostSummary = (entityId: string, from?: string, to?: string) =>
+  callRpc<ImmigrationCostRow[]>('immigration_cost_summary', { p_entity_id: entityId, p_from: from ?? null, p_to: to ?? null })
 
 export const closeImmigrationCase = (caseId: string, status: 'completed' | 'cancelled', reason: string | null) =>
   callRpc<{ ok: boolean }>('close_immigration_case', { p_case_id: caseId, p_status: status, p_reason: reason })

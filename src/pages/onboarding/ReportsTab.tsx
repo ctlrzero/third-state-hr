@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Alert, Skeleton } from '../../components/ui'
-import { onboardingReport, type ReportKind } from '../../lib/api/onboarding'
+import { immigrationCostSummary, onboardingReport, type ReportKind } from '../../lib/api/onboarding'
+import { fmtMoney } from '../../lib/payroll'
 import { STATUS_LABEL } from '../../lib/onboarding'
 import { docTypeLabel } from '../../lib/documents'
 import { fmtDate, todayDubai } from '../../lib/format'
 
-const REPORTS: { kind: ReportKind; label: string; ranged: boolean }[] = [
+type LocalKind = ReportKind | 'visa_costs'
+
+const REPORTS: { kind: LocalKind; label: string; ranged: boolean }[] = [
   { kind: 'funnel', label: 'Onboardings by status', ranged: true },
   { kind: 'time_to_activate', label: 'Time to activate', ranged: true },
   { kind: 'starting_soon', label: 'Starting in the next 14 days', ranged: false },
@@ -15,6 +18,7 @@ const REPORTS: { kind: ReportKind; label: string; ranged: boolean }[] = [
   { kind: 'invitations', label: 'Portal invitations', ranged: true },
   { kind: 'document_rejections', label: 'Rejected documents', ranged: true },
   { kind: 'day_one', label: 'Day-one outcomes', ranged: true },
+  { kind: 'visa_costs', label: 'Visa and permit costs', ranged: true },
 ]
 
 function humanKey(k: string) {
@@ -44,7 +48,17 @@ function ReportBody({ data }: { data: unknown }) {
                 {cols.map((c) => {
                   const v = (r as Record<string, unknown>)[c]
                   const s =
-                    c === 'doc_type' ? docTypeLabel(String(v)) : c === 'status' ? humanKey(String(v)) : /date$/.test(c) ? fmtDate(v as string) : v === null ? '—' : String(v)
+                    c === 'doc_type'
+                      ? docTypeLabel(String(v))
+                      : c === 'status'
+                        ? humanKey(String(v))
+                        : /date$/.test(c)
+                          ? fmtDate(v as string)
+                          : c === 'company_paid' || c === 'employee_paid'
+                            ? fmtMoney(Number(v))
+                            : v === null
+                              ? '—'
+                              : String(v)
                   return (
                     <td key={c} className="px-2 py-1.5 text-ink">
                       {s}
@@ -76,7 +90,7 @@ function ReportBody({ data }: { data: unknown }) {
 }
 
 export default function ReportsTab({ entityId }: { entityId: string }) {
-  const [kind, setKind] = useState<ReportKind>('funnel')
+  const [kind, setKind] = useState<LocalKind>('funnel')
   const today = todayDubai()
   const [from, setFrom] = useState(() => {
     const d = new Date(today + 'T12:00:00Z')
@@ -91,6 +105,13 @@ export default function ReportsTab({ entityId }: { entityId: string }) {
   useEffect(() => {
     setData(undefined)
     setError(null)
+    if (kind === 'visa_costs') {
+      immigrationCostSummary(entityId, from, to).then((r) => {
+        if (r.error) setError(r.error)
+        setData(r.data ?? null)
+      })
+      return
+    }
     onboardingReport(entityId, kind, def.ranged ? from : undefined, def.ranged ? to : undefined).then((r) => {
       if (r.error) setError(r.error)
       setData(r.data?.data ?? null)
