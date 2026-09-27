@@ -137,6 +137,8 @@ export interface EmployeeDocument {
   // with storage_path (and notes) nulled out rather than this flag — check
   // `!doc.storage_path` to decide whether a "View" action is available.
   upload_confirmed?: boolean
+  uploaded_by?: string | null
+  upload_method?: 'self' | 'assisted' | null
   employees?: Pick<Employee, 'id' | 'full_name'> | null
 }
 

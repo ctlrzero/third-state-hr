@@ -105,6 +105,35 @@ export function docTypeLabel(docType: string): string {
  * arrive as "<doc_type>_document" (e.g. "emirates_id_document" → "Emirates ID");
  * everything else ("emergency_contact", "join_date") is humanised.
  */
+export type DocumentRequirementStatus = 'missing' | 'pending_review' | 'approved' | 'rejected' | 'expiring' | 'archived' | 'waived'
+
+export interface DocumentRequirement {
+  id: string
+  employee_id: string
+  doc_type: string
+  status: DocumentRequirementStatus
+  is_restricted: boolean
+  document_id: string | null
+  document_review_status: string | null
+  document_expiry_date: string | null
+  document_upload_method: string | null
+  document_uploaded_by: string | null
+  waived_reason: string | null
+  waived_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export const REQ_STATUS_LABEL: Record<DocumentRequirementStatus, string> = {
+  missing: 'Missing',
+  pending_review: 'Pending review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  expiring: 'Expiring',
+  archived: 'Archived',
+  waived: 'Waived',
+}
+
 export function completenessItemLabel(code: string): string {
   const docType = code.replace(/_document$/, '')
   const known = DOC_TYPES.find((t) => t.value === docType)

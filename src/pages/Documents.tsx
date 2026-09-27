@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
-import { DOC_TYPES, canRoleSeeDocType, docTypeLabel, expiryStatus, type ExpiryStatus } from '../lib/documents'
+import {
+  DOC_TYPES, canRoleSeeDocType, docTypeLabel, expiryStatus, type ExpiryStatus,
+  REQ_STATUS_LABEL, type DocumentRequirement, type DocumentRequirementStatus,
+} from '../lib/documents'
 import type { DocumentReviewStatus, Employee, EmployeeDocument } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
@@ -26,7 +29,8 @@ const REVIEW_FILTERS: { value: DocumentReviewStatus | 'all' | 'current'; label: 
 // and Expiring at the same time, and this screen shows both badges rather
 // than conflating them.
 export default function Documents() {
-  const { profile, activeEntityId } = useAuth()
+  const { profile, activeEntityId, session } = useAuth()
+  const currentUserId = session?.user.id ?? null
   const canManage = profile?.role === 'owner' || profile?.role === 'entity_admin' || profile?.role === 'location_manager'
 
   const [documents, setDocuments] = useState<EmployeeDocument[]>([])
@@ -35,11 +39,14 @@ export default function Documents() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
+  const [tab, setTab] = useState<'register' | 'checklist'>('register')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [expiryFilter, setExpiryFilter] = useState<ExpiryStatus | 'all'>('all')
   const [reviewFilter, setReviewFilter] = useState<DocumentReviewStatus | 'all' | 'current'>('current')
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [uploadPreEmployee, setUploadPreEmployee] = useState<string | null>(null)
+  const [uploadPreDocType, setUploadPreDocType] = useState<string | null>(null)
   const [reviewDoc, setReviewDoc] = useState<EmployeeDocument | null>(null)
   const [renewalDoc, setRenewalDoc] = useState<EmployeeDocument | null>(null)
 
@@ -69,7 +76,7 @@ export default function Documents() {
         : supabase
             .from('employee_documents')
             .select(
-              'id, employee_id, doc_type, storage_path, expiry_date, notes, review_status, version_number, supersedes_document_id, is_current, submitted_by, submitted_at, reviewed_by, reviewed_at, rejection_reason, archived_at, archived_by, created_at, updated_at, upload_confirmed, employees!inner(id, full_name, entity_id)'
+              'id, employee_id, doc_type, storage_path, expiry_date, notes, review_status, version_number, supersedes_document_id, is_current, submitted_by, submitted_at, reviewed_by, reviewed_at, rejection_reason, archived_at, archived_by, created_at, updated_at, upload_confirmed, uploaded_by, upload_method, employees!inner(id, full_name, entity_id)'
             )
             .eq('employees.entity_id', activeEntityId)
             .order('submitted_at', { ascending: false }),
@@ -227,25 +234,55 @@ export default function Documents() {
         <CleanupIncompleteUploadsButton onDone={setNotice} onError={setError} />
       )}
 
+      {canManage && (
+        <div className="flex gap-1 border-b border-border">
+          <button
+            onClick={() => setTab('register')}
+            className={`-mb-px px-4 py-2 text-sm font-medium ${tab === 'register' ? 'border-b-2 border-brand-blue text-brand-blue' : 'text-muted hover:text-ink'}`}
+          >
+            Document register
+          </button>
+          <button
+            onClick={() => setTab('checklist')}
+            className={`-mb-px px-4 py-2 text-sm font-medium ${tab === 'checklist' ? 'border-b-2 border-brand-blue text-brand-blue' : 'text-muted hover:text-ink'}`}
+          >
+            Employee checklist
+          </button>
+        </div>
+      )}
+
       {canManage ? (
-        <ManagerRegister
-          rows={managerRows}
-          totalCount={documents.length}
-          loading={loading}
-          docTypes={visibleDocTypes}
-          search={search}
-          setSearch={setSearch}
-          typeFilter={typeFilter}
-          setTypeFilter={setTypeFilter}
-          expiryFilter={expiryFilter}
-          setExpiryFilter={setExpiryFilter}
-          reviewFilter={reviewFilter}
-          setReviewFilter={setReviewFilter}
-          onView={handleView}
-          onReview={setReviewDoc}
-          onArchive={handleArchive}
-          onDiscardPending={handleDiscardPending}
-        />
+        tab === 'register' ? (
+          <ManagerRegister
+            rows={managerRows}
+            totalCount={documents.length}
+            loading={loading}
+            docTypes={visibleDocTypes}
+            search={search}
+            setSearch={setSearch}
+            typeFilter={typeFilter}
+            setTypeFilter={setTypeFilter}
+            expiryFilter={expiryFilter}
+            setExpiryFilter={setExpiryFilter}
+            reviewFilter={reviewFilter}
+            setReviewFilter={setReviewFilter}
+            onView={handleView}
+            onReview={setReviewDoc}
+            onArchive={handleArchive}
+            onDiscardPending={handleDiscardPending}
+          />
+        ) : (
+          <ChecklistTab
+            employees={employees}
+            docTypes={visibleDocTypes}
+            loading={loading}
+            onUploadOnBehalf={(employeeId, docType) => {
+              setUploadPreEmployee(employeeId)
+              setUploadPreDocType(docType)
+              setUploadOpen(true)
+            }}
+          />
+        )
       ) : (
         <MyDocuments
           currentDocs={myCurrentDocs}
@@ -260,9 +297,18 @@ export default function Documents() {
         <UploadDocumentModal
           employees={employees}
           docTypes={visibleDocTypes}
-          onClose={() => setUploadOpen(false)}
+          preEmployeeId={uploadPreEmployee}
+          preDocType={uploadPreDocType}
+          uploadMethod={uploadPreEmployee ? 'assisted' : 'self'}
+          onClose={() => {
+            setUploadOpen(false)
+            setUploadPreEmployee(null)
+            setUploadPreDocType(null)
+          }}
           onUploaded={(message) => {
             setUploadOpen(false)
+            setUploadPreEmployee(null)
+            setUploadPreDocType(null)
             setNotice(message)
             load()
           }}
@@ -276,6 +322,7 @@ export default function Documents() {
           history={documents.filter(
             (d) => d.employee_id === reviewDoc.employee_id && d.doc_type === reviewDoc.doc_type
           )}
+          currentUserId={currentUserId}
           onClose={() => setReviewDoc(null)}
           onView={handleView}
           onApprove={handleApprove}
@@ -748,6 +795,7 @@ function MyDocuments({
 function ReviewDrawer({
   doc,
   history,
+  currentUserId,
   onClose,
   onView,
   onApprove,
@@ -755,6 +803,7 @@ function ReviewDrawer({
 }: {
   doc: EmployeeDocument
   history: EmployeeDocument[]
+  currentUserId: string | null
   onClose: () => void
   onView: (doc: EmployeeDocument) => void
   onApprove: (doc: EmployeeDocument) => void
@@ -763,6 +812,7 @@ function ReviewDrawer({
   const [reason, setReason] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
   const sortedHistory = [...history].sort((a, b) => b.version_number - a.version_number)
+  const isSelfUpload = currentUserId != null && doc.uploaded_by === currentUserId
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
@@ -801,7 +851,11 @@ function ReviewDrawer({
 
         {doc.review_status === 'pending_review' && (
           <div className="space-y-3 border-t border-border pt-4">
-            {!showRejectForm ? (
+            {isSelfUpload ? (
+              <p className="rounded-lg bg-brand-action-soft px-3 py-2 text-xs text-brand-action-text">
+                You uploaded this document — awaiting line manager review.
+              </p>
+            ) : !showRejectForm ? (
               <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setShowRejectForm(true)}
@@ -862,18 +916,24 @@ function ReviewDrawer({
 function UploadDocumentModal({
   employees,
   docTypes,
+  preEmployeeId,
+  preDocType,
+  uploadMethod = 'self',
   onClose,
   onUploaded,
   onError,
 }: {
   employees: Pick<Employee, 'id' | 'full_name'>[]
   docTypes: typeof DOC_TYPES extends readonly (infer T)[] ? T[] : never
+  preEmployeeId?: string | null
+  preDocType?: string | null
+  uploadMethod?: 'self' | 'assisted'
   onClose: () => void
   onUploaded: (message: string) => void
   onError: (msg: string) => void
 }) {
-  const [employeeId, setEmployeeId] = useState(employees[0]?.id ?? '')
-  const [docType, setDocType] = useState<string>(docTypes[0]?.value ?? 'other')
+  const [employeeId, setEmployeeId] = useState(preEmployeeId ?? employees[0]?.id ?? '')
+  const [docType, setDocType] = useState<string>(preDocType ?? docTypes[0]?.value ?? 'other')
   const [expiryDate, setExpiryDate] = useState('')
   const [notes, setNotes] = useState('')
   const [file, setFile] = useState<File | null>(null)
@@ -907,6 +967,7 @@ function UploadDocumentModal({
       p_file_extension: ext,
       p_expiry_date: expiryDate || null,
       p_notes: notes || null,
+      p_upload_method: uploadMethod,
     })
     if (stageError) {
       setSubmitting(false)
@@ -941,7 +1002,13 @@ function UploadDocumentModal({
       setError(result.code === 'UPLOAD_NOT_FOUND' ? 'The upload did not complete — please try again.' : 'Could not confirm the upload.')
       return
     }
-    onUploaded(result.review_status === 'approved' ? 'Uploaded and approved.' : 'Uploaded — pending review.')
+    onUploaded(
+      result.review_status === 'approved'
+        ? 'Uploaded and approved.'
+        : uploadMethod === 'assisted'
+          ? 'Uploaded and submitted for line manager review.'
+          : 'Uploaded — pending review.'
+    )
   }
 
   return (
@@ -953,33 +1020,47 @@ function UploadDocumentModal({
         <h2 className="mb-4 text-base font-semibold text-ink">Upload document</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label htmlFor="documents-employee-2" className="mb-1 block text-sm font-medium text-ink">Employee</label>
-            <select id="documents-employee-2"
-              value={employeeId}
-              onChange={(e) => setEmployeeId(e.target.value)}
-              required
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-            >
-              {employees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.full_name}
-                </option>
-              ))}
-            </select>
+            <label htmlFor="documents-employee-2" className="mb-1 block text-sm font-medium text-ink">
+              Employee{uploadMethod === 'assisted' && <span className="ml-1 text-xs text-muted">(uploading on behalf)</span>}
+            </label>
+            {preEmployeeId ? (
+              <p className="rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-ink">
+                {employees.find((e) => e.id === preEmployeeId)?.full_name ?? preEmployeeId}
+              </p>
+            ) : (
+              <select id="documents-employee-2"
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
+                required
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+              >
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.full_name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label htmlFor="documents-document-type-3" className="mb-1 block text-sm font-medium text-ink">Document type</label>
-            <select id="documents-document-type-3"
-              value={docType}
-              onChange={(e) => setDocType(e.target.value)}
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-            >
-              {docTypes.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+            {preDocType ? (
+              <p className="rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-ink capitalize">
+                {docTypes.find((t) => t.value === preDocType)?.label ?? preDocType.replace(/_/g, ' ')}
+              </p>
+            ) : (
+              <select id="documents-document-type-3"
+                value={docType}
+                onChange={(e) => setDocType(e.target.value)}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+              >
+                {docTypes.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <label htmlFor="documents-expiry-date-optional-4" className="mb-1 block text-sm font-medium text-ink">Expiry date (optional)</label>
@@ -1029,6 +1110,176 @@ function UploadDocumentModal({
           </div>
         </form>
       </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Manager checklist tab — per-employee requirement status + upload on behalf
+// ---------------------------------------------------------------------------
+
+function ChecklistTab({
+  employees,
+  docTypes,
+  loading,
+  onUploadOnBehalf,
+}: {
+  employees: Pick<Employee, 'id' | 'full_name'>[]
+  docTypes: typeof DOC_TYPES extends readonly (infer T)[] ? T[] : never
+  loading: boolean
+  onUploadOnBehalf: (employeeId: string, docType: string) => void
+}) {
+  const [selectedEmployee, setSelectedEmployee] = useState(employees[0]?.id ?? '')
+  const [requirements, setRequirements] = useState<DocumentRequirement[]>([])
+  const [reqLoading, setReqLoading] = useState(false)
+  const [reqError, setReqError] = useState<string | null>(null)
+  const [waivedId, setWaivedId] = useState<string | null>(null)
+  const [waiveReason, setWaiveReason] = useState('')
+
+  const loadReqs = useCallback(async (empId: string) => {
+    if (!empId) return
+    setReqLoading(true)
+    setReqError(null)
+    const { data, error } = await supabase.rpc('get_document_requirements_for_employee', { p_employee_id: empId })
+    setReqLoading(false)
+    if (error) {
+      setReqError(error.message)
+      return
+    }
+    setRequirements((data ?? []) as DocumentRequirement[])
+  }, [])
+
+  useEffect(() => {
+    if (selectedEmployee) loadReqs(selectedEmployee)
+  }, [selectedEmployee, loadReqs])
+
+  const statusColor: Record<DocumentRequirementStatus, string> = {
+    missing: 'bg-brand-risk-soft text-brand-risk-text',
+    pending_review: 'bg-brand-warning-soft text-brand-warning-solid',
+    approved: 'bg-brand-action-soft text-brand-action-text',
+    rejected: 'bg-brand-risk-soft text-brand-risk-text',
+    expiring: 'bg-brand-warning-soft text-brand-warning-solid',
+    archived: 'bg-surface-alt text-muted',
+    waived: 'bg-surface-alt text-muted',
+  }
+
+  async function handleWaive(req: DocumentRequirement) {
+    if (!waiveReason.trim()) return
+    const { error } = await supabase.rpc('waive_document_requirement', {
+      p_requirement_id: req.id,
+      p_reason: waiveReason.trim(),
+    })
+    if (error) {
+      setReqError(error.message)
+      return
+    }
+    setWaivedId(null)
+    setWaiveReason('')
+    await loadReqs(selectedEmployee)
+  }
+
+  if (loading && employees.length === 0) {
+    return (
+      <div className="space-y-2">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-14 animate-pulse rounded-[14px] bg-surface" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+        Employee
+        <select
+          value={selectedEmployee}
+          onChange={(e) => setSelectedEmployee(e.target.value)}
+          className="w-full max-w-xs rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+        >
+          {employees.map((e) => (
+            <option key={e.id} value={e.id}>
+              {e.full_name}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {reqError && (
+        <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{reqError}</p>
+      )}
+
+      {reqLoading ? (
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-14 animate-pulse rounded-[14px] bg-surface" />
+          ))}
+        </div>
+      ) : requirements.length === 0 ? (
+        <EmptyState
+          title="No document requirements set up"
+          description="Requirements are seeded for each employee on onboarding. None found for this employee."
+        />
+      ) : (
+        <ul className="divide-y divide-border rounded-[14px] border border-border bg-surface shadow-card">
+          {requirements.map((req) => (
+            <li key={req.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-ink">{docTypeLabel(req.doc_type)}</p>
+                {req.waived_reason && (
+                  <p className="text-xs text-muted">Waived: {req.waived_reason}</p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor[req.status]}`}>
+                  {REQ_STATUS_LABEL[req.status]}
+                </span>
+                {(req.status === 'missing' || req.status === 'rejected') && (
+                  <button
+                    onClick={() => onUploadOnBehalf(selectedEmployee, req.doc_type)}
+                    className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
+                  >
+                    Upload on behalf
+                  </button>
+                )}
+                {req.status !== 'waived' && req.status !== 'approved' && (
+                  waivedId === req.id ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        autoFocus
+                        value={waiveReason}
+                        onChange={(e) => setWaiveReason(e.target.value)}
+                        placeholder="Reason"
+                        className="rounded-lg border border-border px-2 py-1 text-xs text-ink focus:border-brand-blue focus:outline-none"
+                      />
+                      <button
+                        onClick={() => handleWaive(req)}
+                        disabled={!waiveReason.trim()}
+                        className="rounded-lg bg-brand-blue px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => { setWaivedId(null); setWaiveReason('') }}
+                        className="rounded-lg border border-border px-2 py-1 text-xs text-muted hover:bg-surface-alt"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setWaivedId(req.id)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-ink/20"
+                    >
+                      Waive
+                    </button>
+                  )
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
