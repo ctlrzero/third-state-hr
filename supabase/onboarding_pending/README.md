@@ -1,8 +1,11 @@
 # Smart Employee Onboarding — full build (Builds A–E)
 
-**Status: deployed to production (`yclhzwghzrohusqxfasq`) as of 27 Sep 2026 — 001–009 and
-011–013.** Migration `010_activation_guard.sql` is deliberately **not** applied yet; it ships in
-the same release as the onboarding UI (see `DEPLOY.md`).
+**Status: fully deployed as of 27 Sep 2026.** Migrations 001–013 (including `010`) are live on
+production (`yclhzwghzrohusqxfasq`), and `feat/payroll-v2` + `feat/onboarding` are merged to `main`
+and confirmed live at `hr.thirdstate.ae` (bundle hash `index-HbDbPmv7.js`). Order followed: merge
+payroll-v2 → confirm its build was live → merge onboarding → confirm its build was live → only then
+apply migration 010, so the "Approve and activate" UI was already reachable before the guard could
+block the old Activate button.
 
 Before deploying, the full 84-check suite was run against production in a single transaction that
 always rolls back (`tests/validate_all_rolled_back.sql`), with 010's function temporarily included

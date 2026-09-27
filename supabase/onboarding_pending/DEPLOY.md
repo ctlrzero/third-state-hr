@@ -9,7 +9,10 @@ Confirmed afterwards: 0 test rows left in any table, RLS enabled on all 22 new t
 helpers directly callable, and 010's guard still absent from the live `set_employee_status`. The
 Supabase security advisor shows no new findings from this work.
 
-**Remaining: step 2 (migration 010) — deploy only with the onboarding UI release.**
+**Step 2 is now done too (27 Sep 2026): `feat/payroll-v2` and `feat/onboarding` were merged to
+`main` in that order, each confirmed live on Vercel (by matching the built JS bundle hash against
+what shipped) before proceeding, and migration 010 was applied only after the onboarding UI was
+confirmed live. All 13 migrations are now on production and the guard is active.
 
 Target: Supabase project `yclhzwghzrohusqxfasq` (production). Take a backup first
 (Dashboard → Database → Backups, or a `pg_dump`).
