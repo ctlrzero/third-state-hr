@@ -1,11 +1,24 @@
 # Smart Employee Onboarding — full build (Builds A–E)
 
-**Status: files only. Nothing here has been applied to production (`yclhzwghzrohusqxfasq`).**
-All database access while writing this was read-only (catalog queries, function definitions).
-One rolled-back validation run was attempted and stopped by a safety check before it reached the
-database. A read-only check afterwards confirmed production is unchanged: no onboarding tables,
-columns or functions exist. **The migrations and tests have therefore not been run.** Run
-`tests/validate_all_rolled_back.sql` first (see `DEPLOY.md` step 0).
+**Status: deployed to production (`yclhzwghzrohusqxfasq`) as of 27 Sep 2026 — 001–009 and
+011–013.** Migration `010_activation_guard.sql` is deliberately **not** applied yet; it ships in
+the same release as the onboarding UI (see `DEPLOY.md`).
+
+Before deploying, the full 84-check suite was run against production in a single transaction that
+always rolls back (`tests/validate_all_rolled_back.sql`), with 010's function temporarily included
+*inside that same rolled-back transaction* to validate it end-to-end without deploying it. Final
+result: **84 passed / 84 total**, then confirmed with read-only queries that no test rows remained
+and that 010's guard is still absent from the live `set_employee_status`.
+
+Two real bugs were found and fixed during this pass (both already reflected in the files below):
+- Three RLS policies in `009_onboarding_rls_storage.sql` (`employee_acknowledgements_select`,
+  `employee_contract_acceptances_select`, `employee_probation_periods_select`) each had one stray
+  extra closing parenthesis — a syntax error that would have failed the `apply_migration` call.
+- `employee_payment_details_select`'s policy joined `public.employees` to check
+  `payroll_can(e.entity_id, 'approve')`, but `employees`' own SELECT policy has no payroll branch —
+  so a payroll-preset **staff** approver (not owner/entity_admin) could not see bank details
+  directly, even though `payroll_can()` itself returned true for them. Fixed by resolving the
+  entity via the existing `payroll_employee_entity()` helper instead of joining `employees`.
 
 This folder replaces the Build A drafts in `~/Downloads` (`001_onboarding_tables.sql` …
 `004_rls_policies.sql`). **Do not run those drafts.** Their policy names clash with these, and they

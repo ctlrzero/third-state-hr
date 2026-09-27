@@ -1,5 +1,16 @@
 # Deploying onboarding (Builds A–E)
 
+**Status as of 27 Sep 2026: steps 0–1 below are done.** Migrations 001–009 and 011–013 are live on
+`yclhzwghzrohusqxfasq`. Validated first with `tests/validate_all_rolled_back.sql` (rolled back,
+nothing kept) — **84 passed / 84 total**, with 010's function temporarily included inside that same
+rolled-back transaction to confirm the guard works before deciding to defer it. Two real bugs found
+during validation are already fixed in the files here (see README's "Status" section for detail).
+Confirmed afterwards: 0 test rows left in any table, RLS enabled on all 22 new tables, 0 internal
+helpers directly callable, and 010's guard still absent from the live `set_employee_status`. The
+Supabase security advisor shows no new findings from this work.
+
+**Remaining: step 2 (migration 010) — deploy only with the onboarding UI release.**
+
 Target: Supabase project `yclhzwghzrohusqxfasq` (production). Take a backup first
 (Dashboard → Database → Backups, or a `pg_dump`).
 
@@ -7,7 +18,7 @@ Target: Supabase project `yclhzwghzrohusqxfasq` (production). Take a backup firs
 `payroll_set_compensation` and `compensation_versions` exist on production. Migrations 005 and 006
 call them.
 
-## 0. Validate first (nothing is kept)
+## 0. Validate first (nothing is kept) — done 27 Sep 2026
 
 Open `tests/validate_all_rolled_back.sql`, paste the whole file into **SQL Editor**, and run it.
 It applies 001–013, runs the 84 checks as each persona, and then rolls everything back.
@@ -21,7 +32,7 @@ Confirm nothing was kept:
 select to_regclass('public.onboarding_instances');   -- expect null
 ```
 
-## 1. Apply 001–009, then 011–013
+## 1. Apply 001–009, then 011–013 — done 27 Sep 2026
 
 Run each file in order, one at a time, in SQL Editor (or `supabase db push` after copying them
 into `supabase/migrations/` with timestamps). Each file is one transaction.

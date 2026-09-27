@@ -3209,30 +3209,35 @@ create policy onboarding_pending_compensation_select on public.onboarding_pendin
                       or public.payroll_can(i.entity_id, 'approve'))
                  and i.employee_id is distinct from (select public.my_employee_id())));
 
+-- Note: resolved via payroll_employee_entity() (SECURITY DEFINER), not a
+-- join to public.employees — employees' own SELECT policy has no payroll
+-- branch (only owner / entity_admin / location_manager / self), so a join
+-- there would silently exclude a payroll_admin-preset STAFF caller (e.g. an
+-- accountant role) even though payroll_can() itself returns true for them.
 create policy employee_payment_details_select on public.employee_payment_details for select to authenticated
   using ((select public.is_active_user()) and (
     employee_id = (select public.my_employee_id())
-    or exists (select 1 from public.employees e where e.id = employee_id and public.payroll_can(e.entity_id, 'approve')
-               and e.id is distinct from (select public.my_employee_id()))));
+    or (public.payroll_can(public.payroll_employee_entity(employee_id), 'approve')
+        and employee_id is distinct from (select public.my_employee_id()))));
 
 -- ---------------------------------------- acknowledgements / contract / probation
 create policy employee_acknowledgements_select on public.employee_acknowledgements for select to authenticated
   using ((select public.is_active_user()) and (employee_id = (select public.my_employee_id())
     or exists (select 1 from public.employees e where e.id = employee_id
                and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity()))
-                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location())))))));
+                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location()))))));
 
 -- Contract acceptance follows the restricted 'contract' document: no branch managers.
 create policy employee_contract_acceptances_select on public.employee_contract_acceptances for select to authenticated
   using ((select public.is_active_user()) and (employee_id = (select public.my_employee_id())
     or exists (select 1 from public.employees e where e.id = employee_id
-               and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity())))))));
+               and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity()))))));
 
 create policy employee_probation_periods_select on public.employee_probation_periods for select to authenticated
   using ((select public.is_active_user()) and (employee_id = (select public.my_employee_id())
     or exists (select 1 from public.employees e where e.id = employee_id
                and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity()))
-                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location())))))));
+                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location()))))));
 
 -- Reviews are management-only (the employee sees the outcome, not the notes).
 create policy employee_probation_reviews_select on public.employee_probation_reviews for select to authenticated
@@ -4534,6 +4539,8 @@ declare
   v_ver integer;
   v_pol record;
   v_period uuid;
+  v_lm_task_ids uuid[];
+  v_settlement_task uuid;
   v_emp3 uuid;
   v_inst3 uuid;
   v_case uuid;
@@ -4939,17 +4946,23 @@ begin
   exception when others then
     perform pg_temp.ok('I4 only one open offboarding', sqlstate = '23505', sqlerrm);
   end;
+  -- Fetched while still logged in as v_admin: offboarding_cases/offboarding_tasks
+  -- are deliberately not directly readable by a branch manager (HR and
+  -- payroll only; branch managers act through the RPCs), so these ids are
+  -- looked up here rather than via a raw select as v_lm below.
+  select array_agg(id) into v_lm_task_ids from public.offboarding_tasks where case_id = v_case and owner_role = 'location_manager';
+  select id into v_settlement_task from public.offboarding_tasks where case_id = v_case and item_key = 'final_settlement';
+
   perform pg_temp.login(v_lm);
   j := public.get_offboarding_case(v_case);
   perform pg_temp.ok('I5 branch manager sees own tasks, no reason or settlement',
     not (j -> 'case' ? 'reason') and j -> 'settlement' = 'null'::jsonb
     and not exists (select 1 from jsonb_array_elements(j -> 'tasks') t where t ->> 'owner_role' <> 'location_manager'), left(j::text, 200));
-  for v_id in select id from public.offboarding_tasks where case_id = v_case and owner_role = 'location_manager' loop
+  foreach v_id in array v_lm_task_ids loop
     perform public.complete_offboarding_task(v_id, 'done', null);
   end loop;
-  select id into v_id from public.offboarding_tasks where case_id = v_case and item_key = 'final_settlement';
   begin
-    perform public.complete_offboarding_task(v_id, 'done', null);
+    perform public.complete_offboarding_task(v_settlement_task, 'done', null);
     perform pg_temp.ok('I6 branch manager cannot mark the final settlement', false);
   exception when others then
     perform pg_temp.ok('I6 branch manager cannot mark the final settlement', sqlstate = '42501', sqlerrm);

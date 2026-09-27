@@ -90,6 +90,8 @@ declare
   v_ver integer;
   v_pol record;
   v_period uuid;
+  v_lm_task_ids uuid[];
+  v_settlement_task uuid;
   v_emp3 uuid;
   v_inst3 uuid;
   v_case uuid;
@@ -495,17 +497,23 @@ begin
   exception when others then
     perform pg_temp.ok('I4 only one open offboarding', sqlstate = '23505', sqlerrm);
   end;
+  -- Fetched while still logged in as v_admin: offboarding_cases/offboarding_tasks
+  -- are deliberately not directly readable by a branch manager (HR and
+  -- payroll only; branch managers act through the RPCs), so these ids are
+  -- looked up here rather than via a raw select as v_lm below.
+  select array_agg(id) into v_lm_task_ids from public.offboarding_tasks where case_id = v_case and owner_role = 'location_manager';
+  select id into v_settlement_task from public.offboarding_tasks where case_id = v_case and item_key = 'final_settlement';
+
   perform pg_temp.login(v_lm);
   j := public.get_offboarding_case(v_case);
   perform pg_temp.ok('I5 branch manager sees own tasks, no reason or settlement',
     not (j -> 'case' ? 'reason') and j -> 'settlement' = 'null'::jsonb
     and not exists (select 1 from jsonb_array_elements(j -> 'tasks') t where t ->> 'owner_role' <> 'location_manager'), left(j::text, 200));
-  for v_id in select id from public.offboarding_tasks where case_id = v_case and owner_role = 'location_manager' loop
+  foreach v_id in array v_lm_task_ids loop
     perform public.complete_offboarding_task(v_id, 'done', null);
   end loop;
-  select id into v_id from public.offboarding_tasks where case_id = v_case and item_key = 'final_settlement';
   begin
-    perform public.complete_offboarding_task(v_id, 'done', null);
+    perform public.complete_offboarding_task(v_settlement_task, 'done', null);
     perform pg_temp.ok('I6 branch manager cannot mark the final settlement', false);
   exception when others then
     perform pg_temp.ok('I6 branch manager cannot mark the final settlement', sqlstate = '42501', sqlerrm);

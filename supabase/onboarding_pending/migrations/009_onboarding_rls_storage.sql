@@ -123,30 +123,35 @@ create policy onboarding_pending_compensation_select on public.onboarding_pendin
                       or public.payroll_can(i.entity_id, 'approve'))
                  and i.employee_id is distinct from (select public.my_employee_id())));
 
+-- Note: resolved via payroll_employee_entity() (SECURITY DEFINER), not a
+-- join to public.employees — employees' own SELECT policy has no payroll
+-- branch (only owner / entity_admin / location_manager / self), so a join
+-- there would silently exclude a payroll_admin-preset STAFF caller (e.g. an
+-- accountant role) even though payroll_can() itself returns true for them.
 create policy employee_payment_details_select on public.employee_payment_details for select to authenticated
   using ((select public.is_active_user()) and (
     employee_id = (select public.my_employee_id())
-    or exists (select 1 from public.employees e where e.id = employee_id and public.payroll_can(e.entity_id, 'approve')
-               and e.id is distinct from (select public.my_employee_id()))));
+    or (public.payroll_can(public.payroll_employee_entity(employee_id), 'approve')
+        and employee_id is distinct from (select public.my_employee_id()))));
 
 -- ---------------------------------------- acknowledgements / contract / probation
 create policy employee_acknowledgements_select on public.employee_acknowledgements for select to authenticated
   using ((select public.is_active_user()) and (employee_id = (select public.my_employee_id())
     or exists (select 1 from public.employees e where e.id = employee_id
                and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity()))
-                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location())))))));
+                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location()))))));
 
 -- Contract acceptance follows the restricted 'contract' document: no branch managers.
 create policy employee_contract_acceptances_select on public.employee_contract_acceptances for select to authenticated
   using ((select public.is_active_user()) and (employee_id = (select public.my_employee_id())
     or exists (select 1 from public.employees e where e.id = employee_id
-               and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity())))))));
+               and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity()))))));
 
 create policy employee_probation_periods_select on public.employee_probation_periods for select to authenticated
   using ((select public.is_active_user()) and (employee_id = (select public.my_employee_id())
     or exists (select 1 from public.employees e where e.id = employee_id
                and ((select public.my_role()) = 'owner' or ((select public.my_role()) = 'entity_admin' and e.entity_id = (select public.my_entity()))
-                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location())))))));
+                    or ((select public.my_role()) = 'location_manager' and e.home_location_id = (select public.my_location()))))));
 
 -- Reviews are management-only (the employee sees the outcome, not the notes).
 create policy employee_probation_reviews_select on public.employee_probation_reviews for select to authenticated
