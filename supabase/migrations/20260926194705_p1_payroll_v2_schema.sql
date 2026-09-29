@@ -1,16 +1,6 @@
--- ============================================================
--- Payroll v2 — schema.
--- A separate module next to the legacy payroll_runs/payslips tables,
--- which stay as read-only history. All writes go through RPCs
--- (later migrations); authenticated gets SELECT only, filtered by RLS.
--- ============================================================
-
--- ---------------------------------------------------------------- employees
+-- Payroll v2 — schema (see supabase/migrations/20260927090000_p1_payroll_v2_schema.sql)
 alter table public.employees add column if not exists last_working_date date;
 
--- --------------------------------------------------------------- leave types
--- How a leave day affects pay. 'tiered' uses full_pay_days / half_pay_days /
--- unpaid_days cumulatively within the employee's service year.
 alter table public.leave_types
   add column if not exists payroll_treatment text not null default 'paid'
     check (payroll_treatment in ('paid', 'unpaid', 'tiered'));
@@ -18,13 +8,10 @@ update public.leave_types set payroll_treatment = 'unpaid'
  where name ilike 'unpaid%' or name ilike 'hajj%' or name ilike 'study%';
 update public.leave_types set payroll_treatment = 'tiered' where name ilike 'sick%';
 
--- ----------------------------------------------------------- payroll settings
 create table public.payroll_settings (
   id uuid primary key default gen_random_uuid(),
   entity_id uuid not null references public.entities(id) on delete cascade,
   effective_from date not null,
-  -- Day of the FOLLOWING month salaries are paid. Ministerial Resolution
-  -- 340/2026 (WPS, from 1 Jun 2026) makes the 1st the due date.
   pay_day smallint not null default 1 check (pay_day between 1 and 28),
   day_rate_basis text not null default 'calendar_days' check (day_rate_basis in ('calendar_days', 'fixed_30')),
   approval_mode text not null default 'two_step'
@@ -45,9 +32,8 @@ create table public.payroll_settings (
   unique (entity_id, effective_from)
 );
 comment on table public.payroll_settings is
-  'Effective-dated payroll policy per company. confirmed=false means the owner has not reviewed the defaults yet.';
+  'Effective-dated payroll policy per company. confirmed=false means the owner has not reviewed the defaults yet. pay_day = day of the following month (WPS due date is the 1st, MR 340/2026).';
 
--- ------------------------------------------------------ compensation versions
 create table public.compensation_versions (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.employees(id) on delete cascade,
@@ -64,7 +50,6 @@ create table public.compensation_versions (
 );
 create index on public.compensation_versions (employee_id, effective_from desc);
 
--- Seed from the legacy single-row table (only rows with a rate).
 insert into public.compensation_versions (employee_id, effective_from, pay_type, basic_monthly, hourly_rate, overtime_eligible, reason)
 select c.employee_id, coalesce(e.join_date, date '2000-01-01'), c.pay_type,
        case when c.pay_type = 'monthly' then c.pay_rate end,
@@ -75,7 +60,6 @@ select c.employee_id, coalesce(e.join_date, date '2000-01-01'), c.pay_type,
  where c.pay_rate is not null
 on conflict do nothing;
 
--- ---------------------------------------------------- compensation components
 create table public.compensation_components (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references public.employees(id) on delete cascade,
@@ -94,7 +78,6 @@ create table public.compensation_components (
 );
 create index on public.compensation_components (employee_id, effective_from);
 
--- --------------------------------------------------------- monthly workspace
 create table public.payroll_periods (
   id uuid primary key default gen_random_uuid(),
   entity_id uuid not null references public.entities(id) on delete cascade,
@@ -109,7 +92,6 @@ create table public.payroll_periods (
 create unique index payroll_periods_one_regular_month
   on public.payroll_periods (entity_id, period_start) where kind = 'regular';
 
--- ------------------------------------------------- employee payroll records
 create table public.payroll_records (
   id uuid primary key default gen_random_uuid(),
   period_id uuid not null references public.payroll_periods(id) on delete restrict,
@@ -135,7 +117,6 @@ create table public.payroll_records (
   correction_reason text,
   created_at timestamptz not null default now()
 );
--- One live entitlement per employee per workspace; corrections supersede.
 create unique index payroll_records_one_live
   on public.payroll_records (period_id, employee_id) where superseded_by_record_id is null;
 create index on public.payroll_records (employee_id);
@@ -155,11 +136,9 @@ create table public.payroll_lines (
   sort smallint not null default 0
 );
 create index on public.payroll_lines (record_id);
--- A source is counted at most once per record (no double import).
 create unique index payroll_lines_one_per_source
   on public.payroll_lines (record_id, source_type, source_id, code) where source_id is not null;
 
--- ------------------------------------------------------------ hours inputs
 create table public.payroll_hours (
   id uuid primary key default gen_random_uuid(),
   period_id uuid not null references public.payroll_periods(id) on delete cascade,
@@ -178,7 +157,6 @@ create table public.payroll_hours (
   unique (period_id, employee_id)
 );
 
--- ------------------------------------------------------------- adjustments
 create table public.payroll_adjustments (
   id uuid primary key default gen_random_uuid(),
   period_id uuid not null references public.payroll_periods(id) on delete cascade,
@@ -199,7 +177,6 @@ create table public.payroll_adjustments (
 );
 create index on public.payroll_adjustments (period_id, employee_id);
 
--- ------------------------------------------------------------------- tips
 create table public.tip_role_points (
   position_id uuid primary key references public.positions(id) on delete cascade,
   points numeric(6,2) not null check (points > 0),
@@ -237,7 +214,6 @@ create table public.tip_allocations (
   unique (pool_id, employee_id)
 );
 
--- ---------------------------------------------------------------- advances
 create table public.salary_advances (
   id uuid primary key default gen_random_uuid(),
   entity_id uuid not null references public.entities(id),
@@ -264,10 +240,8 @@ create table public.advance_repayments (
   amount numeric(12,2) not null check (amount > 0),
   created_at timestamptz not null default now()
 );
--- One repayment per advance per live record; corrections replace via supersede.
 create unique index advance_repayments_one_per_record on public.advance_repayments (advance_id, record_id);
 
--- ---------------------------------------------------------------- payments
 create table public.payroll_payments (
   id uuid primary key default gen_random_uuid(),
   record_id uuid not null references public.payroll_records(id),
@@ -284,7 +258,6 @@ create table public.payroll_payments (
 );
 create index on public.payroll_payments (record_id);
 
--- ----------------------------------------------------------------- exports
 create table public.payroll_exports (
   id uuid primary key default gen_random_uuid(),
   period_id uuid not null references public.payroll_periods(id),
@@ -302,7 +275,6 @@ create table public.payroll_export_items (
   primary key (export_id, record_id)
 );
 
--- ------------------------------------------------------------ permissions
 create table public.payroll_permissions (
   user_id uuid not null references auth.users(id) on delete cascade,
   entity_id uuid not null references public.entities(id) on delete cascade,
@@ -313,7 +285,6 @@ create table public.payroll_permissions (
   primary key (user_id, entity_id)
 );
 
--- ----------------------------------------------------------------- privacy
 do $$
 declare t text;
 begin
@@ -325,4 +296,4 @@ begin
     execute format('revoke all on table public.%I from public, anon, authenticated', t);
     execute format('grant select on table public.%I to authenticated', t);
   end loop;
-end $$;
+end $$;;

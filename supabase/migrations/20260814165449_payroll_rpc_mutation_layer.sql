@@ -358,7 +358,7 @@ begin
   end if;
 
   if v_run.status <> 'draft' then
-    insert into audit_log (table_name, record_id, changed_by, action, new_value)
+    insert into audit_log (table_name, record_id, changed_by, action, old_value)
     values ('payslip_deductions', p_deduction_id, auth.uid(), 'payroll_change_rejected',
       jsonb_build_object('reason', 'run_locked', 'run_status', v_run.status, 'request_id', v_request_id));
     return jsonb_build_object('ok', false, 'code', 'PAYROLL_RUN_LOCKED', 'message', 'This payroll run is locked and cannot be changed.', 'request_id', v_request_id);
@@ -392,4 +392,4 @@ grant execute on function public.record_payslip_deduction(uuid, uuid, text, nume
 
 revoke all on function public.delete_payslip_deduction(uuid) from public, anon;
 grant execute on function public.delete_payslip_deduction(uuid) to authenticated;
-
+;
