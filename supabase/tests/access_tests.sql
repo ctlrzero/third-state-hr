@@ -131,6 +131,11 @@ insert into results select * from pg_temp.chk('revoked B: get_my_payslips', (sel
 insert into results select * from pg_temp.chk('revoked B: clock_in', (select sub::text from personas where k='st_b'), 'deny', $$public.clock_in()$$);
 insert into results select * from pg_temp.chk('revoked B: get_my_attendance', (select sub::text from personas where k='st_b'), 'deny', $$(select json_agg(x) from public.get_my_attendance('2020-01-01','2030-12-31') x)$$);
 insert into results select * from pg_temp.chk('revoked B: get_my_notifications', (select sub::text from personas where k='st_b'), 'deny', $$(select json_agg(x) from public.get_my_notifications(50,null,false) x)$$);
+-- no-role guard hotfix: a revoked user must be refused by role-checked RPCs
+insert into results select * from pg_temp.chk('revoked B: approve_document', (select sub::text from personas where k='st_b'), 'deny', $$public.approve_document('a0000000-0000-4000-8000-000000000112')$$);
+insert into results select * from pg_temp.chk('revoked B: approve_leave_request', (select sub::text from personas where k='st_b'), 'deny', $$public.approve_leave_request('a0000000-0000-4000-8000-000000000101','approve',false,null)$$);
+insert into results select * from pg_temp.chk('revoked B: grant_leave_balance', (select sub::text from personas where k='st_b'), 'deny', $$public.grant_leave_balance('a0000000-0000-4000-8000-000000000031', gen_random_uuid(), 5, 'x')$$);
+insert into results select * from pg_temp.chk('revoked B: publish_schedule_period', (select sub::text from personas where k='st_b'), 'deny', $$public.publish_schedule_period('a0000000-0000-4000-8000-000000000011', current_date, current_date + 7)$$);
 
 -- ---------------------------------------------------------------- anon
 insert into results
