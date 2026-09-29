@@ -16,6 +16,13 @@ import type { ShiftAdjustment, ShiftChangeType,
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
+import {
+  AutoScheduleModal,
+  BranchSetupDrawer,
+  DeletedShiftsDrawer,
+  DeleteShiftsModal,
+  type DeletableShift,
+} from './schedules/SchedulingTools'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -82,7 +89,8 @@ export default function Schedules() {
 // ---------------------------------------------------------------------------
 
 function ScheduleAdmin() {
-  const { activeEntityId } = useAuth()
+  const { activeEntityId, profile } = useAuth()
+  const isAdmin = profile?.role === 'owner' || profile?.role === 'entity_admin'
   const [shifts, setShifts] = useState<Shift[]>([])
   const [swaps, setSwaps] = useState<ShiftSwapRequest[]>([])
   const [locations, setLocations] = useState<Pick<Location, 'id' | 'name'>[]>([])
@@ -98,6 +106,9 @@ function ScheduleAdmin() {
   const [adjustShift, setAdjustShift] = useState<Shift | null>(null)
   const [cancelPublishedShift, setCancelPublishedShift] = useState<Shift | null>(null)
   const [historyShift, setHistoryShift] = useState<Shift | null>(null)
+  const [selectedCancelled, setSelectedCancelled] = useState<Set<string>>(new Set())
+  const [toDelete, setToDelete] = useState<Shift[] | null>(null)
+  const [tool, setTool] = useState<'auto' | 'setup' | 'deleted' | null>(null)
 
   const employeesById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees])
 
@@ -191,6 +202,29 @@ function ScheduleAdmin() {
     load()
   }
 
+  const visibleCancelled = useMemo(() => visibleShifts.filter((s) => s.status === 'cancelled'), [visibleShifts])
+  const selectedList = visibleCancelled.filter((s) => selectedCancelled.has(s.id))
+
+  function toggleCancelled(id: string, on: boolean) {
+    setSelectedCancelled((cur) => {
+      const n = new Set(cur)
+      if (on) n.add(id)
+      else n.delete(id)
+      return n
+    })
+  }
+
+  function asDeletable(s: Shift): DeletableShift {
+    const who = s.employees?.full_name ?? employeesById.get(s.employee_id ?? '')?.full_name ?? 'Open shift'
+    return {
+      id: s.id,
+      shift_date: s.shift_date,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      label: `${who} · ${s.locations?.name ?? 'Branch'}`,
+    }
+  }
+
   const pendingSwaps = swaps.filter((s) => s.status === 'claimed')
   const otherSwaps = swaps.filter((s) => s.status !== 'claimed')
 
@@ -202,12 +236,24 @@ function ScheduleAdmin() {
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Schedules</h1>
           <p className="text-xs text-muted">{loading ? 'Loading…' : `${visibleShifts.length} shifts`}</p>
         </div>
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
-        >
-          New shift
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {isAdmin && (
+            <>
+              <button onClick={() => setTool('setup')} className="btn-secondary">
+                Branch setup
+              </button>
+              <button onClick={() => setTool('auto')} className="btn-secondary">
+                Auto-schedule
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setCreateOpen(true)}
+            className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
+          >
+            New shift
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -304,6 +350,36 @@ function ScheduleAdmin() {
       ) : visibleShifts.length === 0 ? (
         <EmptyState title="No shifts in this window" description="Create a shift to start building the roster." />
       ) : (
+        <>
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            {visibleCancelled.length > 0 && (
+              <>
+                <label className="flex items-center gap-1.5 text-muted">
+                  <input
+                    type="checkbox"
+                    checked={selectedList.length > 0 && selectedList.length === visibleCancelled.length}
+                    onChange={(e) =>
+                      setSelectedCancelled(e.target.checked ? new Set(visibleCancelled.map((s) => s.id)) : new Set())
+                    }
+                  />
+                  Select all cancelled ({visibleCancelled.length})
+                </label>
+                {selectedList.length > 0 && (
+                  <button
+                    onClick={() => setToDelete(selectedList)}
+                    className="rounded-full bg-brand-risk-soft px-3 py-1 font-medium text-brand-risk-text"
+                  >
+                    Delete selected ({selectedList.length})
+                  </button>
+                )}
+              </>
+            )}
+            <button onClick={() => setTool('deleted')} className="ml-auto font-medium text-muted hover:text-ink hover:underline">
+              Deleted shifts log
+            </button>
+          </div>
+        )}
         <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-card">
           <table className="table-stack w-full text-left text-sm">
             <thead className="border-b border-border bg-surface-alt text-xs uppercase tracking-wide text-muted">
@@ -320,7 +396,19 @@ function ScheduleAdmin() {
             <tbody className="divide-y divide-border">
               {visibleShifts.map((s) => (
                 <tr key={s.id}>
-                  <td data-label="Date" className="px-4 py-3 text-ink">{fmtDate(s.shift_date)}</td>
+                  <td data-label="Date" className="px-4 py-3 text-ink">
+                    <span className="flex items-center gap-2">
+                      {isAdmin && s.status === 'cancelled' && (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select cancelled shift on ${fmtDate(s.shift_date)}`}
+                          checked={selectedCancelled.has(s.id)}
+                          onChange={(e) => toggleCancelled(s.id, e.target.checked)}
+                        />
+                      )}
+                      {fmtDate(s.shift_date)}
+                    </span>
+                  </td>
                   <td data-label="Time" className="px-4 py-3 text-muted">
                     {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
                     {s.break_minutes > 0 && <span className="ml-1 text-xs">· {s.break_minutes}m break</span>}
@@ -351,6 +439,11 @@ function ScheduleAdmin() {
                           History
                         </button>
                       )}
+                      {isAdmin && s.status === 'cancelled' && (
+                        <button onClick={() => setToDelete([s])} className="text-xs font-medium text-brand-risk hover:underline">
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -358,6 +451,7 @@ function ScheduleAdmin() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {otherSwaps.length > 0 && (
@@ -439,6 +533,46 @@ function ScheduleAdmin() {
         <ShiftHistoryDrawer
           shift={historyShift}
           onClose={() => setHistoryShift(null)}
+        />
+      )}
+
+      {toDelete && (
+        <DeleteShiftsModal
+          shifts={toDelete.map(asDeletable)}
+          onClose={() => setToDelete(null)}
+          onDone={(res) => {
+            setToDelete(null)
+            setSelectedCancelled(new Set())
+            const skipped = res.skipped.length
+              ? ` ${res.skipped.length} skipped: ${res.skipped.map((x) => `${fmtDate(x.shift_date)} (${x.reason})`).join(', ')}.`
+              : ''
+            setNotice(`Deleted ${res.deleted} shift${res.deleted === 1 ? '' : 's'} — kept in the deleted shifts log.${skipped}`)
+            load()
+          }}
+        />
+      )}
+
+      {tool === 'deleted' && activeEntityId && (
+        <DeletedShiftsDrawer entityId={activeEntityId} locations={locations} employees={employees} onClose={() => setTool(null)} />
+      )}
+
+      {tool === 'setup' && activeEntityId && (
+        <BranchSetupDrawer entityId={activeEntityId} positions={positions} onClose={() => setTool(null)} onSaved={setNotice} />
+      )}
+
+      {tool === 'auto' && activeEntityId && (
+        <AutoScheduleModal
+          entityId={activeEntityId}
+          locations={locations}
+          onClose={() => setTool(null)}
+          onOpenSetup={() => setTool('setup')}
+          onApplied={(created) => {
+            setTool(null)
+            setNotice(
+              `Created ${created} draft shift${created === 1 ? '' : 's'} from the auto-scheduler. Review them below, then use Publish period to make them visible to staff.`
+            )
+            load()
+          }}
         />
       )}
     </div>
