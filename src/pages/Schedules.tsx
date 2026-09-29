@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { fmtDayShort, fmtTime } from '../lib/format'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
@@ -17,9 +17,8 @@ import type { ShiftAdjustment, ShiftChangeType,
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
 import {
-  AutoScheduleModal,
-  BranchSetupDrawer,
-  DeletedShiftsDrawer,
+  AutoSchedulePanel,
+  DeletedShiftsSheet,
   DeleteShiftsModal,
   type DeletableShift,
 } from './schedules/SchedulingTools'
@@ -108,7 +107,15 @@ function ScheduleAdmin() {
   const [historyShift, setHistoryShift] = useState<Shift | null>(null)
   const [selectedCancelled, setSelectedCancelled] = useState<Set<string>>(new Set())
   const [toDelete, setToDelete] = useState<Shift[] | null>(null)
-  const [tool, setTool] = useState<'auto' | 'setup' | 'deleted' | null>(null)
+  const [showDeleted, setShowDeleted] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const mode: 'manual' | 'auto' = isAdmin && params.get('mode') === 'auto' ? 'auto' : 'manual'
+  const setMode = (m: 'manual' | 'auto') => {
+    const next = new URLSearchParams(params)
+    if (m === 'auto') next.set('mode', 'auto')
+    else next.delete('mode')
+    setParams(next, { replace: true })
+  }
 
   const employeesById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees])
 
@@ -236,25 +243,26 @@ function ScheduleAdmin() {
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Schedules</h1>
           <p className="text-xs text-muted">{loading ? 'Loading…' : `${visibleShifts.length} shifts`}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {isAdmin && (
-            <>
-              <button onClick={() => setTool('setup')} className="btn-secondary">
-                Branch setup
-              </button>
-              <button onClick={() => setTool('auto')} className="btn-secondary">
-                Auto-schedule
-              </button>
-            </>
-          )}
+        {mode === 'manual' && (
           <button
             onClick={() => setCreateOpen(true)}
-            className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
+            className="press rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
           >
             New shift
           </button>
-        </div>
+        )}
       </div>
+
+      {isAdmin && (
+        <div className="flex flex-wrap items-center gap-3">
+          <ModeSwitch mode={mode} onChange={setMode} />
+          <p className="text-[13px] text-muted">
+            {mode === 'manual'
+              ? 'Create and edit shifts yourself, or generate them from recurring templates.'
+              : 'Let the scheduler draft shifts from opening hours and staffing needs — you review and publish.'}
+          </p>
+        </div>
+      )}
 
       {error && (
         <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
@@ -298,6 +306,23 @@ function ScheduleAdmin() {
         </div>
       )}
 
+      {mode === 'auto' && activeEntityId ? (
+        <div key="auto" className="rise">
+          <AutoSchedulePanel
+            entityId={activeEntityId}
+            positions={positions}
+            onNotice={setNotice}
+            onApplied={(created) => {
+              setMode('manual')
+              setNotice(
+                `Created ${created} draft shift${created === 1 ? '' : 's'}. They're listed below as drafts — use Publish period when you're ready for staff to see them.`
+              )
+              load()
+            }}
+          />
+        </div>
+      ) : (
+      <div key="manual" className="rise space-y-5">
       <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted w-full sm:w-56">
         Branch
         <select
@@ -375,7 +400,7 @@ function ScheduleAdmin() {
                 )}
               </>
             )}
-            <button onClick={() => setTool('deleted')} className="ml-auto font-medium text-muted hover:text-ink hover:underline">
+            <button onClick={() => setShowDeleted(true)} className="press ml-auto font-medium text-muted hover:text-ink hover:underline">
               Deleted shifts log
             </button>
           </div>
@@ -472,6 +497,8 @@ function ScheduleAdmin() {
           </ul>
         </div>
       )}
+      </div>
+      )}
 
       {createOpen && activeEntityId && (
         <NewShiftModal
@@ -552,29 +579,51 @@ function ScheduleAdmin() {
         />
       )}
 
-      {tool === 'deleted' && activeEntityId && (
-        <DeletedShiftsDrawer entityId={activeEntityId} locations={locations} employees={employees} onClose={() => setTool(null)} />
+      {showDeleted && activeEntityId && (
+        <DeletedShiftsSheet entityId={activeEntityId} locations={locations} employees={employees} onClose={() => setShowDeleted(false)} />
       )}
+    </div>
+  )
+}
 
-      {tool === 'setup' && activeEntityId && (
-        <BranchSetupDrawer entityId={activeEntityId} positions={positions} onClose={() => setTool(null)} onSaved={setNotice} />
-      )}
+const MODES = [
+  { id: 'manual', label: 'Manual' },
+  { id: 'auto', label: 'Auto-schedule' },
+] as const
 
-      {tool === 'auto' && activeEntityId && (
-        <AutoScheduleModal
-          entityId={activeEntityId}
-          locations={locations}
-          onClose={() => setTool(null)}
-          onOpenSetup={() => setTool('setup')}
-          onApplied={(created) => {
-            setTool(null)
-            setNotice(
-              `Created ${created} draft shift${created === 1 ? '' : 's'} from the auto-scheduler. Review them below, then use Publish period to make them visible to staff.`
-            )
-            load()
-          }}
-        />
-      )}
+function ModeSwitch({ mode, onChange }: { mode: 'manual' | 'auto'; onChange: (m: 'manual' | 'auto') => void }) {
+  const index = MODES.findIndex((m) => m.id === mode)
+  return (
+    <div
+      className="segmented"
+      role="radiogroup"
+      aria-label="Scheduling mode"
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+        e.preventDefault()
+        const next = MODES[(index + (e.key === 'ArrowRight' ? 1 : MODES.length - 1)) % MODES.length]
+        onChange(next.id)
+        ;(e.currentTarget.querySelector(`[data-mode="${next.id}"]`) as HTMLElement | null)?.focus()
+      }}
+    >
+      <span
+        className="segmented__thumb"
+        aria-hidden="true"
+        style={{ width: `calc(${100 / MODES.length}% - 3px)`, transform: `translateX(${index * 100}%)` }}
+      />
+      {MODES.map((m) => (
+        <button
+          key={m.id}
+          data-mode={m.id}
+          role="radio"
+          aria-checked={mode === m.id}
+          tabIndex={mode === m.id ? 0 : -1}
+          onClick={() => onChange(m.id)}
+          className="segmented__option"
+        >
+          {m.label}
+        </button>
+      ))}
     </div>
   )
 }

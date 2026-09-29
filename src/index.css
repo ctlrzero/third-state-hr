@@ -181,3 +181,205 @@
   }
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Fluid motion + materials (scheduling). Springs are baked into linear()
+   from damping/response; CSS transitions retarget from the live value, so
+   every one of these is interruptible mid-flight.
+   --------------------------------------------------------------------------- */
+:root {
+  /* damping 1.0, response 0.4s — default, no overshoot */
+  --spring-smooth: linear(0, 0.057, 0.18, 0.32, 0.454, 0.572, 0.67, 0.749, 0.812, 0.86, 0.896, 0.924, 0.944, 0.959, 0.971, 0.979, 0.985, 0.989, 0.992, 0.994, 0.996, 0.997, 0.998, 0.999, 1);
+  --spring-smooth-ms: 590ms;
+  /* damping 0.8, response 0.35s — only after a flick carried momentum */
+  --spring-bounce: linear(0, 0.034, 0.118, 0.227, 0.346, 0.463, 0.572, 0.669, 0.751, 0.82, 0.875, 0.918, 0.95, 0.974, 0.991, 1.002, 1.009, 1.013, 1.015, 1.015, 1.014, 1.013, 1.011, 1.009, 1.007, 1.006, 1.004, 1.003, 1.002, 1.002, 1);
+  --spring-bounce-ms: 480ms;
+}
+
+/* Feedback on press, not release */
+.press {
+  transition: transform 100ms ease-out, background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+.press:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Segmented control — thumb glides between options */
+.segmented {
+  position: relative;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+}
+.segmented__thumb {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  border-radius: 9px;
+  background: var(--color-surface);
+  box-shadow: 0 1px 2px rgba(23, 32, 51, 0.08), 0 3px 8px rgba(23, 32, 51, 0.06);
+  transition: transform var(--spring-smooth-ms) var(--spring-smooth);
+}
+.segmented__option {
+  position: relative;
+  z-index: 1;
+  padding: 7px 16px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: var(--color-muted);
+  border-radius: 9px;
+  transition: color 200ms ease, transform 100ms ease-out;
+}
+.segmented__option[aria-checked='true'] {
+  color: var(--color-ink);
+}
+.segmented__option:active {
+  transform: scale(0.97);
+}
+.segmented__option:focus-visible {
+  outline: 2px solid var(--color-brand-blue);
+  outline-offset: 1px;
+}
+
+/* Side sheet — enters and leaves along the same path (the right edge) */
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(23, 32, 51, 0.32);
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.sheet-scrim[data-open='true'] {
+  opacity: 1;
+}
+.sheet {
+  position: fixed;
+  z-index: 41;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(640px, 100vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  box-shadow: -24px 0 60px rgba(23, 32, 51, 0.16);
+  transform: translateX(105%);
+  transition: transform var(--spring-smooth-ms) var(--spring-smooth);
+  will-change: transform;
+  touch-action: pan-y;
+}
+.sheet[data-open='true'] {
+  transform: translateX(0);
+}
+.sheet[data-dragging='true'] {
+  transition: none;
+}
+.sheet__grab {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 4px;
+  height: 44px;
+  margin-top: -22px;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+/* Translucent chrome that content scrolls beneath */
+.material {
+  background: color-mix(in srgb, var(--color-surface) 72%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+}
+.material-edge-top {
+  box-shadow: 0 -1px 0 rgba(23, 32, 51, 0.06), 0 -12px 24px -12px rgba(23, 32, 51, 0.12);
+}
+.material-edge-bottom {
+  box-shadow: 0 1px 0 rgba(23, 32, 51, 0.06);
+}
+
+/* Content that materialises in place, staggered via --i */
+.rise {
+  animation: rise var(--spring-smooth-ms) var(--spring-smooth) both;
+  animation-delay: calc(var(--i, 0) * 28ms);
+}
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+/* Timeline bars grow from their start time */
+.bar-grow {
+  transform-origin: left center;
+  animation: bar-grow var(--spring-smooth-ms) var(--spring-smooth) both;
+  animation-delay: calc(var(--i, 0) * 18ms);
+}
+@keyframes bar-grow {
+  from {
+    opacity: 0;
+    transform: scaleX(0.2);
+  }
+}
+
+/* Results dim (not vanish) when inputs change — continuity over reset */
+.stale {
+  opacity: 0.45;
+  filter: saturate(0.4);
+  transition: opacity 250ms ease, filter 250ms ease;
+}
+.fresh {
+  transition: opacity 250ms ease, filter 250ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet,
+  .sheet[data-open='true'] {
+    transform: none;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+  .sheet[data-open='true'] {
+    opacity: 1;
+  }
+  .segmented__thumb {
+    transition: none;
+  }
+  .rise,
+  .bar-grow {
+    animation: fade-in 200ms ease both;
+    animation-delay: 0ms;
+  }
+  .press:active:not(:disabled),
+  .segmented__option:active {
+    transform: none;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .material {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-contrast: more) {
+  .material {
+    background: var(--color-surface);
+    border-color: var(--color-ink);
+  }
+  .segmented__thumb {
+    outline: 1px solid var(--color-ink);
+  }
+}

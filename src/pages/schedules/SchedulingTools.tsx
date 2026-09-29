@@ -1,21 +1,31 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { fmtDayShort, fmtTime } from '../../lib/format'
+import { Sheet } from '../../components/Sheet'
 import type { Employee, Location, Position, ShiftAdjustment } from '../../types/db'
 
-const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 const errText = (err: { message: string }) => err.message.replace(/^ERROR:\s*/i, '')
 const hhmm = (t: string | null | undefined) => (t ? t.slice(0, 5) : '')
+const toMin = (t: string) => {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + (m || 0)
+}
 
+function isoOf(d: Date) {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 function todayIso() {
-  return new Date().toISOString().slice(0, 10)
+  return isoOf(new Date())
 }
 function addDaysIso(iso: string, days: number) {
   const d = new Date(iso + 'T00:00:00')
   d.setDate(d.getDate() + days)
-  return d.toISOString().slice(0, 10)
+  return isoOf(d)
 }
 function daysBetween(a: string, b: string) {
   return Math.round((new Date(b + 'T00:00:00').getTime() - new Date(a + 'T00:00:00').getTime()) / 86400000)
@@ -25,36 +35,13 @@ type Loc = Pick<Location, 'id' | 'name'>
 type Pos = Pick<Position, 'id' | 'title'>
 type Emp = Pick<Employee, 'id' | 'full_name' | 'home_location_id'>
 
-function Overlay({ children, onClose, wide }: { children: React.ReactNode; onClose: () => void; wide?: boolean }) {
-  return (
-    <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-ink/40 px-4 py-8" onClick={onClose}>
-      <div
-        className={`w-full ${wide ? 'max-w-4xl' : 'max-w-lg'} rounded-[14px] border border-border bg-surface p-6 shadow-card`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Header({ title, sub, onClose }: { title: string; sub?: string; onClose: () => void }) {
-  return (
-    <div className="mb-4 flex items-start justify-between gap-3">
-      <div>
-        <h2 className="text-base font-semibold text-ink">{title}</h2>
-        {sub && <p className="text-xs text-muted">{sub}</p>}
-      </div>
-      <button onClick={onClose} className="text-sm text-muted hover:text-ink">
-        Close
-      </button>
-    </div>
-  )
-}
-
 function ErrorBox({ msg }: { msg: string | null }) {
   if (!msg) return null
-  return <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{msg}</p>
+  return (
+    <p role="alert" className="rise rounded-xl bg-brand-risk-soft px-3.5 py-2.5 text-sm text-brand-risk-text">
+      {msg}
+    </p>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -101,46 +88,53 @@ export function DeleteShiftsModal({
   }
 
   return (
-    <Overlay onClose={onClose}>
-      <Header
-        title={shifts.length === 1 ? 'Delete cancelled shift' : `Delete ${shifts.length} cancelled shifts`}
-        sub="The shift is removed from the roster but kept in the change log with your reason."
-        onClose={onClose}
-      />
-      <ul className="mb-3 max-h-48 space-y-1 overflow-y-auto text-xs">
-        {shifts.map((s) => (
-          <li key={s.id} className="rounded-lg bg-surface-alt px-3 py-1.5 text-ink">
-            {fmtDayShort(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)} · {s.label}
-          </li>
-        ))}
-      </ul>
-      <label className="block">
-        <span className="label">Reason (optional)</span>
-        <textarea
-          className="input"
-          rows={2}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="e.g. Duplicate after template regeneration"
-        />
-      </label>
-      <p className="mt-2 text-xs text-muted">Shifts with clock-in records or payable time are never deleted — they'll be listed as skipped.</p>
-      <div className="mt-3">
-        <ErrorBox msg={error} />
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-shifts-title"
+        className="rise w-full max-w-lg rounded-[18px] border border-border bg-surface p-6 shadow-card"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id="delete-shifts-title" className="text-base font-semibold tracking-[-0.01em] text-ink">
+          {shifts.length === 1 ? 'Delete cancelled shift' : `Delete ${shifts.length} cancelled shifts`}
+        </h2>
+        <p className="mt-1 text-[13px] text-muted">Removed from the roster, but kept in the deleted shifts log with your reason.</p>
+        <ul className="my-4 max-h-48 space-y-1 overflow-y-auto text-xs">
+          {shifts.map((s) => (
+            <li key={s.id} className="rounded-lg bg-surface-alt px-3 py-1.5 text-ink">
+              {fmtDayShort(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)} · {s.label}
+            </li>
+          ))}
+        </ul>
+        <label className="block">
+          <span className="label">Reason (optional)</span>
+          <textarea
+            className="input"
+            rows={2}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. Duplicate after template regeneration"
+          />
+        </label>
+        <p className="mt-2 text-xs text-muted">Shifts with clock-in records or payable time are never deleted — they'll be listed as skipped.</p>
+        <div className="mt-3">
+          <ErrorBox msg={error} />
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn-secondary press" onClick={onClose}>
+            Back
+          </button>
+          <button
+            onClick={submit}
+            disabled={busy}
+            className="press rounded-lg bg-brand-risk px-4 py-2 text-sm font-medium text-white hover:bg-brand-risk/90 disabled:opacity-60"
+          >
+            {busy ? 'Deleting…' : 'Delete'}
+          </button>
+        </div>
       </div>
-      <div className="mt-4 flex justify-end gap-2">
-        <button className="btn-secondary" onClick={onClose}>
-          Back
-        </button>
-        <button
-          onClick={submit}
-          disabled={busy}
-          className="rounded-lg bg-brand-risk px-4 py-2 text-sm font-medium text-white hover:bg-brand-risk/90 disabled:opacity-60"
-        >
-          {busy ? 'Deleting…' : 'Delete'}
-        </button>
-      </div>
-    </Overlay>
+    </div>
   )
 }
 
@@ -148,7 +142,7 @@ export function DeleteShiftsModal({
 // Deleted-shift history → shift_adjustments where change_type = 'deleted'
 // ---------------------------------------------------------------------------
 
-export function DeletedShiftsDrawer({
+export function DeletedShiftsSheet({
   entityId,
   locations,
   employees,
@@ -198,30 +192,29 @@ export function DeletedShiftsDrawer({
     new Date(ts).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
   return (
-    <Overlay onClose={onClose}>
-      <Header title="Deleted shifts" sub="Every deleted shift is kept here with who deleted it and why." onClose={onClose} />
+    <Sheet title="Deleted shifts" subtitle="Every deleted shift, who deleted it and why." onClose={onClose}>
       <ErrorBox msg={error} />
       {loading ? (
         <div className="space-y-2">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-12 animate-pulse rounded-lg bg-surface-alt" />
+            <div key={i} className="h-14 animate-pulse rounded-xl bg-surface-alt" />
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-muted">No shifts have been deleted.</p>
+        <p className="py-10 text-center text-sm text-muted">No shifts have been deleted.</p>
       ) : (
-        <ul className="max-h-[60vh] divide-y divide-border overflow-y-auto">
-          {rows.map((r) => {
+        <ul className="divide-y divide-border">
+          {rows.map((r, i) => {
             const o = (r.old_values ?? {}) as Record<string, string | null>
             const who = o.employee_id ? empName.get(o.employee_id) ?? 'Unknown employee' : 'Open shift'
             return (
-              <li key={r.id} className="py-3 text-sm">
+              <li key={r.id} className="rise py-3.5 text-sm" style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
                 <div className="flex items-start justify-between gap-2">
                   <span className="font-medium text-ink">
                     {o.shift_date ? fmtDayShort(o.shift_date) : '—'} · {o.start_time ? fmtTime(o.start_time) : ''}–
                     {o.end_time ? fmtTime(o.end_time) : ''}
                   </span>
-                  <span className="shrink-0 text-xs text-muted">{fmtTs(r.changed_at)}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-muted">{fmtTs(r.changed_at)}</span>
                 </div>
                 <p className="mt-0.5 text-xs text-muted">
                   {who} · {(r.location_id && locName.get(r.location_id)) || (o.location_id && locName.get(o.location_id)) || 'Branch'}
@@ -236,12 +229,12 @@ export function DeletedShiftsDrawer({
           })}
         </ul>
       )}
-    </Overlay>
+    </Sheet>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Branch setup: opening hours + staffing needs
+// Branch setup sheet: opening hours + staffing needs
 // ---------------------------------------------------------------------------
 
 interface HourRow {
@@ -258,7 +251,7 @@ interface NeedRow {
   position_id: string | null
   staff_needed: number
 }
-interface SetupBranch {
+export interface SetupBranch {
   location_id: string
   name: string
   hours: { day_of_week: number; is_closed: boolean; open_time: string | null; close_time: string | null }[]
@@ -268,37 +261,28 @@ interface SetupBranch {
 let keySeq = 0
 const newKey = () => `n${++keySeq}`
 
-export function BranchSetupDrawer({
-  entityId,
+export function BranchSetupSheet({
+  setup,
+  initialLocationId,
   positions,
   onClose,
   onSaved,
 }: {
-  entityId: string
+  setup: SetupBranch[]
+  initialLocationId?: string
   positions: Pos[]
   onClose: () => void
   onSaved: (msg: string) => void
 }) {
-  const [setup, setSetup] = useState<SetupBranch[] | null>(null)
-  const [locId, setLocId] = useState('')
+  const [locId, setLocId] = useState(initialLocationId || setup[0]?.location_id || '')
   const [hours, setHours] = useState<HourRow[]>([])
   const [needs, setNeeds] = useState<NeedRow[]>([])
+  const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [savedAt, setSavedAt] = useState<number | null>(null)
 
-  const load = useCallback(async () => {
-    const { data, error: rpcError } = await supabase.rpc('get_scheduling_setup', { p_entity_id: entityId })
-    if (rpcError) return setError(errText(rpcError))
-    const list = (data ?? []) as SetupBranch[]
-    setSetup(list)
-    setLocId((cur) => cur || list[0]?.location_id || '')
-  }, [entityId])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  const branch = setup?.find((b) => b.location_id === locId)
+  const branch = setup.find((b) => b.location_id === locId)
 
   useEffect(() => {
     if (!branch) return
@@ -318,35 +302,36 @@ export function BranchSetupDrawer({
         staff_needed: n.staff_needed,
       }))
     )
+    setDirty(false)
     setError(null)
   }, [branch])
 
-  const hoursConfigured = (branch?.hours.length ?? 0) > 0
-
   function setHour(d: number, patch: Partial<HourRow>) {
+    setDirty(true)
     setHours((hs) => hs.map((h) => (h.day_of_week === d ? { ...h, ...patch } : h)))
   }
   function setNeed(key: string, patch: Partial<NeedRow>) {
+    setDirty(true)
     setNeeds((ns) => ns.map((n) => (n.key === key ? { ...n, ...patch } : n)))
   }
 
-  function validate(): string | null {
+  // Inline validation — shown as the user types, not on submit.
+  const problem = useMemo(() => {
     for (const h of hours) {
       if (h.is_closed) continue
-      if (!h.open_time || !h.close_time) return `Set opening and closing time for ${DOW_LONG[h.day_of_week]}, or mark it closed.`
-      if (h.open_time === h.close_time) return `${DOW_LONG[h.day_of_week]}: opening and closing time can't be the same.`
+      if (!h.open_time || !h.close_time) return `Set ${DOW_LONG[h.day_of_week]}'s hours, or mark it closed.`
+      if (h.open_time === h.close_time) return `${DOW_LONG[h.day_of_week]}: opening and closing can't be the same time.`
     }
     for (const n of needs) {
-      if (!n.start_time || !n.end_time) return 'Every staffing need needs a start and end time.'
-      if (n.start_time === n.end_time) return 'A staffing need cannot start and end at the same time.'
+      if (!n.start_time || !n.end_time) return 'Each staffing need needs a start and end time.'
+      if (n.start_time === n.end_time) return 'A staffing need can’t start and end at the same time.'
       if (!(n.staff_needed >= 1)) return 'Staff needed must be at least 1.'
     }
     return null
-  }
+  }, [hours, needs])
 
   async function save() {
-    const v = validate()
-    if (v) return setError(v)
+    if (problem) return setError(problem)
     setBusy(true)
     setError(null)
     const h = await supabase.rpc('set_location_operating_hours', {
@@ -373,168 +358,219 @@ export function BranchSetupDrawer({
     })
     setBusy(false)
     if (n.error) return setError(errText(n.error))
+    setDirty(false)
+    setSavedAt(Date.now())
     onSaved(`Saved opening hours and staffing needs for ${branch?.name ?? 'the branch'}.`)
-    await load()
   }
 
+  const firstOpen = hours.find((h) => !h.is_closed && h.open_time && h.close_time)
+
   return (
-    <Overlay onClose={onClose} wide>
-      <Header
-        title="Branch setup"
-        sub="Opening hours and how many people each branch needs. The auto-scheduler plans nothing for a branch without opening hours."
-        onClose={onClose}
-      />
-      {!setup ? (
-        error ? <ErrorBox msg={error} /> : <div className="h-40 animate-pulse rounded-lg bg-surface-alt" />
-      ) : setup.length === 0 ? (
-        <p className="text-sm text-muted">No active branches in this company.</p>
+    <Sheet
+      title="Branch setup"
+      subtitle="When each branch is open and how many people it needs. The auto-scheduler plans only for branches with opening hours."
+      onClose={onClose}
+      footer={
+        <div className="flex items-center justify-between gap-3">
+          <p className="min-w-0 text-xs text-muted" aria-live="polite">
+            {problem && dirty ? (
+              <span className="text-brand-warning-solid">{problem}</span>
+            ) : dirty ? (
+              'Unsaved changes'
+            ) : savedAt ? (
+              'Saved'
+            ) : (
+              ' '
+            )}
+          </p>
+          <button className="btn-primary press shrink-0" onClick={save} disabled={busy || !locId || !dirty}>
+            {busy ? 'Saving…' : `Save ${branch?.name ?? ''}`}
+          </button>
+        </div>
+      }
+    >
+      {setup.length === 0 ? (
+        <p className="py-10 text-center text-sm text-muted">No active branches in this company.</p>
       ) : (
-        <div className="space-y-5">
-          <div className="flex flex-wrap gap-2">
-            {setup.map((b) => (
-              <button
-                key={b.location_id}
-                onClick={() => setLocId(b.location_id)}
-                className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-                  b.location_id === locId ? 'bg-brand-blue text-white' : 'bg-surface-alt text-ink hover:bg-border'
-                }`}
-              >
-                {b.name}
-                {b.hours.length === 0 && <span className="ml-1 opacity-70">· not set</span>}
-              </button>
-            ))}
+        <div className="space-y-7">
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Branch">
+            {setup.map((b) => {
+              const on = b.location_id === locId
+              return (
+                <button
+                  key={b.location_id}
+                  role="tab"
+                  aria-selected={on}
+                  onClick={() => setLocId(b.location_id)}
+                  className={`press shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium ${
+                    on ? 'bg-ink text-white' : 'bg-surface-alt text-ink hover:bg-border'
+                  }`}
+                >
+                  {b.name}
+                  {b.hours.length === 0 && (
+                    <span className={`ml-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle ${on ? 'bg-white/70' : 'bg-brand-warning'}`} aria-label="not set up" />
+                  )}
+                </button>
+              )
+            })}
           </div>
 
-          <section>
-            <h3 className="mb-1 text-sm font-semibold text-ink">Opening hours</h3>
-            {!hoursConfigured && (
-              <p className="mb-2 text-xs text-brand-warning-solid">Not set yet — fill these in and save.</p>
-            )}
-            <p className="mb-2 text-xs text-muted">If closing is earlier than opening, the branch closes the next day (overnight).</p>
-            <div className="divide-y divide-border rounded-lg border border-border">
-              {hours.map((h) => (
-                <div key={h.day_of_week} className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm">
-                  <span className="w-24 font-medium text-ink">{DOW_LONG[h.day_of_week]}</span>
-                  <label className="flex items-center gap-1.5 text-xs text-muted">
-                    <input type="checkbox" checked={h.is_closed} onChange={(e) => setHour(h.day_of_week, { is_closed: e.target.checked })} />
-                    Closed
-                  </label>
-                  {!h.is_closed && (
-                    <>
-                      <input
-                        type="time"
-                        aria-label={`${DOW_LONG[h.day_of_week]} opening time`}
-                        className="input w-32"
-                        value={h.open_time}
-                        onChange={(e) => setHour(h.day_of_week, { open_time: e.target.value })}
-                      />
-                      <span className="text-muted">to</span>
-                      <input
-                        type="time"
-                        aria-label={`${DOW_LONG[h.day_of_week]} closing time`}
-                        className="input w-32"
-                        value={h.close_time}
-                        onChange={(e) => setHour(h.day_of_week, { close_time: e.target.value })}
-                      />
-                      {h.open_time && h.close_time && h.close_time < h.open_time && (
-                        <span className="text-xs text-muted">overnight</span>
-                      )}
-                    </>
-                  )}
-                </div>
-              ))}
+          <section key={`h-${locId}`} className="rise">
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Opening hours</h3>
+              {firstOpen && (
+                <button
+                  className="press text-xs font-medium text-brand-blue hover:underline"
+                  onClick={() => {
+                    setDirty(true)
+                    setHours((hs) => hs.map((h) => (h.is_closed ? h : { ...h, open_time: firstOpen.open_time, close_time: firstOpen.close_time })))
+                  }}
+                >
+                  Use {firstOpen.open_time}–{firstOpen.close_time} for all open days
+                </button>
+              )}
             </div>
-            <button
-              className="mt-2 text-xs font-medium text-brand-blue hover:underline"
-              onClick={() => {
-                const first = hours.find((h) => !h.is_closed && h.open_time && h.close_time)
-                if (first) setHours((hs) => hs.map((h) => (h.is_closed ? h : { ...h, open_time: first.open_time, close_time: first.close_time })))
-              }}
-            >
-              Copy first open day's hours to all open days
-            </button>
+            {branch && branch.hours.length === 0 && (
+              <p className="mb-3 rounded-xl bg-brand-warning-soft px-3.5 py-2.5 text-xs text-brand-warning-solid">
+                Not set up yet — nothing will be auto-scheduled here until you save opening hours.
+              </p>
+            )}
+            <div className="overflow-hidden rounded-2xl border border-border">
+              {hours.map((h) => {
+                const overnight = !h.is_closed && h.open_time && h.close_time && h.close_time < h.open_time
+                return (
+                  <div
+                    key={h.day_of_week}
+                    className={`flex min-h-12 flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2 text-sm ${h.day_of_week ? 'border-t border-border' : ''} ${
+                      h.is_closed ? 'bg-surface-alt/60' : ''
+                    }`}
+                  >
+                    <span className={`w-24 font-medium ${h.is_closed ? 'text-muted' : 'text-ink'}`}>{DOW_LONG[h.day_of_week]}</span>
+                    {h.is_closed ? (
+                      <span className="flex-1 text-[13px] text-muted">Closed</span>
+                    ) : (
+                      <span className="flex flex-1 flex-wrap items-center gap-2">
+                        <input
+                          type="time"
+                          aria-label={`${DOW_LONG[h.day_of_week]} opens`}
+                          className="input w-[7.5rem] py-1.5"
+                          value={h.open_time}
+                          onChange={(e) => setHour(h.day_of_week, { open_time: e.target.value })}
+                        />
+                        <span className="text-muted">–</span>
+                        <input
+                          type="time"
+                          aria-label={`${DOW_LONG[h.day_of_week]} closes`}
+                          className="input w-[7.5rem] py-1.5"
+                          value={h.close_time}
+                          onChange={(e) => setHour(h.day_of_week, { close_time: e.target.value })}
+                        />
+                        {overnight && <span className="rounded-full bg-brand-info-soft px-2 py-0.5 text-[11px] font-medium text-brand-info-text">next day</span>}
+                      </span>
+                    )}
+                    <label className="flex items-center gap-2 text-xs text-muted">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-[var(--color-brand-blue)]"
+                        checked={!h.is_closed}
+                        onChange={(e) => setHour(h.day_of_week, { is_closed: !e.target.checked })}
+                      />
+                      Open
+                    </label>
+                  </div>
+                )
+              })}
+            </div>
           </section>
 
-          <section>
-            <h3 className="mb-1 text-sm font-semibold text-ink">Staffing needs</h3>
-            <p className="mb-2 text-xs text-muted">
-              With no needs set, the scheduler plans 1 person for the whole opening time. Saving replaces all needs for this branch.
+          <section key={`n-${locId}`} className="rise" style={{ '--i': 3 } as React.CSSProperties}>
+            <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Staffing needs</h3>
+            <p className="mb-3 mt-0.5 text-xs text-muted">
+              {needs.length === 0
+                ? 'None yet — the scheduler will plan 1 person for the whole opening time.'
+                : 'Saving replaces all needs for this branch.'}
             </p>
-            {needs.length > 0 && (
-              <div className="space-y-2">
-                {needs.map((n) => (
-                  <div key={n.key} className="flex flex-wrap items-center gap-2 rounded-lg bg-surface-alt px-3 py-2">
+            <div className="space-y-2">
+              {needs.map((n, i) => (
+                <div key={n.key} className="rise rounded-2xl border border-border p-3" style={{ '--i': i } as React.CSSProperties}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      aria-label="People needed"
+                      className="input w-16 py-1.5 text-center tabular-nums"
+                      value={n.staff_needed}
+                      onChange={(e) => setNeed(n.key, { staff_needed: Number(e.target.value) })}
+                    />
+                    <select
+                      aria-label="Role"
+                      className="input w-auto min-w-36 py-1.5"
+                      value={n.position_id ?? ''}
+                      onChange={(e) => setNeed(n.key, { position_id: e.target.value || null })}
+                    >
+                      <option value="">{n.staff_needed === 1 ? 'person' : 'people'} · any role</option>
+                      {positions.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          × {p.title}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[13px] text-muted">on</span>
                     <select
                       aria-label="Day"
-                      className="input w-40"
+                      className="input w-auto py-1.5"
                       value={n.day_of_week ?? ''}
                       onChange={(e) => setNeed(n.key, { day_of_week: e.target.value === '' ? null : Number(e.target.value) })}
                     >
-                      <option value="">Every open day</option>
-                      {DOW_LONG.map((d, i) => (
-                        <option key={i} value={i}>
+                      <option value="">every open day</option>
+                      {DOW_LONG.map((d, di) => (
+                        <option key={di} value={di}>
                           {d}
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-[13px] text-muted">from</span>
                     <input
                       type="time"
                       aria-label="From"
-                      className="input w-32"
+                      className="input w-[7.5rem] py-1.5"
                       value={n.start_time}
                       onChange={(e) => setNeed(n.key, { start_time: e.target.value })}
                     />
-                    <span className="text-sm text-muted">to</span>
+                    <span className="text-[13px] text-muted">to</span>
                     <input
                       type="time"
                       aria-label="To"
-                      className="input w-32"
+                      className="input w-[7.5rem] py-1.5"
                       value={n.end_time}
                       onChange={(e) => setNeed(n.key, { end_time: e.target.value })}
                     />
-                    <input
-                      type="number"
-                      min={1}
-                      aria-label="Staff needed"
-                      className="input w-20"
-                      value={n.staff_needed}
-                      onChange={(e) => setNeed(n.key, { staff_needed: Number(e.target.value) })}
-                    />
-                    <span className="text-xs text-muted">people</span>
-                    <select
-                      aria-label="Role"
-                      className="input w-44"
-                      value={n.position_id ?? ''}
-                      onChange={(e) => setNeed(n.key, { position_id: e.target.value || null })}
-                    >
-                      <option value="">Any role</option>
-                      {positions.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title}
-                        </option>
-                      ))}
-                    </select>
                     <button
-                      className="ml-auto text-xs font-medium text-brand-risk hover:underline"
-                      onClick={() => setNeeds((ns) => ns.filter((x) => x.key !== n.key))}
+                      className="press ml-auto rounded-full px-2.5 py-1 text-xs font-medium text-brand-risk hover:bg-brand-risk-soft"
+                      onClick={() => {
+                        setDirty(true)
+                        setNeeds((ns) => ns.filter((x) => x.key !== n.key))
+                      }}
                     >
                       Remove
                     </button>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ))}
+            </div>
             <button
-              className="mt-2 text-xs font-medium text-brand-blue hover:underline"
+              className="press mt-3 w-full rounded-2xl border border-dashed border-border py-3 text-[13px] font-medium text-brand-blue hover:border-brand-blue/50 hover:bg-brand-blue-soft/40"
               onClick={() => {
-                const open = hours.find((h) => !h.is_closed && h.open_time && h.close_time)
+                setDirty(true)
                 setNeeds((ns) => [
                   ...ns,
                   {
                     key: newKey(),
                     day_of_week: null,
-                    start_time: open?.open_time ?? '',
-                    end_time: open?.close_time ?? '',
+                    start_time: firstOpen?.open_time ?? '',
+                    end_time: firstOpen?.close_time ?? '',
                     position_id: null,
                     staff_needed: 1,
                   },
@@ -546,22 +582,14 @@ export function BranchSetupDrawer({
           </section>
 
           <ErrorBox msg={error} />
-          <div className="flex justify-end gap-2">
-            <button className="btn-secondary" onClick={onClose}>
-              Close
-            </button>
-            <button className="btn-primary" onClick={save} disabled={busy || !locId}>
-              {busy ? 'Saving…' : `Save ${branch?.name ?? ''}`}
-            </button>
-          </div>
         </div>
       )}
-    </Overlay>
+    </Sheet>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Auto-scheduler: preview (propose_auto_schedule) → create drafts (apply_auto_schedule)
+// Auto-schedule workspace: choose → preview (propose) → create drafts (apply)
 // ---------------------------------------------------------------------------
 
 interface PlanShift {
@@ -577,69 +605,106 @@ interface PlanShift {
   cross_branch: boolean
   home_location: string | null
 }
+interface PlanGap {
+  shift_date: string
+  location: string
+  role: string | null
+  start_time: string
+  end_time: string
+}
 interface Plan {
   period_start: string
   period_end: string
   shifts: PlanShift[]
-  unfilled: { shift_date: string; location: string; role: string | null; start_time: string; end_time: string }[]
+  unfilled: PlanGap[]
   warnings: string[]
   summary: { planned: number; cross_branch: number; unfilled: number; planned_hours: number }
   created?: number
 }
 
-export function AutoScheduleModal({
+type Preset = 'week' | 'next7' | 'twoweeks' | 'custom'
+
+function presetRange(p: Exclude<Preset, 'custom'>): [string, string] {
+  const t = todayIso()
+  if (p === 'next7') return [addDaysIso(t, 1), addDaysIso(t, 7)]
+  if (p === 'twoweeks') return [addDaysIso(t, 1), addDaysIso(t, 14)]
+  const dow = new Date(t + 'T00:00:00').getDay()
+  const nextSunday = addDaysIso(t, 7 - dow)
+  return [nextSunday, addDaysIso(nextSunday, 6)]
+}
+
+export function AutoSchedulePanel({
   entityId,
-  locations,
-  onClose,
+  positions,
   onApplied,
-  onOpenSetup,
+  onNotice,
 }: {
   entityId: string
-  locations: Loc[]
-  onClose: () => void
+  positions: Pos[]
   onApplied: (created: number) => void
-  onOpenSetup: () => void
+  onNotice: (msg: string) => void
 }) {
-  const [start, setStart] = useState(addDaysIso(todayIso(), 1))
-  const [end, setEnd] = useState(addDaysIso(todayIso(), 7))
-  const [picked, setPicked] = useState<Set<string>>(new Set(locations.map((l) => l.id)))
+  const [setup, setSetup] = useState<SetupBranch[] | null>(null)
+  const [preset, setPreset] = useState<Preset>('week')
+  const [[start, end], setRange] = useState<[string, string]>(presetRange('week'))
+  const [picked, setPicked] = useState<Set<string> | null>(null)
   const [plan, setPlan] = useState<Plan | null>(null)
+  const [planKey, setPlanKey] = useState<string | null>(null)
   const [busy, setBusy] = useState<'preview' | 'apply' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [setupFor, setSetupFor] = useState<string | null | undefined>(undefined)
 
-  const allPicked = picked.size === locations.length
+  const loadSetup = useCallback(async () => {
+    const { data, error: rpcError } = await supabase.rpc('get_scheduling_setup', { p_entity_id: entityId })
+    if (rpcError) return setError(errText(rpcError))
+    const list = (data ?? []) as SetupBranch[]
+    setSetup(list)
+    setPicked((cur) => cur ?? new Set(list.map((b) => b.location_id)))
+  }, [entityId])
+
+  useEffect(() => {
+    loadSetup()
+  }, [loadSetup])
+
+  const selected = useMemo(() => setup?.filter((b) => picked?.has(b.location_id)) ?? [], [setup, picked])
+  const allPicked = !!setup && selected.length === setup.length
+  const notReady = selected.filter((b) => b.hours.length === 0)
+
+  const inputKey = JSON.stringify([start, end, allPicked ? null : [...(picked ?? [])].sort()])
+  const stale = !!plan && planKey !== inputKey
+
+  const rangeProblem = useMemo(() => {
+    if (!start || !end) return 'Choose a start and end date.'
+    if (start < todayIso()) return 'The period can’t start in the past.'
+    if (end < start) return 'The end date must be on or after the start.'
+    if (daysBetween(start, end) + 1 > 31) return 'Choose 31 days or fewer.'
+    return null
+  }, [start, end])
 
   function args() {
     return {
       p_entity_id: entityId,
       p_period_start: start,
       p_period_end: end,
-      p_location_ids: allPicked ? null : [...picked],
+      p_location_ids: allPicked ? null : [...(picked ?? [])],
     }
   }
 
-  function validate(): string | null {
-    if (!start || !end) return 'Choose a start and end date.'
-    if (start < todayIso()) return 'The period cannot start in the past.'
-    if (end < start) return 'The end date must be on or after the start date.'
-    if (daysBetween(start, end) + 1 > 31) return 'The period can be at most 31 days.'
-    if (picked.size === 0) return 'Choose at least one branch.'
-    return null
-  }
-
   async function preview() {
-    const v = validate()
-    if (v) return setError(v)
+    if (rangeProblem) return setError(rangeProblem)
+    if (selected.length === 0) return setError('Choose at least one branch.')
     setBusy('preview')
     setError(null)
+    const key = inputKey
     const { data, error: rpcError } = await supabase.rpc('propose_auto_schedule', args())
     setBusy(null)
     if (rpcError) return setError(errText(rpcError))
     setPlan(data as Plan)
+    setPlanKey(key)
   }
 
   async function apply() {
-    if (!plan) return
+    if (!plan || stale) return
     setBusy('apply')
     setError(null)
     const { data, error: rpcError } = await supabase.rpc('apply_auto_schedule', args())
@@ -648,169 +713,439 @@ export function AutoScheduleModal({
     onApplied((data as Plan).created ?? 0)
   }
 
-  const byDate = useMemo(() => {
-    const m = new Map<string, PlanShift[]>()
-    plan?.shifts.forEach((s) => m.set(s.shift_date, [...(m.get(s.shift_date) ?? []), s]))
-    return [...m.entries()]
-  }, [plan])
-
-  const changeInputs = <T,>(fn: (v: T) => void) => (v: T) => {
-    fn(v)
-    setPlan(null)
+  function choosePreset(p: Preset) {
+    setPreset(p)
+    if (p !== 'custom') setRange(presetRange(p))
   }
 
+  function toggleBranch(id: string) {
+    setPicked((cur) => {
+      const n = new Set(cur ?? [])
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  }
+
+  const days = rangeProblem ? 0 : daysBetween(start, end) + 1
+
   return (
-    <Overlay onClose={onClose} wide>
-      <Header
-        title="Auto-schedule"
-        sub="Plans draft shifts from each branch's opening hours, staffing needs, availability, leave and weekly limits. Nothing is published — you review and publish as usual."
-        onClose={onClose}
-      />
-
-      <div className="flex flex-wrap items-end gap-3">
-        <label>
-          <span className="label">From</span>
-          <input type="date" className="input" min={todayIso()} value={start} onChange={(e) => changeInputs(setStart)(e.target.value)} />
-        </label>
-        <label>
-          <span className="label">To</span>
-          <input type="date" className="input" min={start} max={addDaysIso(start, 30)} value={end} onChange={(e) => changeInputs(setEnd)(e.target.value)} />
-        </label>
-        <span className="pb-2 text-xs text-muted">{start && end && end >= start ? `${daysBetween(start, end) + 1} days` : ''}</span>
-        <button className="btn-ghost ml-auto" onClick={onOpenSetup}>
-          Branch setup
-        </button>
-      </div>
-
-      <div className="mt-3">
-        <span className="label">Branches</span>
-        <div className="flex flex-wrap gap-2">
-          {locations.map((l) => (
-            <label key={l.id} className="flex items-center gap-1.5 rounded-full bg-surface-alt px-3 py-1.5 text-xs text-ink">
-              <input
-                type="checkbox"
-                checked={picked.has(l.id)}
-                onChange={(e) =>
-                  changeInputs(setPicked)(
-                    (() => {
-                      const n = new Set(picked)
-                      if (e.target.checked) n.add(l.id)
-                      else n.delete(l.id)
-                      return n
-                    })()
-                  )
-                }
-              />
-              {l.name}
-            </label>
+    <div className="space-y-5 pb-4">
+      {/* 1 — When */}
+      <section className="card rise space-y-4">
+        <StepTitle n={1} title="Choose the period" />
+        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Period">
+          {(
+            [
+              ['week', 'Next week'],
+              ['next7', 'Next 7 days'],
+              ['twoweeks', 'Next 2 weeks'],
+              ['custom', 'Custom'],
+            ] as [Preset, string][]
+          ).map(([p, label]) => (
+            <button
+              key={p}
+              role="radio"
+              aria-checked={preset === p}
+              onClick={() => choosePreset(p)}
+              className={`press rounded-full px-3.5 py-1.5 text-[13px] font-medium ${
+                preset === p ? 'bg-ink text-white' : 'bg-surface-alt text-ink hover:bg-border'
+              }`}
+            >
+              {label}
+            </button>
           ))}
         </div>
-      </div>
+        {preset === 'custom' && (
+          <div className="rise flex flex-wrap items-end gap-3">
+            <label>
+              <span className="label">From</span>
+              <input type="date" className="input" min={todayIso()} value={start} onChange={(e) => setRange([e.target.value, end])} />
+            </label>
+            <label>
+              <span className="label">To</span>
+              <input type="date" className="input" min={start} max={start ? addDaysIso(start, 30) : undefined} value={end} onChange={(e) => setRange([start, e.target.value])} />
+            </label>
+          </div>
+        )}
+        <p className="text-[13px] text-muted" aria-live="polite">
+          {rangeProblem ? (
+            <span className="text-brand-warning-solid">{rangeProblem}</span>
+          ) : (
+            <>
+              <span className="font-medium text-ink">
+                {fmtDayShort(start)} – {fmtDayShort(end)}
+              </span>{' '}
+              · {days} day{days === 1 ? '' : 's'}
+            </>
+          )}
+        </p>
+      </section>
 
-      <div className="mt-4 flex justify-end">
-        <button className="btn-secondary" onClick={preview} disabled={busy !== null}>
-          {busy === 'preview' ? 'Planning…' : plan ? 'Re-run preview' : 'Preview plan'}
-        </button>
-      </div>
+      {/* 2 — Where */}
+      <section className="card rise space-y-4" style={{ '--i': 2 } as React.CSSProperties}>
+        <div className="flex items-baseline justify-between gap-3">
+          <StepTitle n={2} title="Choose branches" />
+          {setup && setup.length > 0 && (
+            <button className="press text-xs font-medium text-brand-blue hover:underline" onClick={() => setSetupFor(null)}>
+              Branch setup
+            </button>
+          )}
+        </div>
+        {!setup ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {[0, 1].map((i) => (
+              <div key={i} className="h-[72px] animate-pulse rounded-2xl bg-surface-alt" />
+            ))}
+          </div>
+        ) : setup.length === 0 ? (
+          <p className="text-sm text-muted">No active branches in this company.</p>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {setup.map((b) => {
+              const on = !!picked?.has(b.location_id)
+              const ready = b.hours.length > 0
+              const openDays = b.hours.filter((h) => !h.is_closed).length
+              return (
+                <div
+                  key={b.location_id}
+                  className={`relative rounded-2xl border p-3.5 transition-[border-color,background-color,box-shadow] duration-200 ${
+                    on ? 'border-brand-blue bg-brand-blue-soft/50 shadow-[0_0_0_1px_var(--color-brand-blue)]' : 'border-border bg-surface'
+                  }`}
+                >
+                  <button
+                    role="checkbox"
+                    aria-checked={on}
+                    onClick={() => toggleBranch(b.location_id)}
+                    className="press flex w-full items-start gap-3 text-left"
+                  >
+                    <span
+                      className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors duration-150 ${
+                        on ? 'border-brand-blue bg-brand-blue text-white' : 'border-border bg-surface'
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {on && (
+                        <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M2.5 6.2 5 8.5l4.5-5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium text-ink">{b.name}</span>
+                      <span className={`block text-xs ${ready ? 'text-muted' : 'text-brand-warning-solid'}`}>
+                        {ready
+                          ? `Open ${openDays} day${openDays === 1 ? '' : 's'} · ${
+                              b.needs.length ? `${b.needs.length} staffing need${b.needs.length === 1 ? '' : 's'}` : '1 person default'
+                            }`
+                          : 'No opening hours yet'}
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setSetupFor(b.location_id)}
+                    className={`press absolute right-3 top-3 rounded-full px-2.5 py-1 text-xs font-medium ${
+                      ready ? 'text-muted hover:bg-surface-alt hover:text-ink' : 'bg-brand-warning-soft text-brand-warning-solid'
+                    }`}
+                  >
+                    {ready ? 'Edit' : 'Set up'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {notReady.length > 0 && (
+          <p className="rise rounded-xl bg-brand-warning-soft px-3.5 py-2.5 text-xs text-brand-warning-solid">
+            {notReady.map((b) => b.name).join(', ')} {notReady.length === 1 ? 'has' : 'have'} no opening hours — nothing will be planned there.
+          </p>
+        )}
+      </section>
 
-      <div className="mt-3">
+      {/* 3 — Preview */}
+      <section className="card rise space-y-4" style={{ '--i': 4 } as React.CSSProperties}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <StepTitle n={3} title="Preview the plan" />
+          <button
+            className={`${plan && !stale ? 'btn-secondary' : 'btn-primary'} press`}
+            onClick={preview}
+            disabled={busy !== null || !!rangeProblem || selected.length === 0}
+          >
+            {busy === 'preview' ? 'Planning…' : plan ? (stale ? 'Update preview' : 'Run again') : 'Preview plan'}
+          </button>
+        </div>
+        {!plan && busy !== 'preview' && (
+          <p className="text-[13px] text-muted">
+            Plans draft shifts from opening hours, staffing needs, availability, approved leave and weekly limits (48 h, 6 days).
+            Home-branch staff go first; others are borrowed only to fill gaps. Nothing is saved until you create the drafts.
+          </p>
+        )}
         <ErrorBox msg={error} />
-      </div>
+        {!plan && busy === 'preview' && (
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="h-10 animate-pulse rounded-xl bg-surface-alt" style={{ animationDelay: `${i * 120}ms` }} />
+            ))}
+          </div>
+        )}
+        {plan && (
+          <div className={stale || busy === 'preview' ? 'stale' : 'fresh'} aria-busy={busy === 'preview'}>
+            {stale && busy !== 'preview' && (
+              <p className="mb-3 rounded-xl bg-surface-alt px-3.5 py-2.5 text-xs text-ink">
+                You changed the period or branches — update the preview to see the new plan.
+              </p>
+            )}
+            <PlanView key={planKey ?? ''} plan={plan} />
+          </div>
+        )}
+      </section>
 
       {plan && (
-        <div className="mt-4 space-y-4">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Shifts planned" value={plan.summary.planned} />
-            <Stat label="Hours" value={plan.summary.planned_hours} />
-            <Stat label="At another branch" value={plan.summary.cross_branch} />
-            <Stat label="Unfilled slots" value={plan.summary.unfilled} warn={plan.summary.unfilled > 0} />
-          </div>
-
-          {plan.warnings.length > 0 && (
-            <ul className="space-y-1">
-              {plan.warnings.map((w, i) => (
-                <li key={i} className="rounded-lg bg-brand-warning-soft px-3 py-2 text-xs text-brand-warning-solid">
-                  {w}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {byDate.length === 0 ? (
-            <p className="text-sm text-muted">No shifts could be planned for this period.</p>
-          ) : (
-            <div className="max-h-[40vh] overflow-y-auto rounded-lg border border-border">
-              <table className="w-full text-left text-sm">
-                <thead className="sticky top-0 bg-surface-alt text-xs uppercase tracking-wide text-muted">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Date</th>
-                    <th className="px-3 py-2 font-medium">Branch</th>
-                    <th className="px-3 py-2 font-medium">Person</th>
-                    <th className="px-3 py-2 font-medium">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {byDate.flatMap(([date, list]) =>
-                    list.map((s, i) => (
-                      <tr key={`${date}-${i}`}>
-                        <td className="px-3 py-2 text-ink">{i === 0 ? `${DOW_SHORT[new Date(date + 'T00:00:00').getDay()]} ${fmtDayShort(date)}` : ''}</td>
-                        <td className="px-3 py-2 text-muted">{s.location}</td>
-                        <td className="px-3 py-2 text-ink">
-                          {s.employee}
-                          {s.cross_branch && (
-                            <span className="ml-1.5 rounded-full bg-brand-blue/10 px-2 py-0.5 text-[11px] text-brand-blue">
-                              moved from {s.home_location ?? 'no home branch'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-muted">
-                          {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
-                          {s.break_minutes > 0 && <span className="ml-1 text-xs">· {s.break_minutes}m break</span>}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {plan.unfilled.length > 0 && (
-            <details className="rounded-lg border border-border px-3 py-2">
-              <summary className="cursor-pointer text-sm font-medium text-ink">
-                {plan.unfilled.length} slot{plan.unfilled.length === 1 ? '' : 's'} not filled — not enough available people
-              </summary>
-              <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-xs text-muted">
-                {plan.unfilled.map((u, i) => (
-                  <li key={i}>
-                    {fmtDayShort(u.shift_date)} · {u.location} · {fmtTime(u.start_time)}–{fmtTime(u.end_time)}
-                    {u.role ? ` · ${u.role}` : ''}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-
-          <div className="flex items-center justify-end gap-2">
-            <p className="mr-auto text-xs text-muted">Creating re-runs the plan on the server, so it reflects any changes since this preview.</p>
-            <button className="btn-secondary" onClick={onClose}>
-              Cancel
-            </button>
-            <button className="btn-primary" onClick={apply} disabled={busy !== null || plan.summary.planned === 0}>
-              {busy === 'apply' ? 'Creating…' : `Create ${plan.summary.planned} draft shift${plan.summary.planned === 1 ? '' : 's'}`}
-            </button>
-          </div>
+        <div className="material material-edge-top sticky bottom-3 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 px-4 py-3">
+          <p className="min-w-0 text-[13px] text-muted">
+            {stale ? (
+              'Update the preview before creating shifts.'
+            ) : (
+              <>
+                <span className="font-medium text-ink tabular-nums">
+                  {plan.summary.planned} shift{plan.summary.planned === 1 ? '' : 's'} · {plan.summary.planned_hours} h
+                </span>{' '}
+                saved as drafts — you publish them later.
+              </>
+            )}
+          </p>
+          <button className="btn-primary press shrink-0" onClick={apply} disabled={busy !== null || stale || plan.summary.planned === 0}>
+            {busy === 'apply' ? 'Creating…' : `Create ${plan.summary.planned} draft${plan.summary.planned === 1 ? '' : 's'}`}
+          </button>
         </div>
       )}
-    </Overlay>
+
+      {setupFor !== undefined && setup && (
+        <BranchSetupSheet
+          setup={setup}
+          initialLocationId={setupFor ?? undefined}
+          positions={positions}
+          onClose={() => setSetupFor(undefined)}
+          onSaved={(msg) => {
+            onNotice(msg)
+            loadSetup()
+          }}
+        />
+      )}
+    </div>
   )
 }
 
-function Stat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
+function StepTitle({ n, title }: { n: number; title: string }) {
   return (
-    <div className="rounded-lg bg-surface-alt p-3">
+    <h2 className="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em] text-ink">
+      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-primary-soft text-xs font-semibold tabular-nums text-brand-primary">
+        {n}
+      </span>
+      {title}
+    </h2>
+  )
+}
+
+function Stat({ label, value, tone, i }: { label: string; value: string | number; tone?: 'warn'; i: number }) {
+  return (
+    <div className="rise rounded-2xl bg-surface-alt px-4 py-3" style={{ '--i': i } as React.CSSProperties}>
       <span className="block text-xs text-muted">{label}</span>
-      <span className={`mt-1 block text-lg font-semibold tabular-nums ${warn ? 'text-brand-warning-solid' : 'text-ink'}`}>{value}</span>
+      <span
+        className={`mt-0.5 block text-2xl font-semibold leading-tight tracking-[-0.02em] tabular-nums ${
+          tone === 'warn' ? 'text-brand-warning-solid' : 'text-ink'
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  )
+}
+
+// Day-by-day timeline: one row per branch, bars on a shared hour axis so the
+// same time lines up across every day.
+function PlanView({ plan }: { plan: Plan }) {
+  const [onlyGaps, setOnlyGaps] = useState(false)
+
+  const span = (s: { start_time: string; end_time: string }) => {
+    const a = toMin(s.start_time)
+    let b = toMin(s.end_time)
+    if (b <= a) b += 1440
+    return [a, b] as const
+  }
+
+  const axis = useMemo(() => {
+    const all = [...plan.shifts, ...plan.unfilled].map(span)
+    if (!all.length) return { from: 6 * 60, to: 22 * 60 }
+    const from = Math.floor(Math.min(...all.map((x) => x[0])) / 60) * 60
+    const to = Math.ceil(Math.max(...all.map((x) => x[1])) / 60) * 60
+    return { from, to: Math.max(to, from + 240) }
+  }, [plan])
+
+  const days = useMemo(() => {
+    const m = new Map<string, { shifts: PlanShift[]; gaps: PlanGap[] }>()
+    const at = (d: string) => {
+      if (!m.has(d)) m.set(d, { shifts: [], gaps: [] })
+      return m.get(d)!
+    }
+    plan.shifts.forEach((s) => at(s.shift_date).shifts.push(s))
+    plan.unfilled.forEach((g) => at(g.shift_date).gaps.push(g))
+    return [...m.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [plan])
+
+  const visible = onlyGaps ? days.filter(([, d]) => d.gaps.length > 0) : days
+  const pct = (min: number) => ((min - axis.from) / (axis.to - axis.from)) * 100
+  const ticks: number[] = []
+  for (let t = axis.from; t <= axis.to; t += (axis.to - axis.from) / 60 > 12 ? 180 : 120) ticks.push(t)
+  const tickLabel = (t: number) => String(Math.floor(t / 60) % 24).padStart(2, '0')
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-live="polite">
+        <Stat i={0} label="Shifts planned" value={plan.summary.planned} />
+        <Stat i={1} label="Hours" value={plan.summary.planned_hours} />
+        <Stat i={2} label="From another branch" value={plan.summary.cross_branch} />
+        <Stat i={3} label="Unfilled" value={plan.summary.unfilled} tone={plan.summary.unfilled > 0 ? 'warn' : undefined} />
+      </div>
+
+      {plan.warnings.length > 0 && (
+        <ul className="space-y-1.5">
+          {plan.warnings.map((w, i) => (
+            <li key={i} className="rise rounded-xl bg-brand-warning-soft px-3.5 py-2.5 text-xs text-brand-warning-solid" style={{ '--i': 4 + i } as React.CSSProperties}>
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {days.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted">Nothing to plan for this period — check opening hours in Branch setup.</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-muted">
+            <Legend className="bg-brand-blue-soft ring-1 ring-brand-blue/30" label="Planned" />
+            <Legend className="bg-brand-info-soft ring-1 ring-brand-info/40" label="From another branch" />
+            <Legend className="border border-dashed border-brand-warning bg-brand-warning-soft" label="Unfilled" />
+            {plan.summary.unfilled > 0 && (
+              <label className="ml-auto flex items-center gap-1.5 text-xs text-ink">
+                <input type="checkbox" checked={onlyGaps} onChange={(e) => setOnlyGaps(e.target.checked)} />
+                Only days with gaps
+              </label>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <div className="space-y-3 sm:min-w-[560px]">
+              <div className="flex pl-[13px] pr-[13px] text-[10px] tabular-nums text-muted sm:pl-[calc(9.5rem+13px)]" aria-hidden="true">
+                <div className="relative h-4 flex-1">
+                  {ticks.map((t) => (
+                    <span key={t} className="absolute -translate-x-1/2" style={{ left: `${pct(t)}%` }}>
+                      {tickLabel(t)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {visible.map(([date, d], di) => (
+                <DayRow key={date} date={date} day={d} di={di} pct={pct} ticks={ticks} span={span} />
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function Legend({ className, label }: { className: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className={`inline-block h-2.5 w-5 rounded-[4px] ${className}`} />
+      {label}
+    </span>
+  )
+}
+
+function DayRow({
+  date,
+  day,
+  di,
+  pct,
+  ticks,
+  span,
+}: {
+  date: string
+  day: { shifts: PlanShift[]; gaps: PlanGap[] }
+  di: number
+  pct: (m: number) => number
+  ticks: number[]
+  span: (s: { start_time: string; end_time: string }) => readonly [number, number]
+}) {
+  const branches = [...new Set([...day.shifts.map((s) => s.location), ...day.gaps.map((g) => g.location)])].sort()
+  return (
+    <div className="rise rounded-2xl border border-border p-3" style={{ '--i': Math.min(di, 10) + 4 } as React.CSSProperties}>
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[13px] font-semibold text-ink">{fmtDayShort(date)}</span>
+        <span className="text-[11px] tabular-nums text-muted">
+          {day.shifts.length} shift{day.shifts.length === 1 ? '' : 's'}
+          {day.gaps.length > 0 && <span className="text-brand-warning-solid"> · {day.gaps.length} unfilled</span>}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {branches.map((loc) => {
+          const rows: ({ kind: 'shift'; s: PlanShift } | { kind: 'gap'; g: PlanGap })[] = [
+            ...day.shifts.filter((s) => s.location === loc).map((s) => ({ kind: 'shift' as const, s })),
+            ...day.gaps.filter((g) => g.location === loc).map((g) => ({ kind: 'gap' as const, g })),
+          ]
+          return (
+            <div key={loc} className="flex flex-col gap-1 sm:flex-row sm:gap-2">
+              <span className="shrink-0 truncate text-xs text-muted sm:w-36 sm:pt-1.5" title={loc}>
+                {loc}
+              </span>
+              <div className="relative flex-1 space-y-1 rounded-lg bg-surface-alt/70 py-1">
+                {ticks.map((t) => (
+                  <span key={t} className="pointer-events-none absolute bottom-0 top-0 w-px bg-border/70" style={{ left: `${pct(t)}%` }} aria-hidden="true" />
+                ))}
+                {rows.map((r, i) => {
+                  const src = r.kind === 'shift' ? r.s : r.g
+                  const [a, b] = span(src)
+                  const style = { left: `${pct(a)}%`, width: `${Math.max(pct(b) - pct(a), 3)}%`, '--i': i } as React.CSSProperties
+                  const time = `${fmtTime(src.start_time)}–${fmtTime(src.end_time)}`
+                  if (r.kind === 'gap') {
+                    return (
+                      <div key={`g${i}`} className="relative h-7">
+                        <div
+                          className="bar-grow absolute inset-y-0 flex items-center overflow-hidden rounded-md border border-dashed border-brand-warning bg-brand-warning-soft px-2 text-[11px] font-medium text-brand-warning-solid"
+                          style={style}
+                          title={`Unfilled ${time}${r.g.role ? ` · ${r.g.role}` : ''}`}
+                        >
+                          <span className="truncate">Unfilled{r.g.role ? ` · ${r.g.role}` : ''}</span>
+                        </div>
+                      </div>
+                    )
+                  }
+                  const s = r.s
+                  return (
+                    <div key={`s${i}`} className="relative h-7">
+                      <div
+                        className={`bar-grow absolute inset-y-0 flex items-center gap-1.5 overflow-hidden rounded-md px-2 text-[11px] ${
+                          s.cross_branch ? 'bg-brand-info-soft text-brand-info-text ring-1 ring-brand-info/40' : 'bg-brand-blue-soft text-brand-blue-text ring-1 ring-brand-blue/25'
+                        }`}
+                        style={style}
+                        title={`${s.employee} · ${time}${s.break_minutes ? ` · ${s.break_minutes}m break` : ''}${
+                          s.cross_branch ? ` · moved from ${s.home_location ?? 'no home branch'}` : ''
+                        }`}
+                      >
+                        <span className="truncate font-medium">{s.employee.split(' ')[0]}</span>
+                        <span className="truncate tabular-nums opacity-80">{time}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
