@@ -352,6 +352,7 @@ export default function Documents() {
             (d) => d.employee_id === reviewDoc.employee_id && d.doc_type === reviewDoc.doc_type
           )}
           currentUserId={currentUserId}
+          isOwner={profile?.role === 'owner'}
           onClose={() => setReviewDoc(null)}
           onView={handleView}
           onApprove={handleApprove}
@@ -897,6 +898,7 @@ function ReviewDrawer({
   doc,
   history,
   currentUserId,
+  isOwner,
   onClose,
   onView,
   onApprove,
@@ -905,6 +907,7 @@ function ReviewDrawer({
   doc: EmployeeDocument
   history: EmployeeDocument[]
   currentUserId: string | null
+  isOwner: boolean
   onClose: () => void
   onView: (doc: EmployeeDocument) => void
   onApprove: (doc: EmployeeDocument) => void
@@ -913,7 +916,8 @@ function ReviewDrawer({
   const [reason, setReason] = useState('')
   const [showRejectForm, setShowRejectForm] = useState(false)
   const sortedHistory = [...history].sort((a, b) => b.version_number - a.version_number)
-  const isSelfUpload = currentUserId != null && doc.uploaded_by === currentUserId
+  // The owner may approve their own uploads; everyone else needs a second reviewer.
+  const isSelfUpload = !isOwner && currentUserId != null && doc.uploaded_by === currentUserId
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
@@ -954,7 +958,7 @@ function ReviewDrawer({
           <div className="space-y-3 border-t border-border pt-4">
             {isSelfUpload ? (
               <p className="rounded-lg bg-brand-action-soft px-3 py-2 text-xs text-brand-action-text">
-                You uploaded this document — awaiting line manager review.
+                You uploaded this document, so someone else must review it.
               </p>
             ) : !showRejectForm ? (
               <div className="flex justify-end gap-2">
