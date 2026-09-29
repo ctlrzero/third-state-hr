@@ -536,7 +536,6 @@ function ScheduleAdmin() {
             setNotice('Shift cancelled and change recorded.')
             load()
           }}
-          onError={setError}
         />
       )}
 
@@ -545,14 +544,12 @@ function ScheduleAdmin() {
           shift={adjustShift}
           locations={locations}
           employees={employees}
-          positions={positions}
           onClose={() => setAdjustShift(null)}
           onAdjusted={() => {
             setAdjustShift(null)
             setNotice('Shift updated and change recorded.')
             load()
           }}
-          onError={setError}
         />
       )}
 
@@ -1485,12 +1482,10 @@ function CancelShiftModal({
   shift,
   onClose,
   onCancelled,
-  onError,
 }: {
   shift: Shift
   onClose: () => void
   onCancelled: () => void
-  onError: (msg: string) => void
 }) {
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -1557,18 +1552,14 @@ function AdjustShiftModal({
   shift,
   locations,
   employees,
-  positions,
   onClose,
   onAdjusted,
-  onError,
 }: {
   shift: Shift
   locations: Pick<Location, 'id' | 'name'>[]
   employees: Pick<Employee, 'id' | 'full_name' | 'home_location_id'>[]
-  positions: Pick<Position, 'id' | 'title'>[]
   onClose: () => void
   onAdjusted: () => void
-  onError: (msg: string) => void
 }) {
   const [shiftDate, setShiftDate] = useState(shift.shift_date)
   const [startTime, setStartTime] = useState(shift.start_time.slice(0, 5))
