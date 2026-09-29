@@ -47,8 +47,14 @@ export default function Documents() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [uploadPreEmployee, setUploadPreEmployee] = useState<string | null>(null)
   const [uploadPreDocType, setUploadPreDocType] = useState<string | null>(null)
+  // Tracked explicitly rather than inferred from uploadPreEmployee — a staff
+  // member fulfilling their own missing/rejected requirement also needs
+  // preEmployeeId set (to their own id, for the read-only display + RPC
+  // call), but that is a self-upload, not a manager uploading "on behalf".
+  const [uploadKind, setUploadKind] = useState<'self' | 'assisted'>('self')
   const [reviewDoc, setReviewDoc] = useState<EmployeeDocument | null>(null)
   const [renewalDoc, setRenewalDoc] = useState<EmployeeDocument | null>(null)
+  const [myRequirements, setMyRequirements] = useState<DocumentRequirement[]>([])
 
   async function load() {
     if (!activeEntityId) return
@@ -64,7 +70,7 @@ export default function Documents() {
     // sign a URL from even if the "View" action were mistakenly wired up.
     // Owner/entity_admin keep the original raw select — their access is
     // already unredacted and unchanged by this phase.
-    const [docsRes, employeesRes] = await Promise.all([
+    const [docsRes, employeesRes, requirementsRes] = await Promise.all([
       profile?.role === 'location_manager'
         ? supabase.rpc('get_documents_for_review', { p_entity_id: activeEntityId }).then((res) => ({
             data: (res.data ?? []).map((row: Record<string, unknown>) => ({
@@ -83,11 +89,20 @@ export default function Documents() {
       canManage
         ? supabase.from('employees').select('id, full_name').eq('entity_id', activeEntityId).order('full_name')
         : Promise.resolve({ data: [] as { id: string; full_name: string }[], error: null }),
+      // Requirements an admin has actually asked this employee for (seeded
+      // via seed_document_requirements_for_employee — never auto-created),
+      // so "My documents" can offer an upload action for those even when
+      // nothing is expiring. Defaults to the caller's own employee record.
+      !canManage
+        ? supabase.rpc('get_document_requirements_for_employee', {})
+        : Promise.resolve({ data: [] as DocumentRequirement[], error: null }),
     ])
 
     if (docsRes.error) setError(docsRes.error.message)
     else setDocuments((docsRes.data ?? []) as unknown as EmployeeDocument[])
     setEmployees(employeesRes.data ?? [])
+    if (requirementsRes.error) setError(requirementsRes.error.message)
+    setMyRequirements((requirementsRes.data ?? []) as unknown as DocumentRequirement[])
     setLoading(false)
   }
 
@@ -203,7 +218,10 @@ export default function Documents() {
         </div>
         {canManage && (
           <button
-            onClick={() => setUploadOpen(true)}
+            onClick={() => {
+              setUploadKind('self')
+              setUploadOpen(true)
+            }}
             className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
           >
             Upload document
@@ -277,6 +295,7 @@ export default function Documents() {
             docTypes={visibleDocTypes}
             loading={loading}
             onUploadOnBehalf={(employeeId, docType) => {
+              setUploadKind('assisted')
               setUploadPreEmployee(employeeId)
               setUploadPreDocType(docType)
               setUploadOpen(true)
@@ -287,9 +306,17 @@ export default function Documents() {
         <MyDocuments
           currentDocs={myCurrentDocs}
           renewalFor={renewalFor}
+          requirements={myRequirements}
+          documents={documents}
           loading={loading}
           onView={handleView}
           onUploadRenewal={setRenewalDoc}
+          onUploadRequirement={(employeeId, docType) => {
+            setUploadKind('self')
+            setUploadPreEmployee(employeeId)
+            setUploadPreDocType(docType)
+            setUploadOpen(true)
+          }}
         />
       )}
 
@@ -299,16 +326,18 @@ export default function Documents() {
           docTypes={visibleDocTypes}
           preEmployeeId={uploadPreEmployee}
           preDocType={uploadPreDocType}
-          uploadMethod={uploadPreEmployee ? 'assisted' : 'self'}
+          uploadMethod={uploadKind}
           onClose={() => {
             setUploadOpen(false)
             setUploadPreEmployee(null)
             setUploadPreDocType(null)
+            setUploadKind('self')
           }}
           onUploaded={(message) => {
             setUploadOpen(false)
             setUploadPreEmployee(null)
             setUploadPreDocType(null)
+            setUploadKind('self')
             setNotice(message)
             load()
           }}
@@ -697,18 +726,32 @@ function ManagerRegister({
 // Employee "My documents"
 // ---------------------------------------------------------------------------
 
+// A staff member may only ever initiate an upload for two reasons: their own
+// document is actually expiring/expired (renewal), or an admin/manager has
+// explicitly asked for something via seed_document_requirements_for_employee
+// (a missing, rejected, or otherwise-open requirement). A document that is
+// simply "current" offers no upload action at all — nothing to renew, and
+// nothing requested.
+const OPEN_REQUIREMENT_STATUSES: DocumentRequirementStatus[] = ['missing', 'pending_review', 'rejected']
+
 function MyDocuments({
   currentDocs,
   renewalFor,
+  requirements,
+  documents,
   loading,
   onView,
   onUploadRenewal,
+  onUploadRequirement,
 }: {
   currentDocs: EmployeeDocument[]
   renewalFor: (currentDocId: string) => EmployeeDocument | undefined
+  requirements: DocumentRequirement[]
+  documents: EmployeeDocument[]
   loading: boolean
   onView: (doc: EmployeeDocument) => void
   onUploadRenewal: (doc: EmployeeDocument) => void
+  onUploadRequirement: (employeeId: string, docType: string) => void
 }) {
   if (loading) {
     return (
@@ -720,7 +763,12 @@ function MyDocuments({
     )
   }
 
-  if (currentDocs.length === 0) {
+  // Requirements already satisfied by a current, approved document don't
+  // need a call to action — they're just what's rendered below as a normal
+  // document row. Only surface the ones still needing the employee's input.
+  const openRequirements = requirements.filter((r) => OPEN_REQUIREMENT_STATUSES.includes(r.status))
+
+  if (currentDocs.length === 0 && openRequirements.length === 0) {
     return (
       <EmptyState
         title="No documents on file yet"
@@ -730,61 +778,114 @@ function MyDocuments({
   }
 
   return (
-    <ul className="space-y-3">
-      {currentDocs.map((doc) => {
-        const pending = renewalFor(doc.id)
-        return (
-          <li key={doc.id} className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <p className="font-medium capitalize text-ink">{docTypeLabel(doc.doc_type)}</p>
-                <p className="text-xs text-muted">
-                  {doc.expiry_date ? `Expires ${doc.expiry_date}` : 'No expiry date set'}
-                </p>
-              </div>
-              <StatusBadge status={expiryStatus(doc.expiry_date)} />
-            </div>
+    <div className="space-y-5">
+      {openRequirements.length > 0 && (
+        <section>
+          <h2 className="mb-2 text-sm font-semibold text-ink">Requested by your admin</h2>
+          <ul className="space-y-3">
+            {openRequirements.map((req) => {
+              const linkedDoc = req.document_id ? documents.find((d) => d.id === req.document_id) : undefined
+              return (
+                <li key={req.id} className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="font-medium capitalize text-ink">{docTypeLabel(req.doc_type)}</p>
+                    <StatusBadge status={req.status} tone={req.status === 'missing' ? 'risk' : undefined} />
+                  </div>
 
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => onView(doc)}
-                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
-              >
-                View current version
-              </button>
+                  {req.status === 'pending_review' && (
+                    <p className="mt-2 text-xs text-muted">Uploaded — awaiting review.</p>
+                  )}
 
-              {!pending && (
-                <button
-                  onClick={() => onUploadRenewal(doc)}
-                  className="rounded-lg bg-brand-blue-soft px-3 py-1.5 text-xs font-medium text-brand-blue-text hover:bg-brand-blue-soft/70"
-                >
-                  Upload renewal
-                </button>
-              )}
-            </div>
+                  {req.status === 'rejected' && (
+                    <p className="mt-2 text-xs text-brand-risk-text">
+                      {linkedDoc?.rejection_reason ? `Rejected: ${linkedDoc.rejection_reason}` : 'Your last upload was rejected.'}
+                    </p>
+                  )}
 
-            {pending?.review_status === 'pending_review' && (
-              <p className="mt-3 rounded-lg bg-brand-warning-soft px-3 py-2 text-xs text-brand-warning-solid">
-                Your renewal is pending review. The document above stays your current approved version until a
-                decision is made.
-              </p>
-            )}
+                  {(req.status === 'missing' || req.status === 'rejected') && (
+                    <button
+                      onClick={() => onUploadRequirement(req.employee_id, req.doc_type)}
+                      className="mt-3 rounded-lg bg-brand-blue-soft px-3 py-1.5 text-xs font-medium text-brand-blue-text hover:bg-brand-blue-soft/70"
+                    >
+                      {req.status === 'rejected' ? 'Resubmit' : 'Upload'}
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
 
-            {pending?.review_status === 'rejected' && (
-              <div className="mt-3 rounded-lg bg-brand-risk-soft px-3 py-2 text-xs text-brand-risk-text">
-                <p className="font-medium">Your last renewal was rejected: {pending.rejection_reason}</p>
-                <button
-                  onClick={() => onUploadRenewal(doc)}
-                  className="mt-2 rounded-lg border border-brand-risk/30 px-3 py-1 font-medium hover:bg-brand-risk-soft/60"
-                >
-                  Resubmit
-                </button>
-              </div>
-            )}
-          </li>
-        )
-      })}
-    </ul>
+      {currentDocs.length > 0 && (
+        <section>
+          {openRequirements.length > 0 && <h2 className="mb-2 text-sm font-semibold text-ink">Your documents</h2>}
+          <ul className="space-y-3">
+            {currentDocs.map((doc) => {
+              const pending = renewalFor(doc.id)
+              const expiry = expiryStatus(doc.expiry_date)
+              const canRenew = expiry === 'expiring' || expiry === 'expired'
+              return (
+                <li key={doc.id} className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium capitalize text-ink">{docTypeLabel(doc.doc_type)}</p>
+                      <p className="text-xs text-muted">
+                        {doc.expiry_date ? `Expires ${doc.expiry_date}` : 'No expiry date set'}
+                      </p>
+                    </div>
+                    <StatusBadge status={expiry} />
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => onView(doc)}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
+                    >
+                      View current version
+                    </button>
+
+                    {/* Only an expiring/expired document may be renewed by the employee themselves — a
+                        document in good standing has nothing to act on until it's close to expiry or an
+                        admin specifically requests a fresh copy (handled by the section above). */}
+                    {canRenew && !pending && (
+                      <button
+                        onClick={() => onUploadRenewal(doc)}
+                        className="rounded-lg bg-brand-blue-soft px-3 py-1.5 text-xs font-medium text-brand-blue-text hover:bg-brand-blue-soft/70"
+                      >
+                        Upload renewal
+                      </button>
+                    )}
+                  </div>
+
+                  {pending?.review_status === 'pending_review' && (
+                    <p className="mt-3 rounded-lg bg-brand-warning-soft px-3 py-2 text-xs text-brand-warning-solid">
+                      Your renewal is pending review. The document above stays your current approved version until a
+                      decision is made.
+                    </p>
+                  )}
+
+                  {pending?.review_status === 'rejected' && (
+                    <div className="mt-3 rounded-lg bg-brand-risk-soft px-3 py-2 text-xs text-brand-risk-text">
+                      {/* Not gated on canRenew — a reviewer already engaged with this renewal and
+                          rejected it, so resubmitting completes that review cycle rather than starting
+                          an unprompted upload. */}
+                      <p className="font-medium">Your last renewal was rejected: {pending.rejection_reason}</p>
+                      <button
+                        onClick={() => onUploadRenewal(doc)}
+                        className="mt-2 rounded-lg border border-brand-risk/30 px-3 py-1 font-medium hover:bg-brand-risk-soft/60"
+                      >
+                        Resubmit
+                      </button>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </section>
+      )}
+    </div>
   )
 }
 
@@ -1025,7 +1126,7 @@ function UploadDocumentModal({
             </label>
             {preEmployeeId ? (
               <p className="rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm text-ink">
-                {employees.find((e) => e.id === preEmployeeId)?.full_name ?? preEmployeeId}
+                {uploadMethod === 'self' ? 'You' : (employees.find((e) => e.id === preEmployeeId)?.full_name ?? preEmployeeId)}
               </p>
             ) : (
               <select id="documents-employee-2"
@@ -1120,7 +1221,6 @@ function UploadDocumentModal({
 
 function ChecklistTab({
   employees,
-  docTypes,
   loading,
   onUploadOnBehalf,
 }: {

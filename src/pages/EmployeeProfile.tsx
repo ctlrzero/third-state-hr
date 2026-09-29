@@ -21,6 +21,7 @@ import {
 } from '../lib/api/employees'
 import { fmtClockRange, fmtDate, fmtDateTime, fmtDayShort, fmtMinutes, fmtTime, humanize, todayDubai, addDays } from '../lib/format'
 import { getEmployeeCompensation, setEmployeeCompensation } from '../lib/api/compensation'
+import { adjustLeaveBalance } from '../lib/api/leave'
 import {
   DEFAULT_HOLIDAY_MULTIPLIER,
   DEFAULT_OVERTIME_MULTIPLIER,
@@ -356,7 +357,7 @@ export default function EmployeeProfile() {
         {tab === 'documents' && <DocumentsTab employee={employee} />}
         {tab === 'schedule' && <ScheduleTab employeeId={employee.id} />}
         {tab === 'attendance' && <AttendanceTab employeeId={employee.id} />}
-        {tab === 'leave' && <LeaveTab employeeId={employee.id} />}
+        {tab === 'leave' && <LeaveTab employeeId={employee.id} isAdmin={isAdmin} />}
         {tab === 'payslips' && isAdmin && <PayslipsTab employeeId={employee.id} />}
         {tab === 'audit' && <AuditTab employeeId={employee.id} isOwner={profile?.role === 'owner'} />}
       </TabPanel>
@@ -675,10 +676,13 @@ function AttendanceTab({ employeeId }: { employeeId: string }) {
   )
 }
 
-function LeaveTab({ employeeId }: { employeeId: string }) {
+function LeaveTab({ employeeId, isAdmin }: { employeeId: string; isAdmin: boolean }) {
   const [requests, setRequests] = useState<LeaveRequest[] | null>(null)
   const [balances, setBalances] = useState<LeaveBalance[]>([])
-  useEffect(() => {
+  const [adjusting, setAdjusting] = useState<LeaveBalance | null>(null)
+  const [newBalance, setNewBalance] = useState('')
+
+  const reload = useCallback(() => {
     supabase
       .from('leave_requests')
       .select('*, leave_types(id, name)')
@@ -692,6 +696,19 @@ function LeaveTab({ employeeId }: { employeeId: string }) {
       .eq('employee_id', employeeId)
       .then(({ data }) => setBalances((data ?? []) as unknown as LeaveBalance[]))
   }, [employeeId])
+  useEffect(reload, [reload])
+
+  async function confirmAdjust(reason: string): Promise<string | null> {
+    if (!adjusting) return 'Nothing to adjust.'
+    const parsed = Number(newBalance)
+    if (!Number.isFinite(parsed) || parsed < 0) return 'Enter a valid number of days (0 or more).'
+    const { error } = await adjustLeaveBalance(employeeId, adjusting.leave_type_id, parsed, reason)
+    if (error) return error
+    setAdjusting(null)
+    reload()
+    return null
+  }
+
   return (
     <div className="space-y-4">
       {balances.length > 0 && (
@@ -702,10 +719,46 @@ function LeaveTab({ employeeId }: { employeeId: string }) {
               <li key={b.id} className="rounded-lg bg-surface-alt p-3">
                 <p className="text-xs text-muted">{b.leave_types?.name ?? 'Leave'}</p>
                 <p className="text-lg font-semibold text-ink">{b.balance_days} days</p>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="mt-1 text-xs font-medium text-brand-blue hover:underline"
+                    onClick={() => {
+                      setNewBalance(String(b.balance_days))
+                      setAdjusting(b)
+                    }}
+                  >
+                    Adjust
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         </section>
+      )}
+      {isAdmin && (
+        <ReasonModal
+          open={adjusting !== null}
+          title={`Adjust ${adjusting?.leave_types?.name ?? 'leave'} balance`}
+          prompt="This sets the employee's current balance directly — use it for offer-specific entitlements the standard accrual policy doesn't cover. The change and reason are recorded in the audit log."
+          confirmLabel="Save balance"
+          onCancel={() => setAdjusting(null)}
+          onConfirm={confirmAdjust}
+        >
+          <Field label="New balance (days)">
+            {(p) => (
+              <input
+                {...p}
+                type="number"
+                min={0}
+                step={0.5}
+                className="input"
+                value={newBalance}
+                onChange={(e) => setNewBalance(e.target.value)}
+              />
+            )}
+          </Field>
+        </ReasonModal>
       )}
       <section className="card">
         <h2 className="mb-3 text-sm font-semibold text-ink">Requests</h2>

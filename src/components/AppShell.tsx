@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { NotificationBell } from './NotificationBell'
 import { mobileNavForRole, navForRole, type NavIcon } from '../lib/nav'
@@ -33,6 +33,28 @@ export function NavGlyph({ icon, className = 'h-5 w-5' }: { icon: NavIcon | 'mor
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={1.75} aria-hidden="true">
       <path d={d} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  )
+}
+
+// Placeholder avatar until real profile photos are wired up (employees.photo_url
+// exists in the data model but isn't surfaced to the client yet) — initials on a
+// neutral badge, same treatment for every role.
+function initials(fullName: string | null | undefined): string {
+  const parts = (fullName ?? '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  const first = parts[0][0]
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : ''
+  return (first + last).toUpperCase()
+}
+
+function AvatarBadge({ fullName }: { fullName: string | null | undefined }) {
+  return (
+    <span
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-alt text-[11px] font-semibold text-ink"
+      aria-hidden="true"
+    >
+      {initials(fullName)}
+    </span>
   )
 }
 
@@ -142,7 +164,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
             <div className="flex items-center gap-2">
               <NotificationBell />
-              <span className="hidden text-sm text-muted sm:inline">{profile?.full_name ?? 'Signed in'}</span>
+              <Link
+                to="/me"
+                className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-alt"
+                aria-label="My profile"
+              >
+                <AvatarBadge fullName={profile?.full_name} />
+                <span className="hidden text-sm text-muted sm:inline">{profile?.full_name ?? 'Signed in'}</span>
+              </Link>
               <button onClick={() => signOut()} className="btn-secondary hidden md:inline-flex">
                 Sign out
               </button>

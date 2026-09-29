@@ -106,20 +106,6 @@ export function buildPayslipPdf(p: MyPayslipDetail): Uint8Array {
   doc.text(R - 10, y + 15, money(p.net_pay, cur), { size: 13, bold: true, color: [1, 1, 1], align: 'right' })
   y += 50
 
-  // Hours
-  const s = p.salary
-  if (s && (s.regular_hours || s.overtime_hours || s.holiday_hours)) {
-    doc.text(L, y, 'Hours this period', { size: 9, bold: true, color: MUTED })
-    y += 14
-    doc.text(
-      L,
-      y,
-      `Regular ${Number(s.regular_hours ?? 0)} h   ·   Overtime ${Number(s.overtime_hours ?? 0)} h   ·   Holiday ${Number(s.holiday_hours ?? 0)} h`,
-      { size: 10 }
-    )
-    y += 20
-  }
-
   doc.line(L, A4.height - 60, R, A4.height - 60)
   doc.text(L, A4.height - 44, 'Computer-generated payslip from Third State HR. No signature required.', { size: 8, color: MUTED })
   doc.text(R, A4.height - 44, `Generated ${fmtDate(new Date().toISOString())}`, { size: 8, color: MUTED, align: 'right' })
