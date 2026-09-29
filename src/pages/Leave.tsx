@@ -305,7 +305,8 @@ function MyLeave() {
     ])
     if (balRes.error) setError(balRes.error.message)
     else setBalances((balRes.data ?? []) as unknown as LeaveBalance[])
-    setLeaveTypes((typesRes.data ?? []) as LeaveType[])
+    const STAFF_LEAVE_TYPES = ['Annual Leave', 'Sick Leave']
+    setLeaveTypes(((typesRes.data ?? []) as LeaveType[]).filter((t) => STAFF_LEAVE_TYPES.includes(t.name)))
     setMyRequests((reqRes.data ?? []) as unknown as LeaveRequest[])
     setLoading(false)
   }
