@@ -168,6 +168,7 @@ export interface Shift {
   shift_date: string
   start_time: string
   end_time: string
+  break_minutes: number
   status: ShiftStatus
   notes: string | null
   created_by: string | null
@@ -184,6 +185,23 @@ export interface Shift {
   locations?: Pick<Location, 'id' | 'name'> | null
   positions?: Pick<Position, 'id' | 'title'> | null
   employees?: Pick<Employee, 'id' | 'full_name'> | null
+}
+
+export type ShiftChangeType = 'cancelled' | 'unpublished' | 'reassigned' | 'date_changed' | 'location_changed' | 'time_changed' | 'break_changed' | 'deleted'
+
+export interface ShiftAdjustment {
+  id: string
+  shift_id: string
+  entity_id: string
+  location_id: string | null
+  employee_id: string | null
+  previous_employee_id: string | null
+  change_type: ShiftChangeType
+  reason: string | null
+  old_values: Record<string, unknown>
+  new_values: Record<string, unknown> | null
+  changed_by: string | null
+  changed_at: string
 }
 
 // Phase 2.6: recurring weekly schedule templates. day_of_week follows

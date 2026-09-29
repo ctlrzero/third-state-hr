@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { fmtDayShort, fmtTime } from '../lib/format'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
-import type {
+import type { ShiftAdjustment, ShiftChangeType,
   Employee,
   Location,
   Position,
@@ -18,6 +18,23 @@ import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+// Strip any "ERROR: " prefix Postgres sometimes prepends; display the
+// human-readable part the trigger raised.
+function friendlyError(err: { message: string; code?: string }): string {
+  return err.message.replace(/^ERROR:\s*/i, '')
+}
+
+const CHANGE_TYPE_LABEL: Record<ShiftChangeType, string> = {
+  cancelled: 'Cancelled',
+  unpublished: 'Unpublished',
+  reassigned: 'Reassigned',
+  date_changed: 'Date changed',
+  location_changed: 'Branch changed',
+  time_changed: 'Time changed',
+  break_changed: 'Break changed',
+  deleted: 'Deleted',
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
@@ -78,6 +95,9 @@ function ScheduleAdmin() {
   const [locationFilter, setLocationFilter] = useState<string>('all')
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([])
   const [templateModalOpen, setTemplateModalOpen] = useState(false)
+  const [adjustShift, setAdjustShift] = useState<Shift | null>(null)
+  const [cancelPublishedShift, setCancelPublishedShift] = useState<Shift | null>(null)
+  const [historyShift, setHistoryShift] = useState<Shift | null>(null)
 
   const employeesById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees])
 
@@ -133,14 +153,22 @@ function ScheduleAdmin() {
     [templates, locationFilter]
   )
 
-  async function handleCancelShift(id: string) {
-    if (!(await confirmDialog('Cancel this shift?'))) return
-    const { error: updateError } = await supabase.from('shifts').update({ status: 'cancelled' }).eq('id', id)
+  async function handleCancelDraftShift(shift: Shift) {
+    if (!(await confirmDialog('Cancel this draft shift?'))) return
+    const { error: updateError } = await supabase.from('shifts').update({ status: 'cancelled' }).eq('id', shift.id)
     if (updateError) {
-      setError(updateError.message)
+      setError(friendlyError(updateError))
       return
     }
     load()
+  }
+
+  function handleCancelShiftClick(shift: Shift) {
+    if (shift.is_published) {
+      setCancelPublishedShift(shift)
+    } else {
+      handleCancelDraftShift(shift)
+    }
   }
 
   async function handleDeactivateTemplate(id: string) {
@@ -295,6 +323,7 @@ function ScheduleAdmin() {
                   <td data-label="Date" className="px-4 py-3 text-ink">{fmtDate(s.shift_date)}</td>
                   <td data-label="Time" className="px-4 py-3 text-muted">
                     {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
+                    {s.break_minutes > 0 && <span className="ml-1 text-xs">· {s.break_minutes}m break</span>}
                   </td>
                   <td data-label="Branch" className="px-4 py-3 text-muted">{s.locations?.name ?? '—'}</td>
                   <td data-label="Role" className="px-4 py-3 text-muted">{s.positions?.title ?? '—'}</td>
@@ -306,11 +335,23 @@ function ScheduleAdmin() {
                     </span>
                   </td>
                   <td data-label="Actions" className="px-4 py-3 text-right">
-                    {s.status !== 'cancelled' && (
-                      <button onClick={() => handleCancelShift(s.id)} className="text-xs font-medium text-brand-risk hover:underline">
-                        Cancel
-                      </button>
-                    )}
+                    <div className="flex justify-end gap-3">
+                      {s.status !== 'cancelled' && s.is_published && (
+                        <button onClick={() => setAdjustShift(s)} className="text-xs font-medium text-brand-blue hover:underline">
+                          Adjust
+                        </button>
+                      )}
+                      {s.status !== 'cancelled' && (
+                        <button onClick={() => handleCancelShiftClick(s)} className="text-xs font-medium text-brand-risk hover:underline">
+                          Cancel
+                        </button>
+                      )}
+                      {s.is_published && (
+                        <button onClick={() => setHistoryShift(s)} className="text-xs font-medium text-muted hover:underline">
+                          History
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -362,6 +403,42 @@ function ScheduleAdmin() {
             setTemplateModalOpen(false)
             load()
           }}
+        />
+      )}
+
+      {cancelPublishedShift && (
+        <CancelShiftModal
+          shift={cancelPublishedShift}
+          onClose={() => setCancelPublishedShift(null)}
+          onCancelled={() => {
+            setCancelPublishedShift(null)
+            setNotice('Shift cancelled and change recorded.')
+            load()
+          }}
+          onError={setError}
+        />
+      )}
+
+      {adjustShift && (
+        <AdjustShiftModal
+          shift={adjustShift}
+          locations={locations}
+          employees={employees}
+          positions={positions}
+          onClose={() => setAdjustShift(null)}
+          onAdjusted={() => {
+            setAdjustShift(null)
+            setNotice('Shift updated and change recorded.')
+            load()
+          }}
+          onError={setError}
+        />
+      )}
+
+      {historyShift && (
+        <ShiftHistoryDrawer
+          shift={historyShift}
+          onClose={() => setHistoryShift(null)}
         />
       )}
     </div>
@@ -740,6 +817,7 @@ function NewShiftModal({
   const [shiftDate, setShiftDate] = useState('')
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('17:00')
+  const [breakMinutes, setBreakMinutes] = useState(0)
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -765,13 +843,14 @@ function NewShiftModal({
       shift_date: shiftDate,
       start_time: startTime,
       end_time: endTime,
+      break_minutes: breakMinutes,
       status: employeeId ? 'assigned' : 'open',
       notes: notes || null,
       created_by: user?.id ?? null,
     })
     setSubmitting(false)
     if (insertError) {
-      setError(insertError.message)
+      setError(friendlyError(insertError))
       return
     }
     onCreated()
@@ -802,7 +881,7 @@ function NewShiftModal({
               ))}
             </select>
           </div>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-4 gap-2">
             <div className="col-span-1">
               <label htmlFor="schedules-date-14" className="mb-1 block text-sm font-medium text-ink">Date</label>
               <input id="schedules-date-14"
@@ -827,6 +906,16 @@ function NewShiftModal({
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
+                className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+              />
+            </div>
+            <div>
+              <label htmlFor="schedules-break-new-shift" className="mb-1 block text-sm font-medium text-ink">Break (min)</label>
+              <input id="schedules-break-new-shift"
+                type="number"
+                min={0}
+                value={breakMinutes}
+                onChange={(e) => setBreakMinutes(Number(e.target.value))}
                 className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
               />
             </div>
@@ -1201,6 +1290,267 @@ function MySchedule() {
           </ul>
         </div>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Cancel a published shift (reason required → cancel_published_shift RPC)
+// ---------------------------------------------------------------------------
+
+function CancelShiftModal({
+  shift,
+  onClose,
+  onCancelled,
+  onError,
+}: {
+  shift: Shift
+  onClose: () => void
+  onCancelled: () => void
+  onError: (msg: string) => void
+}) {
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!reason.trim()) { setError('A reason is required.'); return }
+    setSubmitting(true)
+    setError(null)
+    const { error: rpcError } = await supabase.rpc('cancel_published_shift', {
+      p_shift_id: shift.id,
+      p_reason: reason.trim(),
+    })
+    setSubmitting(false)
+    if (rpcError) { setError(friendlyError(rpcError)); return }
+    onCancelled()
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-1 text-base font-semibold text-ink">Cancel published shift</h2>
+        <p className="mb-4 text-xs text-muted">
+          {fmtDate(shift.shift_date)} · {fmtTime(shift.start_time)}–{fmtTime(shift.end_time)}
+          {shift.employees?.full_name ? ` · ${shift.employees.full_name}` : ''}
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label htmlFor="cancel-shift-reason" className="mb-1 block text-sm font-medium text-ink">Reason *</label>
+            <textarea
+              id="cancel-shift-reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Employee called in sick, shift no longer needed"
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+            />
+          </div>
+          {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt">
+              Back
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !reason.trim()}
+              className="rounded-lg bg-brand-risk px-4 py-2 text-sm font-medium text-white hover:bg-brand-risk/90 disabled:opacity-60"
+            >
+              {submitting ? 'Cancelling…' : 'Cancel shift'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Adjust a published shift (reason required → adjust_published_shift RPC)
+// ---------------------------------------------------------------------------
+
+function AdjustShiftModal({
+  shift,
+  locations,
+  employees,
+  positions,
+  onClose,
+  onAdjusted,
+  onError,
+}: {
+  shift: Shift
+  locations: Pick<Location, 'id' | 'name'>[]
+  employees: Pick<Employee, 'id' | 'full_name' | 'home_location_id'>[]
+  positions: Pick<Position, 'id' | 'title'>[]
+  onClose: () => void
+  onAdjusted: () => void
+  onError: (msg: string) => void
+}) {
+  const [shiftDate, setShiftDate] = useState(shift.shift_date)
+  const [startTime, setStartTime] = useState(shift.start_time.slice(0, 5))
+  const [endTime, setEndTime] = useState(shift.end_time.slice(0, 5))
+  const [breakMinutes, setBreakMinutes] = useState(shift.break_minutes)
+  const [employeeId, setEmployeeId] = useState(shift.employee_id ?? '')
+  const [locationId, setLocationId] = useState(shift.location_id)
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!reason.trim()) { setError('A reason is required.'); return }
+    setSubmitting(true)
+    setError(null)
+    const { error: rpcError } = await supabase.rpc('adjust_published_shift', {
+      p_shift_id: shift.id,
+      p_reason: reason.trim(),
+      p_shift_date: shiftDate,
+      p_start_time: startTime,
+      p_end_time: endTime,
+      p_break_minutes: breakMinutes,
+      p_employee_id: employeeId || null,
+      p_location_id: locationId,
+    })
+    setSubmitting(false)
+    if (rpcError) { setError(friendlyError(rpcError)); return }
+    onAdjusted()
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-4 text-base font-semibold text-ink">Adjust published shift</h2>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label htmlFor="adjust-branch" className="mb-1 block text-sm font-medium text-ink">Branch</label>
+            <select id="adjust-branch" value={locationId} onChange={(e) => setLocationId(e.target.value)}
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20">
+              {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="adjust-employee" className="mb-1 block text-sm font-medium text-ink">Assigned to</label>
+            <select id="adjust-employee" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20">
+              <option value="">Open shift (unassigned)</option>
+              {employees.map((emp) => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <div className="col-span-1">
+              <label htmlFor="adjust-date" className="mb-1 block text-sm font-medium text-ink">Date</label>
+              <input id="adjust-date" type="date" value={shiftDate} onChange={(e) => setShiftDate(e.target.value)}
+                className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+            <div>
+              <label htmlFor="adjust-start" className="mb-1 block text-sm font-medium text-ink">Start</label>
+              <input id="adjust-start" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)}
+                className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+            <div>
+              <label htmlFor="adjust-end" className="mb-1 block text-sm font-medium text-ink">End</label>
+              <input id="adjust-end" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)}
+                className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+            <div>
+              <label htmlFor="adjust-break" className="mb-1 block text-sm font-medium text-ink">Break (min)</label>
+              <input id="adjust-break" type="number" min={0} value={breakMinutes} onChange={(e) => setBreakMinutes(Number(e.target.value))}
+                className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="adjust-reason" className="mb-1 block text-sm font-medium text-ink">Reason for change *</label>
+            <textarea id="adjust-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+              placeholder="e.g. Employee requested time change, branch operational need"
+              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
+          </div>
+          {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt">
+              Cancel
+            </button>
+            <button type="submit" disabled={submitting || !reason.trim()}
+              className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60">
+              {submitting ? 'Saving…' : 'Save changes'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Shift change history drawer (reads shift_adjustments)
+// ---------------------------------------------------------------------------
+
+function ShiftHistoryDrawer({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+  const [history, setHistory] = useState<ShiftAdjustment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const { data, error: qErr } = await supabase
+      .from('shift_adjustments')
+      .select('*')
+      .eq('shift_id', shift.id)
+      .order('changed_at', { ascending: false })
+    setLoading(false)
+    if (qErr) { setError(qErr.message); return }
+    setHistory((data ?? []) as ShiftAdjustment[])
+  }, [shift.id])
+
+  useEffect(() => { load() }, [load])
+
+  function fmtTs(ts: string) {
+    const d = new Date(ts)
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-[14px] border border-border bg-surface p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-ink">Change history</h2>
+            <p className="text-xs text-muted">
+              {fmtDate(shift.shift_date)} · {fmtTime(shift.start_time)}–{fmtTime(shift.end_time)}
+              {shift.employees?.full_name ? ` · ${shift.employees.full_name}` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-sm text-muted hover:text-ink">Close</button>
+        </div>
+
+        {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text mb-3">{error}</p>}
+
+        {loading ? (
+          <div className="space-y-2">
+            {[0, 1, 2].map((i) => <div key={i} className="h-12 animate-pulse rounded-lg bg-surface-alt" />)}
+          </div>
+        ) : history.length === 0 ? (
+          <p className="text-sm text-muted">No recorded changes for this shift.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {history.map((h) => (
+              <li key={h.id} className="py-3 text-sm">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium text-ink">{CHANGE_TYPE_LABEL[h.change_type]}</span>
+                  <span className="shrink-0 text-xs text-muted">{fmtTs(h.changed_at)}</span>
+                </div>
+                {h.reason && <p className="mt-0.5 text-xs text-muted">Reason: {h.reason}</p>}
+                {h.old_values && Object.keys(h.old_values).length > 0 && (
+                  <p className="mt-0.5 text-xs text-muted">
+                    Was: {Object.entries(h.old_values).map(([k, v]) => `${k.replace(/_/g, ' ')} ${String(v)}`).join(', ')}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }
