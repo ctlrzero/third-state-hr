@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import { fmtDate as fmtDateUae } from '../lib/format'
+import { Link } from 'react-router-dom'
+import { fmtDate as fmtDateUae, fmtDayShort, fmtTime } from '../lib/format'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
@@ -18,6 +19,15 @@ const LEAVE_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'succes
 
 // UAE-readable dates (Asia/Dubai) shared across the app.
 const fmtDate = (d: string) => fmtDateUae(d)
+
+interface AffectedShift {
+  shift_id: string
+  shift_date: string
+  start_time: string
+  end_time: string
+  location: string | null
+  is_published: boolean
+}
 
 // Leave: leave_requests + leave_types + leave_balances. Admin
 // (owner/entity_admin/location_manager) get a decision queue for pending
@@ -50,6 +60,7 @@ function LeaveAdmin() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [overridingId, setOverridingId] = useState<string | null>(null)
   const [overrideReason, setOverrideReason] = useState('')
+  const [clashes, setClashes] = useState<{ name: string; shifts: AffectedShift[] } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -94,7 +105,7 @@ function LeaveAdmin() {
   async function handleDecide(id: string, action: 'approve' | 'reject', override = false, reason?: string) {
     setBusyId(id)
     setError(null)
-    const { error: rpcError } = await supabase.rpc('approve_leave_request', {
+    const { data, error: rpcError } = await supabase.rpc('approve_leave_request', {
       p_request_id: id,
       p_action: action,
       p_override: override,
@@ -105,6 +116,9 @@ function LeaveAdmin() {
       setError(rpcError.message)
       return
     }
+    const affected = ((data as { affected_shifts?: AffectedShift[] } | null)?.affected_shifts ?? [])
+    const who = requests.find((r) => r.id === id)?.employees?.full_name ?? 'This person'
+    setClashes(action === 'approve' && affected.length > 0 ? { name: who, shifts: affected } : null)
     setNotice(action === 'approve' ? 'Leave approved — balance updated.' : 'Leave rejected.')
     setOverridingId(null)
     setOverrideReason('')
@@ -141,6 +155,38 @@ function LeaveAdmin() {
             Dismiss
           </button>
         </p>
+      )}
+
+      {clashes && (
+        <div role="status" className="rounded-[14px] border border-brand-warning/40 bg-brand-warning-soft p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-brand-warning-solid">
+                {clashes.name} still has {clashes.shifts.length} shift{clashes.shifts.length === 1 ? '' : 's'} during this leave
+              </h2>
+              <p className="text-xs text-brand-warning-solid">
+                They were not cancelled. Reassign or cancel each one — draft shifts on leave days won't be published.
+              </p>
+            </div>
+            <button className="text-xs font-medium text-brand-warning-solid underline" onClick={() => setClashes(null)}>
+              Dismiss
+            </button>
+          </div>
+          <ul className="mt-3 space-y-1.5">
+            {clashes.shifts.map((s) => (
+              <li key={s.shift_id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface px-3 py-2 text-sm">
+                <span className="text-ink">
+                  {fmtDayShort(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
+                  {s.location && <span className="text-muted"> · {s.location}</span>}
+                  <span className="text-muted"> · {s.is_published ? 'published' : 'draft'}</span>
+                </span>
+                <Link to={`/schedules?shift=${s.shift_id}`} className="text-xs font-medium text-brand-blue hover:underline">
+                  Reassign
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {loading ? (

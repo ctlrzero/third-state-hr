@@ -116,6 +116,11 @@ insert into results select * from pg_temp.chk('ea_a: get_attendance_exceptions(B
 insert into results select * from pg_temp.chk('ea_a: admin_upsert_entity', (select sub::text from personas where k='ea_a'), 'deny', $$public.admin_upsert_entity('a0000000-0000-4000-8000-000000000002','x',null,null,null,null,null,true)$$);
 insert into results select * from pg_temp.chk('ea_b: run_payroll_calculation(A)', (select sub::text from personas where k='ea_b'), 'deny', $$public.run_payroll_calculation('a0000000-0000-4000-8000-000000000202')$$);
 
+-- ---------------------------------------------------------------- P0-1 leave vs schedule
+insert into results select * from pg_temp.chk('staff A: publish_schedule_period', (select sub::text from personas where k='st_a'), 'deny', $$public.publish_schedule_period('a0000000-0000-4000-8000-000000000011', current_date, current_date + 7)$$);
+insert into results select * from pg_temp.chk('lm_b: approve Entity A leave', (select sub::text from personas where k='lm_b'), 'deny', $$public.approve_leave_request('a0000000-0000-4000-8000-000000000101','approve',false,null)$$);
+insert into results select * from pg_temp.chk('ea_b: publish Branch A1', (select sub::text from personas where k='ea_b'), 'deny', $$public.publish_schedule_period('a0000000-0000-4000-8000-000000000011', current_date, current_date + 7)$$);
+
 -- ---------------------------------------------------------------- revoked profile (rolled back)
 insert into results select * from pg_temp.chk('setup: revoke employee B', (select sub::text from personas where k='ea_a'), 'deny', $$public.admin_revoke_access('99a456ae-bdf5-40ca-b0fb-fc741a525cd5', null, 'access test (rolled back)')$$);
 insert into results

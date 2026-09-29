@@ -366,6 +366,63 @@ exception when others then
   insert into e2e_results values ('J5 cross-entity: entityadmin.b / locationmanager.b see zero Entity A rows', false, sqlstate || ' ' || sqlerrm);
 end $j$;
 
+-- ------------------------------------------------------------ J6 P0-1 approved leave vs schedule (entityadmin.a)
+do $j$
+declare
+  v_day date := current_date + 45;
+  v_lt uuid; v_req uuid; v_shift uuid; r jsonb; v_code text; v_n int; v_pub boolean;
+begin
+  reset role;
+  select id into v_lt from public.leave_types
+   where entity_id = 'a0000000-0000-4000-8000-000000000001' order by (name = 'Annual Leave') desc limit 1;
+  insert into public.shifts (entity_id, location_id, employee_id, shift_date, start_time, end_time, status, created_by, is_published)
+  values ('a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000011', 'a0000000-0000-4000-8000-000000000031',
+          v_day, '09:00', '17:00', 'assigned', '81b68580-a490-4115-be98-70285a51ba99', false)
+  returning id into v_shift;
+  insert into public.leave_requests (employee_id, leave_type_id, start_date, end_date, days_requested, status, reason)
+  values ('a0000000-0000-4000-8000-000000000031', v_lt, v_day, v_day, 1, 'pending', 'e2e P0-1 (rolled back)')
+  returning id into v_req;
+
+  perform pg_temp.login('81b68580-a490-4115-be98-70285a51ba99');
+
+  -- Approving returns the clashing shift; it is flagged, not cancelled
+  r := public.approve_leave_request(v_req, 'approve', true, 'e2e: balance not under test');
+  perform pg_temp.ok(r ->> 'status' = 'approved', 'leave approved');
+  perform pg_temp.ok(jsonb_array_length(r -> 'affected_shifts') = 1
+                     and r -> 'affected_shifts' -> 0 ->> 'shift_id' = v_shift::text, 'overlapping shift returned in affected_shifts');
+  select count(*) into v_n from public.shifts where id = v_shift and status <> 'cancelled';
+  perform pg_temp.ok(v_n = 1, 'affected shift not auto-cancelled');
+
+  -- A new shift on the leave day is refused
+  v_code := pg_temp.expect_error(format($$insert into public.shifts (entity_id, location_id, employee_id, shift_date, start_time, end_time, status, created_by, is_published)
+      values ('a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000011', 'a0000000-0000-4000-8000-000000000031',
+              %L, '18:00', '20:00', 'assigned', auth.uid(), false)$$, v_day), 'shift on approved-leave day');
+  perform pg_temp.ok(v_code = '22023', 'shift on approved-leave day refused with 22023 (got ' || coalesce(v_code, 'none') || ')');
+
+  -- Publishing leaves the clashing draft unpublished and reports it
+  r := public.publish_schedule_period('a0000000-0000-4000-8000-000000000011', v_day, v_day);
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r -> 'skipped_leave') x where x ->> 'shift_id' = v_shift::text),
+                     'publish reports the clashing draft in skipped_leave');
+  select is_published into v_pub from public.shifts where id = v_shift;
+  perform pg_temp.ok(v_pub = false, 'clashing draft left unpublished');
+
+  -- Cancelling the clashing shift still works (trigger only guards live shifts)
+  update public.shifts set status = 'cancelled' where id = v_shift;
+  select count(*) into v_n from public.shifts where id = v_shift and status = 'cancelled';
+  perform pg_temp.ok(v_n = 1, 'clashing shift can be cancelled');
+
+  reset role;
+  select count(*) into v_n from public.notifications
+   where notification_type = 'leave_shift_conflict' and target_id = v_req
+     and recipient_user_id = '545cf168-7595-4ccb-8c37-c4c434f5f1c0';
+  perform pg_temp.ok(v_n = 1, 'Branch A1 manager notified about the clashing shift');
+
+  insert into e2e_results values ('J6 P0-1: approved leave flags, blocks and skips clashing shifts', true, 'ok');
+exception when others then
+  reset role;
+  insert into e2e_results values ('J6 P0-1: approved leave flags, blocks and skips clashing shifts', false, sqlstate || ' ' || sqlerrm);
+end $j$;
+
 reset role;
 select journey, pass, detail from e2e_results order by journey;
 rollback;

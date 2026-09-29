@@ -200,7 +200,7 @@ An `#error_code=otp_expired` (or no session) shows "link invalid or expired — 
 
 | RPC | Args | Roles | Returns |
 |---|---|---|---|
-| `approve_leave_request` | `p_request_id, p_action 'approve'|'reject', p_override bool=false, p_override_reason=null` | O, EA scoped, LM own location; never own request | `void` |
+| `approve_leave_request` | `p_request_id, p_action 'approve'|'reject', p_override bool=false, p_override_reason=null` | O, EA scoped, LM own location; never own request | `jsonb {ok, status, affected_shifts[]}` — on approve, `affected_shifts` lists the employee's non-cancelled shifts inside the leave (`shift_id, shift_date, start_time, end_time, location_id, location, is_published`). They are flagged, not cancelled; the branch managers get a `leave_shift_conflict` notification. |
 | `cancel_leave_request` | `p_request_id, p_reason=null` | own / managers | `jsonb` |
 | `configure_leave_accrual_policy` | `p_leave_type_id, p_frequency, p_days_per_period, p_rounding, p_max_balance_days, p_carry_forward_cap_days, p_probation_days, p_policy_start_date` | O, EA scoped (entity from leave type) | `uuid` |
 | `approve_leave_accrual_policy` | `p_policy_id` | O / EA per function checks | `void` |
@@ -224,10 +224,12 @@ upload to bucket, `confirm_document_upload(p_document_id)`; renewals `stage_docu
 
 ## 7. Scheduling
 
-`publish_schedule_period(p_location_id, p_period_start, p_period_end) → int` (count published; O, EA scoped,
-LM own). Draft (`is_published=false`) shifts are never visible to staff. Also:
+`publish_schedule_period(p_location_id, p_period_start, p_period_end) → jsonb {published, skipped_leave[]}` (O, EA scoped,
+LM own). Draft (`is_published=false`) shifts are never visible to staff. Drafts held by someone on approved leave that day
+stay unpublished and are listed in `skipped_leave` (`shift_id, shift_date, start_time, end_time, employee_id, employee`).
+A non-cancelled shift cannot be created or moved onto a day its employee has approved leave (trigger `trg_shift_validate`, `22023`). Also:
 `create_schedule_template`, `replace_schedule_template`, `deactivate_schedule_template`,
-`generate_shifts_from_templates(p_location_id, p_period_start, p_period_end) → int`,
+`generate_shifts_from_templates(p_location_id, p_period_start, p_period_end) → int` (skips approved-leave days),
 `request_shift_swap(p_shift_id, p_notes) → uuid`, `claim_shift_swap`, `claim_open_shift`,
 `cancel_shift_swap_request`, `approve_shift_swap(p_swap_id, p_action)`.
 

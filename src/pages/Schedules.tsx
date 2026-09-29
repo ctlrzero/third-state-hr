@@ -48,8 +48,9 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10)
 }
 function addDaysIso(iso: string, days: number) {
-  const d = new Date(iso + 'T00:00:00')
-  d.setDate(d.getDate() + days)
+  // UTC on both sides: local midnight read back via toISOString drifts a day in UTC+ zones (Dubai).
+  const d = new Date(iso + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
 }
 
@@ -110,7 +111,9 @@ function ScheduleAdmin() {
   const [selectedCancelled, setSelectedCancelled] = useState<Set<string>>(new Set())
   const [toDelete, setToDelete] = useState<Shift[] | null>(null)
   const [showDeleted, setShowDeleted] = useState(false)
+  const [onLeave, setOnLeave] = useState<Set<string>>(new Set())
   const [params, setParams] = useSearchParams()
+  const focusShiftId = params.get('shift')
   const mode: 'manual' | 'auto' = isAdmin && params.get('mode') === 'auto' ? 'auto' : 'manual'
   const setMode = (m: 'manual' | 'auto') => {
     const next = new URLSearchParams(params)
@@ -127,7 +130,7 @@ function ScheduleAdmin() {
     setError(null)
     const from = new Date()
     from.setDate(from.getDate() - 3)
-    const [shiftsRes, swapsRes, locRes, posRes, empRes, templatesRes] = await Promise.all([
+    const [shiftsRes, swapsRes, locRes, posRes, empRes, templatesRes, leaveRes] = await Promise.all([
       supabase
         .from('shifts')
         .select('*, locations(id, name), positions(id, title)')
@@ -148,7 +151,17 @@ function ScheduleAdmin() {
         .eq('entity_id', activeEntityId)
         .eq('is_active', true)
         .order('day_of_week', { ascending: true }),
+      supabase
+        .from('leave_requests')
+        .select('employee_id, start_date, end_date')
+        .eq('status', 'approved')
+        .gte('end_date', from.toISOString().slice(0, 10)),
     ])
+    const leaveDays = new Set<string>()
+    for (const lr of (leaveRes.data ?? []) as { employee_id: string; start_date: string; end_date: string }[]) {
+      for (let d = lr.start_date; d <= lr.end_date; d = addDaysIso(d, 1)) leaveDays.add(`${lr.employee_id}|${d}`)
+    }
+    setOnLeave(leaveDays)
     if (shiftsRes.error) setError(shiftsRes.error.message)
     else setShifts((shiftsRes.data ?? []) as unknown as Shift[])
     setSwaps((swapsRes.data ?? []) as unknown as ShiftSwapRequest[])
@@ -163,6 +176,27 @@ function ScheduleAdmin() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEntityId])
+
+  // Arriving from a leave approval's "Reassign" link: show and open that shift once it has loaded.
+  const [focusHandled, setFocusHandled] = useState<string | null>(null)
+  useEffect(() => {
+    if (!focusShiftId || loading || focusHandled === focusShiftId) return
+    setFocusHandled(focusShiftId)
+    const s = shifts.find((x) => x.id === focusShiftId)
+    if (!s) {
+      setError('That shift is not in this schedule view (it may be in the past or already removed).')
+      return
+    }
+    setLocationFilter('all')
+    if (s.is_published && s.status !== 'cancelled') setAdjustShift(s)
+    window.setTimeout(() => document.getElementById(`shift-${s.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50)
+  }, [focusShiftId, loading, shifts, focusHandled])
+
+  const isOnLeave = (s: Shift) => !!s.employee_id && s.status !== 'cancelled' && onLeave.has(`${s.employee_id}|${s.shift_date}`)
+  const leaveClashCount = useMemo(
+    () => shifts.filter((s) => !!s.employee_id && s.status !== 'cancelled' && onLeave.has(`${s.employee_id}|${s.shift_date}`)).length,
+    [shifts, onLeave]
+  )
 
   const visibleShifts = useMemo(
     () => (locationFilter === 'all' ? shifts : shifts.filter((s) => s.location_id === locationFilter)),
@@ -283,6 +317,13 @@ function ScheduleAdmin() {
         </p>
       )}
 
+      {leaveClashCount > 0 && (
+        <p role="status" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
+          {leaveClashCount} shift{leaveClashCount === 1 ? ' is' : 's are'} held by someone on approved leave — marked “On leave” below.
+          Reassign or cancel {leaveClashCount === 1 ? 'it' : 'them'}; drafts on leave days won't be published.
+        </p>
+      )}
+
       {pendingSwaps.length > 0 && (
         <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
           <h2 className="mb-3 text-sm font-semibold text-ink">Swap requests awaiting your decision</h2>
@@ -350,8 +391,8 @@ function ScheduleAdmin() {
           setNotice('Draft shifts generated from your recurring templates. Review below, then publish when ready.')
           load()
         }}
-        onPublished={() => {
-          setNotice('Schedule published — those shifts are now visible to employees.')
+        onPublished={(msg) => {
+          setNotice(msg)
           load()
         }}
         onError={setError}
@@ -422,7 +463,11 @@ function ScheduleAdmin() {
             </thead>
             <tbody className="divide-y divide-border">
               {visibleShifts.map((s) => (
-                <tr key={s.id}>
+                <tr
+                  key={s.id}
+                  id={`shift-${s.id}`}
+                  className={`${isOnLeave(s) ? 'bg-brand-risk-soft/40' : ''} ${focusShiftId === s.id ? 'outline outline-2 -outline-offset-2 outline-brand-blue' : ''}`}
+                >
                   <td data-label="Date" className="px-4 py-3 text-ink">
                     <span className="flex items-center gap-2">
                       {isAdmin && s.status === 'cancelled' && (
@@ -447,6 +492,7 @@ function ScheduleAdmin() {
                     <span className="flex items-center gap-1.5">
                       <StatusBadge status={s.status} tone={SHIFT_STATUS_TONE[s.status]} />
                       {!s.is_published && <StatusBadge status="draft" />}
+                      {isOnLeave(s) && <StatusBadge status="On leave" tone="risk" />}
                     </span>
                   </td>
                   <td data-label="Actions" className="px-4 py-3 text-right">
@@ -645,7 +691,7 @@ function RecurringTemplatesPanel({
   onNewTemplate: () => void
   onDeactivate: (id: string) => void
   onGenerated: () => void
-  onPublished: () => void
+  onPublished: (message: string) => void
   onError: (message: string) => void
 }) {
   const [genLocationId, setGenLocationId] = useState(locations[0]?.id ?? '')
@@ -678,7 +724,7 @@ function RecurringTemplatesPanel({
     if (!genLocationId) return
     if (!(await confirmDialog('Publish all draft shifts in this branch and period? They will become visible to employees.'))) return
     setBusy('publish')
-    const { error } = await supabase.rpc('publish_schedule_period', {
+    const { data, error } = await supabase.rpc('publish_schedule_period', {
       p_location_id: genLocationId,
       p_period_start: periodStart,
       p_period_end: periodEnd,
@@ -688,7 +734,17 @@ function RecurringTemplatesPanel({
       onError(error.message)
       return
     }
-    onPublished()
+    const res = data as { published: number; skipped_leave: { shift_date: string; employee: string }[] } | null
+    const published = res?.published ?? 0
+    const skipped = res?.skipped_leave ?? []
+    onPublished(
+      `Published ${published} shift${published === 1 ? '' : 's'} — now visible to employees.` +
+        (skipped.length
+          ? ` ${skipped.length} left as draft because the person is on approved leave: ${skipped
+              .map((x) => `${x.employee} (${fmtDate(x.shift_date)})`)
+              .join(', ')}. Reassign or cancel them.`
+          : '')
+    )
   }
 
   return (
