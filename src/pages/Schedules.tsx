@@ -20,8 +20,10 @@ import {
   AutoSchedulePanel,
   DeletedShiftsSheet,
   DeleteShiftsModal,
+  WorkPatternWarnings,
   type DeletableShift,
 } from './schedules/SchedulingTools'
+import { useWorkPatternWarnings } from './schedules/useWorkPatternWarnings'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -1001,6 +1003,7 @@ function NewShiftModal({
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const patternWarnings = useWorkPatternWarnings(employeeId, shiftDate)
 
   const eligibleEmployees = employees.filter((e) => !locationId || e.home_location_id === locationId)
 
@@ -1139,6 +1142,7 @@ function NewShiftModal({
             />
           </div>
 
+          <WorkPatternWarnings warnings={patternWarnings} />
           {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
@@ -1570,6 +1574,7 @@ function AdjustShiftModal({
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const patternWarnings = useWorkPatternWarnings(employeeId, shiftDate, shift.id)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -1639,6 +1644,7 @@ function AdjustShiftModal({
               placeholder="e.g. Employee requested time change, branch operational need"
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
           </div>
+          <WorkPatternWarnings warnings={patternWarnings} />
           {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt">

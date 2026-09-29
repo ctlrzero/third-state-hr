@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import { Alert, Drawer, Field, Modal, Skeleton, TabPanel, Tabs, type TabDef } from '../components/ui'
+import WorkPatternCard from '../components/WorkPatternCard'
 import { completenessItemLabel, docTypeLabel, expiryStatus } from '../lib/documents'
 import {
   CHANGE_FIELD_LABEL,
@@ -355,7 +356,7 @@ export default function EmployeeProfile() {
           />
         )}
         {tab === 'documents' && <DocumentsTab employee={employee} />}
-        {tab === 'schedule' && <ScheduleTab employeeId={employee.id} />}
+        {tab === 'schedule' && <ScheduleTab employeeId={employee.id} canEditPattern={isAdmin} />}
         {tab === 'attendance' && <AttendanceTab employeeId={employee.id} />}
         {tab === 'leave' && <LeaveTab employeeId={employee.id} isAdmin={isAdmin} />}
         {tab === 'payslips' && isAdmin && <PayslipsTab employeeId={employee.id} />}
@@ -589,7 +590,7 @@ function DocumentsTab({ employee }: { employee: FullEmployee }) {
   )
 }
 
-function ScheduleTab({ employeeId }: { employeeId: string }) {
+function ScheduleTab({ employeeId, canEditPattern }: { employeeId: string; canEditPattern: boolean }) {
   const [rows, setRows] = useState<{ id: string; shift_date: string; start_time: string; end_time: string; status: string; is_published: boolean; locations: { name: string } | null }[] | null>(null)
   useEffect(() => {
     const today = todayDubai()
@@ -604,6 +605,8 @@ function ScheduleTab({ employeeId }: { employeeId: string }) {
       .then(({ data }) => setRows((data ?? []) as unknown as NonNullable<typeof rows>))
   }, [employeeId])
   return (
+    <div className="space-y-4">
+    <WorkPatternCard employeeId={employeeId} canEdit={canEditPattern} />
     <section className="card">
       <h2 className="mb-3 text-sm font-semibold text-ink">Shifts — last 7 days and next 3 weeks</h2>
       {rows === null ? (
@@ -627,6 +630,7 @@ function ScheduleTab({ employeeId }: { employeeId: string }) {
         </ul>
       )}
     </section>
+    </div>
   )
 }
 

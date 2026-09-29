@@ -1149,3 +1149,19 @@ function DayRow({
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Work-pattern warnings for manual shifts (advisory — never blocks saving)
+// ---------------------------------------------------------------------------
+
+export function WorkPatternWarnings({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null
+  return (
+    <div role="status" className="rise space-y-1 rounded-xl bg-brand-warning-soft px-3.5 py-2.5 text-xs text-brand-warning-solid">
+      {warnings.map((w, i) => (
+        <p key={i}>{w}</p>
+      ))}
+      <p className="opacity-80">You can still save — this is a heads-up, not a block.</p>
+    </div>
+  )
+}
