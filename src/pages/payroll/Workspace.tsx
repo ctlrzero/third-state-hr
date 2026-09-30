@@ -35,6 +35,7 @@ import ReportsDrawer from './ReportsDrawer'
 import SettingsDrawer from './SettingsDrawer'
 import LegacyRuns from './LegacyRuns'
 import ReadinessPanel from './ReadinessPanel'
+import ChangesPanel from './ChangesPanel'
 
 const thisMonth = () => new Date().toISOString().slice(0, 7)
 
@@ -222,6 +223,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
           )}
 
           <ReadinessPanel periodId={ws.period.id} refreshKey={loads} />
+          <ChangesPanel periodId={ws.period.id} refreshKey={loads} />
 
           {ws.period.kind === 'off_cycle' && perms?.prepare && (
             <OffCycleAdd
