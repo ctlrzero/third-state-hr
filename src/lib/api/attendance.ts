@@ -156,6 +156,36 @@ export const rejectAttendanceAdjustment = (adjustmentId: string, reason: string)
     p_reason: reason,
   }).then(unwrapOk)
 
+/** P1-5: nightly missing clock-out suggestions. Never applied until a manager confirms. */
+export interface ClockOutSuggestion {
+  id: string
+  attendance_record_id: string
+  employee_id: string
+  employee_name: string
+  shift_id: string | null
+  work_date: string
+  clock_in_at: string
+  /** Planned end of the shift; null when the clock-in had no shift. */
+  suggested_clock_out_at: string | null
+  reason: string
+  status: 'pending'
+  created_at: string
+}
+
+export const getClockOutSuggestions = (locationId: string) =>
+  callRpc<ClockOutSuggestion[]>('get_clock_out_suggestions', { p_location_id: locationId })
+
+/** Applies the suggested time (or `clockOutAt`) through the normal correction rules. */
+export const confirmClockOutSuggestion = (id: string, clockOutAt: string | null = null, reason: string | null = null) =>
+  callRpc<{ ok: boolean; clock_out_at: string }>('confirm_clock_out_suggestion', {
+    p_id: id,
+    p_clock_out_at: clockOutAt,
+    p_reason: reason,
+  })
+
+export const dismissClockOutSuggestion = (id: string) =>
+  callRpc<{ ok: boolean }>('dismiss_clock_out_suggestion', { p_id: id })
+
 /** RLS-scoped reads that back the workspace (no RPC exists for these). */
 export async function getAttendanceRecords(ids: string[]) {
   if (ids.length === 0) return { data: [], error: null }

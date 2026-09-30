@@ -19,10 +19,13 @@ import {
 } from '../components/ui'
 import {
   applyAttendanceAdjustment,
+  confirmClockOutSuggestion,
   correctAttendanceRecord,
+  dismissClockOutSuggestion,
   getAdjustments,
   getAttendanceExceptions,
   getAttendanceRecords,
+  getClockOutSuggestions,
   getLocationAttendanceOverview,
   getPayableRecords,
   getShiftsByIds,
@@ -30,6 +33,7 @@ import {
   rejectAttendanceAdjustment,
   seedPayableShiftRecords,
   type AttendanceAdjustment,
+  type ClockOutSuggestion,
   type OverviewRow,
   type PayableRecord,
 } from '../lib/api/attendance'
@@ -104,6 +108,8 @@ export default function Attendance() {
 
   const [overview, setOverview] = useState<OverviewRow[]>([])
   const [exceptions, setExceptions] = useState<AttendanceException[]>([])
+  // Nightly missing clock-out suggestions, keyed by attendance record id.
+  const [suggestions, setSuggestions] = useState<Record<string, ClockOutSuggestion>>({})
   const [payables, setPayables] = useState<PayableRecord[]>([])
   const [adjustments, setAdjustments] = useState<AttendanceAdjustment[]>([])
   const [names, setNames] = useState<Record<string, string>>({})
@@ -119,6 +125,7 @@ export default function Attendance() {
     // Switching entity must never leave the previous entity's rows on screen.
     setOverview([])
     setExceptions([])
+    setSuggestions({})
     setPayables([])
     setAdjustments([])
     let q = supabase.from('locations').select('id, name').order('name')
@@ -142,13 +149,15 @@ export default function Attendance() {
     setRangeError(null)
     setLoading(true)
     setError(null)
-    const [ov, ex] = await Promise.all([
+    const [ov, ex, sg] = await Promise.all([
       supervisor
         ? Promise.resolve({ data: [] as OverviewRow[], error: null })
         : getLocationAttendanceOverview(locationId, periodStart, periodEnd),
       getAttendanceExceptions(locationId, periodStart, periodEnd),
+      getClockOutSuggestions(locationId),
     ])
-    if (ov.error || ex.error) setError(friendlyError(ov.error ?? ex.error))
+    if (ov.error || ex.error || sg.error) setError(friendlyError(ov.error ?? ex.error ?? sg.error))
+    setSuggestions(Object.fromEntries((sg.data ?? []).map((g) => [g.attendance_record_id, g])))
     const ovRows = ov.data ?? []
     const exRows = ex.data ?? []
     setOverview(ovRows)
@@ -219,6 +228,35 @@ export default function Attendance() {
     }
   }
 
+  const suggestionFor = (e: AttendanceException) =>
+    e.exception_type === 'missing_clock_out' && e.record_id ? suggestions[e.record_id] : undefined
+
+  async function handleConfirmSuggestion(g: ClockOutSuggestion) {
+    setBusyId(g.id)
+    setError(null)
+    const res = await confirmClockOutSuggestion(g.id)
+    setBusyId(null)
+    if (res.error) setError(friendlyError(res.error))
+    else {
+      setNotice(
+        `Clock-out set to ${fmtTime(res.data?.clock_out_at ?? g.suggested_clock_out_at)}. The original record is kept in the audit trail.`
+      )
+      load()
+    }
+  }
+
+  async function handleDismissSuggestion(g: ClockOutSuggestion) {
+    setBusyId(g.id)
+    setError(null)
+    const res = await dismissClockOutSuggestion(g.id)
+    setBusyId(null)
+    if (res.error) setError(friendlyError(res.error))
+    else {
+      setNotice('Suggestion dismissed. The clock-in stays open until someone corrects it.')
+      load()
+    }
+  }
+
   const overviewColumns: Column<OverviewRow>[] = [
     { key: 'date', header: 'Date', render: (r) => fmtDayShort(r.shift_date) },
     { key: 'emp', header: 'Employee', render: (r) => names[r.employee_id] ?? 'Employee' },
@@ -260,7 +298,26 @@ export default function Attendance() {
         return s ? `${fmtTime(s.start_time)}–${fmtTime(s.end_time)}` : '—'
       },
     },
-    { key: 'actual', header: 'Actual', render: (e) => fmtClockRange(e.clock_in_at, e.clock_out_at) },
+    {
+      key: 'actual',
+      header: 'Actual',
+      render: (e) => {
+        const g = suggestionFor(e)
+        return (
+          <span>
+            {fmtClockRange(e.clock_in_at, e.clock_out_at)}
+            {g?.suggested_clock_out_at && (
+              <span className="block text-xs font-semibold text-ink">
+                Suggested clock-out {fmtTime(g.suggested_clock_out_at)}
+              </span>
+            )}
+            {g && !g.suggested_clock_out_at && (
+              <span className="block text-xs text-muted">No shift, so no suggested time. Set it with Change…</span>
+            )}
+          </span>
+        )
+      },
+    },
   ]
 
   const adjustmentColumns: Column<AttendanceAdjustment>[] = [
@@ -438,15 +495,37 @@ export default function Attendance() {
               columns={exceptionColumns}
               rows={exceptions}
               rowKey={(e) => `${e.exception_type}-${e.record_id ?? e.shift_id}-${e.employee_id}`}
-              actions={(e) =>
-                e.record_id ? (
+              actions={(e) => {
+                const g = suggestionFor(e)
+                if (g)
+                  return (
+                    <>
+                      {g.suggested_clock_out_at && (
+                        <button
+                          className="btn-primary"
+                          disabled={busyId === g.id}
+                          onClick={() => handleConfirmSuggestion(g)}
+                          aria-label={`Confirm clock-out ${fmtTime(g.suggested_clock_out_at)} for ${names[e.employee_id] ?? e.employee_name}`}
+                        >
+                          {busyId === g.id ? 'Saving…' : 'Confirm'}
+                        </button>
+                      )}
+                      <button className="btn-secondary" disabled={busyId === g.id} onClick={() => setCorrecting(e)}>
+                        Change…
+                      </button>
+                      <button className="btn-ghost" disabled={busyId === g.id} onClick={() => handleDismissSuggestion(g)}>
+                        Dismiss
+                      </button>
+                    </>
+                  )
+                return e.record_id ? (
                   <button className="btn-secondary" onClick={() => setCorrecting(e)}>
                     Correct
                   </button>
                 ) : (
                   <span className="text-xs text-muted">No clock-in to correct</span>
                 )
-              }
+              }}
             />
           )}
         </TabPanel>
@@ -487,6 +566,7 @@ export default function Attendance() {
           record={correcting.record_id ? records[correcting.record_id] : undefined}
           shift={correcting.shift_id ? shifts[correcting.shift_id] : undefined}
           employeeName={names[correcting.employee_id] ?? correcting.employee_name}
+          suggestion={suggestionFor(correcting)}
           onClose={() => setCorrecting(null)}
           onSaved={() => {
             setCorrecting(null)
@@ -531,6 +611,7 @@ function CorrectionDrawer({
   record,
   shift,
   employeeName,
+  suggestion,
   onClose,
   onSaved,
 }: {
@@ -538,15 +619,17 @@ function CorrectionDrawer({
   record?: RecordLite
   shift?: ShiftLite
   employeeName: string
+  /** Nightly missing clock-out suggestion: pre-fills the clock-out and reason. */
+  suggestion?: ClockOutSuggestion
   onClose: () => void
   onSaved: () => void
 }) {
   const actualIn = record?.clock_in_at ?? exception.clock_in_at
   const actualOut = record?.clock_out_at ?? exception.clock_out_at
   const [newIn, setNewIn] = useState(toDubaiLocalInput(actualIn))
-  const [newOut, setNewOut] = useState(toDubaiLocalInput(actualOut))
+  const [newOut, setNewOut] = useState(toDubaiLocalInput(actualOut ?? suggestion?.suggested_clock_out_at ?? null))
   const missingOut = exception.exception_type === 'missing_clock_out'
-  const [reason, setReason] = useState(missingOut ? 'Forgot to clock out' : '')
+  const [reason, setReason] = useState(suggestion?.reason ?? (missingOut ? 'Forgot to clock out' : ''))
   const [errors, setErrors] = useState<{ in?: string; out?: string; reason?: string }>({})
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -578,13 +661,18 @@ function CorrectionDrawer({
     if (!exception.record_id) return
     setSaving(true)
     setServerError(null)
+    // A suggestion with only the clock-out changed is closed through its own RPC
+    // (same correction rules) so it doesn't linger as pending.
     // NULL = keep the current value (API contract), so only send what changed.
-    const res = await correctAttendanceRecord(
-      exception.record_id,
-      changedIn ? newInIso : null,
-      changedOut ? newOutIso : null,
-      reason.trim()
-    )
+    const res =
+      suggestion && !changedIn && changedOut && newOutIso
+        ? await confirmClockOutSuggestion(suggestion.id, newOutIso, reason.trim())
+        : await correctAttendanceRecord(
+            exception.record_id,
+            changedIn ? newInIso : null,
+            changedOut ? newOutIso : null,
+            reason.trim()
+          )
     setSaving(false)
     if (res.error) {
       setServerError(friendlyError(res.error))
