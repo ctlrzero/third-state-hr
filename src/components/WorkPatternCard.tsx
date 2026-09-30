@@ -14,6 +14,7 @@ export interface WorkPattern {
   days_per_week: number
   days_off_mode: 'fixed' | 'flexible'
   fixed_days_off: number[]
+  shift_type: 'any' | 'morning'
 }
 
 interface AvailabilityRow {
@@ -35,8 +36,9 @@ function describePattern(p: WorkPattern | null) {
   if (!p) return 'No pattern set — the scheduler allows up to 6 days a week, any day.'
   const days = `Works ${p.days_per_week} day${p.days_per_week === 1 ? '' : 's'} a week`
   const off = 7 - p.days_per_week
-  if (p.days_off_mode === 'flexible') return `${days} · ${off} day${off === 1 ? '' : 's'} off, any day`
-  return `${days} · ${joinDays(p.fixed_days_off)} off`
+  const type = p.shift_type === 'morning' ? ' · morning shifts only' : ''
+  if (p.days_off_mode === 'flexible') return `${days} · ${off} day${off === 1 ? '' : 's'} off, any day${type}`
+  return `${days} · ${joinDays(p.fixed_days_off)} off${type}`
 }
 
 function defaultDaysOff(daysPerWeek: number) {
@@ -49,6 +51,7 @@ export default function WorkPatternCard({ employeeId, canEdit }: { employeeId: s
   const [editing, setEditing] = useState(false)
   const [days, setDays] = useState(6)
   const [mode, setMode] = useState<'fixed' | 'flexible'>('flexible')
+  const [shiftType, setShiftType] = useState<'any' | 'morning'>('any')
   const [daysOff, setDaysOff] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,7 +59,7 @@ export default function WorkPatternCard({ employeeId, canEdit }: { employeeId: s
 
   const load = useCallback(async () => {
     const [p, a] = await Promise.all([
-      supabase.from('employee_work_patterns').select('employee_id, days_per_week, days_off_mode, fixed_days_off').eq('employee_id', employeeId).maybeSingle(),
+      supabase.from('employee_work_patterns').select('employee_id, days_per_week, days_off_mode, fixed_days_off, shift_type').eq('employee_id', employeeId).maybeSingle(),
       supabase.from('employee_availability').select('day_of_week, is_available, start_time, end_time').eq('employee_id', employeeId).order('day_of_week'),
     ])
     if (p.error) setError(friendlyError(p.error))
@@ -72,6 +75,7 @@ export default function WorkPatternCard({ employeeId, canEdit }: { employeeId: s
     const p = pattern ?? null
     setDays(p?.days_per_week ?? 6)
     setMode(p?.days_off_mode ?? 'flexible')
+    setShiftType(p?.shift_type ?? 'any')
     setDaysOff(p?.days_off_mode === 'fixed' ? p.fixed_days_off : defaultDaysOff(p?.days_per_week ?? 6))
     setError(null)
     setSaved(false)
@@ -106,6 +110,8 @@ export default function WorkPatternCard({ employeeId, canEdit }: { employeeId: s
     })
     setBusy(false)
     if (rpcError) return setError(errText(rpcError))
+    const typeRes = await supabase.rpc('set_employee_shift_type', { p_employee_id: employeeId, p_shift_type: shiftType })
+    if (typeRes.error) return setError(errText(typeRes.error))
     setEditing(false)
     setSaved(true)
     load()
@@ -217,6 +223,31 @@ export default function WorkPatternCard({ employeeId, canEdit }: { employeeId: s
               </p>
             </div>
           )}
+
+          <div>
+            <span className="label">Shift type</span>
+            <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Shift type">
+              {(
+                [
+                  ['any', 'Any shift', 'Flexible — morning or later shifts.'],
+                  ['morning', 'Morning only', 'Only shifts that start before 10:00.'],
+                ] as const
+              ).map(([t, title, sub]) => (
+                <button
+                  key={t}
+                  role="radio"
+                  aria-checked={shiftType === t}
+                  onClick={() => setShiftType(t)}
+                  className={`press rounded-2xl border p-3 text-left transition-[border-color,background-color] duration-200 ${
+                    shiftType === t ? 'border-brand-blue bg-brand-blue-soft/50' : 'border-border hover:bg-surface-alt'
+                  }`}
+                >
+                  <span className="block text-sm font-medium text-ink">{title}</span>
+                  <span className="block text-xs text-muted">{sub}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
           {error && <p role="alert" className="rounded-xl bg-brand-risk-soft px-3.5 py-2.5 text-sm text-brand-risk-text">{error}</p>}
 

@@ -1415,6 +1415,7 @@ export type Database = {
           employee_id: string
           entity_id: string
           fixed_days_off: number[]
+          shift_type: string
           updated_at: string
           updated_by: string | null
         }
@@ -1424,6 +1425,7 @@ export type Database = {
           employee_id: string
           entity_id: string
           fixed_days_off?: number[]
+          shift_type?: string
           updated_at?: string
           updated_by?: string | null
         }
@@ -1433,6 +1435,7 @@ export type Database = {
           employee_id?: string
           entity_id?: string
           fixed_days_off?: number[]
+          shift_type?: string
           updated_at?: string
           updated_by?: string | null
         }
