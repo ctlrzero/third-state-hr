@@ -152,7 +152,7 @@ function LeaveAdmin() {
       </div>
 
       {error && (
-        <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
+        <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
           {error}{' '}
           <button className="underline" onClick={() => setError(null)}>
             Dismiss
@@ -160,7 +160,7 @@ function LeaveAdmin() {
         </p>
       )}
       {notice && (
-        <p className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
+        <p role="status" className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
           {notice}{' '}
           <button className="underline" onClick={() => setNotice(null)}>
             Dismiss
@@ -449,9 +449,9 @@ function MyLeave() {
         </button>
       </div>
 
-      {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+      {error && <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
       {notice && (
-        <p className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
+        <p role="status" className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
           {notice}{' '}
           <button className="underline" onClick={() => setNotice(null)}>
             Dismiss
@@ -663,7 +663,7 @@ function RequestLeaveModal({
             />
           </div>
 
-          {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button

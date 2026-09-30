@@ -429,7 +429,7 @@ function ScheduleAdmin() {
       </div>
 
       {error && (
-        <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
+        <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
           {error}{' '}
           <button className="underline" onClick={() => setError(null)}>
             Dismiss
@@ -437,7 +437,7 @@ function ScheduleAdmin() {
         </p>
       )}
       {notice && (
-        <p className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
+        <p role="status" className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
           {notice}{' '}
           <button className="underline" onClick={() => setNotice(null)}>
             Dismiss
@@ -1123,7 +1123,7 @@ function NewTemplateModal({
             </div>
           </div>
 
-          {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -1312,7 +1312,7 @@ function NewShiftModal({
           </div>
 
           <WorkPatternWarnings warnings={patternWarnings} />
-          {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
 
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -1560,7 +1560,7 @@ function MySchedule() {
       </div>
 
       {error && (
-        <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
+        <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
           {error}{' '}
           <button className="underline" onClick={() => setError(null)}>
             Dismiss
@@ -1568,7 +1568,7 @@ function MySchedule() {
         </p>
       )}
       {notice && (
-        <p className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
+        <p role="status" className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
           {notice}{' '}
           <button className="underline" onClick={() => setNotice(null)}>
             Dismiss
@@ -1840,7 +1840,7 @@ function CancelShiftModal({
               className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
             />
           </div>
-          {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt">
               Back
@@ -1974,7 +1974,7 @@ function AdjustShiftModal({
             </div>
           )}
           <WorkPatternWarnings warnings={patternWarnings} />
-          {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+          {error && <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt">
               Cancel
@@ -2049,7 +2049,7 @@ function ShiftHistoryDrawer({
           <button onClick={onClose} className="text-sm text-muted hover:text-ink">Close</button>
         </div>
 
-        {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text mb-3">{error}</p>}
+        {error && <p role="alert" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text mb-3">{error}</p>}
 
         {loading ? (
           <div className="space-y-2">
