@@ -167,7 +167,8 @@ function ScheduleAdmin() {
         .select('*, employees(id, full_name), positions(id, title)')
         .eq('entity_id', activeEntityId)
         .eq('is_active', true)
-        .order('day_of_week', { ascending: true }),
+        .order('day_of_week', { ascending: true })
+        .order('start_time', { ascending: true }),
       supabase
         .from('leave_requests')
         .select('employee_id, start_date, end_date')
@@ -559,8 +560,12 @@ function ScheduleAdmin() {
             locations={locations}
             onNewTemplate={() => setTemplateModalOpen(true)}
             onDeactivate={handleDeactivateTemplate}
-            onGenerated={() => {
-              setNotice('Draft shifts generated from your recurring templates. Review them in the week view, then publish.')
+            onGenerated={(created) => {
+              setNotice(
+                created === 0
+                  ? 'No new shifts — everyone already has these shifts, or they would overlap shifts already planned.'
+                  : `Created ${created} draft shift${created === 1 ? '' : 's'} from your recurring templates (split shifts included). Any that would overlap an existing shift were skipped. Review them in the week view, then publish.`
+              )
               load()
             }}
             onPublished={(msg) => {
@@ -783,7 +788,7 @@ function RecurringTemplatesPanel({
   locations: Pick<Location, 'id' | 'name'>[]
   onNewTemplate: () => void
   onDeactivate: (id: string) => void
-  onGenerated: () => void
+  onGenerated: (created: number) => void
   onPublished: (message: string) => void
   onError: (message: string) => void
 }) {
@@ -800,7 +805,7 @@ function RecurringTemplatesPanel({
   async function handleGenerate() {
     if (!genLocationId) return
     setBusy('generate')
-    const { error } = await supabase.rpc('generate_shifts_from_templates', {
+    const { data, error } = await supabase.rpc('generate_shifts_from_templates', {
       p_location_id: genLocationId,
       p_period_start: periodStart,
       p_period_end: periodEnd,
@@ -810,7 +815,7 @@ function RecurringTemplatesPanel({
       onError(error.message)
       return
     }
-    onGenerated()
+    onGenerated(typeof data === 'number' ? data : 0)
   }
 
   async function handlePublish() {
