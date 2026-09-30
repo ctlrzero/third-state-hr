@@ -243,6 +243,8 @@ export interface PeriodListItem {
   pay_date?: string | null
   employees: number
   approved: number
+  /** Every record approved, published and fully paid. */
+  finished?: boolean
   net: number | null
 }
 

@@ -79,7 +79,11 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
     setPeriodId(null)
     setSelected(new Set())
     loadPeriods().then((list) => {
-      const current = list.find((p) => p.kind === 'regular' && p.period_start.startsWith(thisMonth())) ?? list[0]
+      // Open this month's payroll; otherwise the newest run that still has work to do; finished runs stay in the list below.
+      const current =
+        list.find((p) => p.kind === 'regular' && p.period_start.startsWith(thisMonth())) ??
+        list.find((p) => !p.finished) ??
+        list[0]
       if (current) setPeriodId(current.id)
     })
   }, [loadPeriods])
@@ -183,11 +187,21 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
           <span className="label">Payroll month</span>
           <select className="input" value={periodId ?? ''} onChange={(e) => setPeriodId(e.target.value || null)} disabled={!periods?.length}>
             {!periods?.length && <option value="">No payroll yet</option>}
-            {periods?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {periodLabel(p)} {p.kind === 'off_cycle' ? '(off-cycle)' : ''} · {p.approved}/{p.employees} approved
-              </option>
-            ))}
+            {[
+              { name: 'To do', rows: periods?.filter((p) => !p.finished) ?? [] },
+              { name: 'Finished — approved, paid and published', rows: periods?.filter((p) => p.finished) ?? [] },
+            ].map(
+              (g) =>
+                g.rows.length > 0 && (
+                  <optgroup key={g.name} label={g.name}>
+                    {g.rows.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {periodLabel(p)} {p.kind === 'off_cycle' ? '(off-cycle)' : ''} · {p.approved}/{p.employees} approved
+                      </option>
+                    ))}
+                  </optgroup>
+                )
+            )}
           </select>
         </label>
         {perms?.prepare !== false && (
