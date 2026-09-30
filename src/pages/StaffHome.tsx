@@ -10,6 +10,7 @@ import { fmtDayShort, fmtTime, todayDubai } from '../lib/format'
 import type { LeaveBalance } from '../types/db'
 import { findOpenOnboarding, type OnboardingStatus } from '../lib/api/onboarding'
 import { isPreActivation, STATUS_LABEL } from '../lib/onboarding'
+import MyRequestsCard from '../components/MyRequestsCard'
 
 // Staff home: the three things an employee checks most — today's clock
 // status, upcoming shifts, and leave balance. Every query is scoped to the
@@ -55,6 +56,8 @@ export default function StaffHome() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <h1 className="text-2xl font-semibold text-ink">Hi{firstName ? `, ${firstName}` : ''}</h1>
+
+      <MyRequestsCard />
 
       {onboarding && (
         <Link to="/onboarding" className="card flex items-center justify-between gap-3 border-brand-blue/40 bg-brand-blue-soft transition hover:border-brand-blue">

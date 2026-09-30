@@ -40,6 +40,7 @@ import { findOpenOnboarding, startForEmployee, type OnboardingStatus } from '../
 import { STATUS_LABEL as ONB_STATUS_LABEL } from '../lib/onboarding'
 import { ReasonModal } from './onboarding/shared'
 import { TransferModal, TransferStatusCard } from '../components/EmployeeTransfer'
+import { EmployeeRequestsCard } from '../components/EmployeeRequests'
 import ImmigrationCard from './onboarding/ImmigrationCard'
 import StartOffboarding from './offboarding/StartOffboarding'
 import type { Employee, EmployeeChangeRequest, EmployeeDocument, EmployeeStatus, LeaveBalance, LeaveRequest } from '../types/db'
@@ -331,6 +332,15 @@ export default function EmployeeProfile() {
       </header>
 
       <TransferStatusCard employeeId={employee.id} canManage={isAdmin} refreshKey={transferKey} onChanged={() => { setTransferKey((k) => k + 1); load() }} />
+
+      {(status === 'active' || status === 'pre_boarding') && (
+        <EmployeeRequestsCard
+          employeeId={employee.id}
+          employeeName={employee.preferred_name || employee.full_name}
+          role={profile?.role}
+          known={employee}
+        />
+      )}
 
       {transferring && (
         <TransferModal

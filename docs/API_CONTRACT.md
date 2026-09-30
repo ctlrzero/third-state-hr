@@ -76,6 +76,12 @@ Notes
   **`late_clock_in` [additive value]** (clock-in > planned start; informational, no deduction),
   `unmatched_shift` (published past shift without attendance), `no_shift_match` (attendance without shift).
 - Lateness/absence never changes pay automatically.
+- **Missing clock-out suggestions (P1-5).** The nightly job `run_nightly_payable_time` creates one `clock_out_suggestions` row per open attendance record from an earlier Dubai day (never again for the same record, even after Dismiss; an overnight shift still running is skipped until its planned end has passed). Suggested clock-out = the shift's planned end (`_shift_planned_bounds`); `null` for a clock-in without a shift (still listed). Reason `Forgot to clock out — set to planned end`. **Never applied automatically.** Table: RLS on, no policies, no direct access.
+  - `get_clock_out_suggestions(p_location_id)` (O, EA scoped, LM / supervisor own branch) → `[{id, attendance_record_id, employee_id, employee_name, shift_id, work_date, clock_in_at, suggested_clock_out_at, reason, status, created_at}]`, pending only and only while the record is still open. Join to `get_attendance_exceptions` rows by `record_id = attendance_record_id`.
+  - `confirm_clock_out_suggestion(p_id, p_clock_out_at tz default null, p_reason text default null)` (same roles): refuses your own record (every role, `42501`), another branch (`42501`) and a suggestion that isn't pending; `null` time = the suggested time (error when there is none). Applies it via `correct_attendance_record` (originals kept, audit row), marks the suggestion `confirmed`, then refreshes the shift's pending payable time → `{ok, id, attendance_record_id, clock_out_at}`.
+  - `dismiss_clock_out_suggestion(p_id)` (same roles) → `{ok, id}`; the record stays open and is still listed by `get_attendance_exceptions`. Audit `clock_out_suggestion_dismissed`.
+  - Statuses: `pending | confirmed | dismissed | resolved` (`resolved` = the record got a clock-out another way; set nightly or on confirm).
+  - Test: `supabase/tests/p1_5_nightly_hours_test.sql`.
 
 ## 2. Workflows
 
@@ -341,6 +347,36 @@ message, target_type, target_id, priority, read_at, resolved_at, created_at)` (o
 `list_candidate_files_for_interview`, `log_candidate_file_access`, `convert_offer_to_employee` — signatures as in
 the DB (see `pg_get_function_arguments`). Interviewer secrecy rules unchanged.
 
+## 12. Employee requests ("Ask for something")
+
+Owner, Company Admin (EA, own company) or Branch Manager (LM, employees whose home branch is theirs) asks one
+active / starting employee for: a document of a type (`kind='document'`; LM cannot ask for restricted types),
+bank / payment details (`'payment_details'`), or missing profile details (`'profile_info'`, fields from
+`phone, emergency_contact, dob, nationality, residential_address` — fields already filled are dropped; all filled → error).
+Shift Supervisors and Employees cannot send. One open request per employee + kind (+ doc type). Table
+`employee_requests` (RLS on, no policies, no grants) — everything goes through these RPCs (all start with the no-role guard):
+
+| RPC | Args | Who | Returns |
+|---|---|---|---|
+| `create_employee_request` | `p_employee_id, p_kind, p_doc_type=null, p_fields text[]=null, p_note=null (≤500), p_due_date=null (not in the past)` | O / EA / LM (scope above) | `{ok, id}` |
+| `cancel_employee_request` | `p_request_id` | the sender, or O / EA of the company | `{ok}` |
+| `get_employee_requests` | `p_employee_id, p_include_closed=false` | O / EA / LM (scope above) | `TABLE(id, employee_id, kind, doc_type, fields, label, note, due_date, status, requested_by, requested_by_name, created_at, closed_at, is_overdue, can_cancel)` |
+| `get_my_employee_requests` | – | the signed-in employee (`my_employee_id()`) | open ones only: `TABLE(id, kind, doc_type, fields, label, note, due_date, requested_by_name, created_at, is_overdue)` |
+| `fill_my_requested_profile_info` | `p_values jsonb` (`phone, emergency_contact_name, emergency_contact_phone, dob, nationality, residential_address`) | the employee, only fields named in an open request **and still empty** (changing an existing value still needs a change request) | `{ok, updated[], still_open}` |
+| `submit_requested_payment_details` | `p_method, p_bank_name, p_account_name, p_iban, p_routing_code=null` | the employee, only while a payment request is open | `{ok, id}` — supersedes earlier submitted **or verified** details; payroll verifies with `verify_payment_details` |
+
+- A `document` request also opens `employee_document_requirements` (status `missing`, re-opening an approved / waived /
+  expiring one) so the employee gets the Upload button in Documents.
+- Auto-close (triggers `trg_emp_req_on_document|payment|profile` → `_emp_req_check`): a confirmed upload of that
+  doc type submitted after the request; payment details `submitted`/`verified` submitted after the request; every
+  requested profile field non-empty. Status → `done`, sender gets `employee_request_done` (target `employees` / employee id).
+- Notifications: employee gets `employee_request` (high, target `employee_requests` → Home `/`) when asked; overdue
+  nudge `employee_request_overdue` once per Dubai day via `_emp_req_reminders(today)` — a step of
+  `run_daily_hr_reminders()` (result key `employee_requests`; `last_reminded_on` + per-day dedupe key).
+- UI: Employee profile → "Requests to …" card + "Ask for something"; Employee Home → "Your manager needs something"
+  (button → `/documents`, `/me#payment-details`, `/me#missing-details`); My profile → the two fill-in forms.
+- Test: `supabase/tests/employee_requests_test.sql` (rolled-back DO block, ends with `RESULT …`).
+
 ---
 
 ## UAT support (postgres only, not callable from the API)
@@ -358,6 +394,7 @@ the DB (see `pg_get_function_arguments`). Interviewer secrecy rules unchanged.
 | Job | Schedule | Runs | Notes |
 |---|---|---|---|
 | `document-expiry-t30-check` | `0 2 * * *` (06:00 Dubai) | `run_document_expiry_workflow_check()` | Documents expiring within 30 days → workflow rules. |
-| `daily-hr-reminders` | `0 2 * * *` (06:00 Dubai) | `run_daily_hr_reminders()` | Four independent steps: `onboarding_send_reminders()` (expires invitations, reminds new starters, overdue onboarding tasks, probation reviews), `_imm_reminders(today)` (overdue visa / work-permit steps), `_off_reminders(today)` (overdue offboarding tasks, final settlement due), `_doc_renewal_reminders(today)` (P2-5: document expiry at 60 / 30 / 7 days, on the day, and weekly for 8 weeks after — employee notice with the next step, plus one daily digest per owner / company admin, and per branch manager for non-restricted types; skipped when a new copy is already waiting for review). A failing step is rolled back alone and recorded; the others still run. At most once per Dubai day (`p_force => true` re-runs; notifications are de-duplicated by per-day keys). Each run is logged in `system_job_runs` (owner-readable). System only: no execute grant for signed-in users. |
+| `daily-hr-reminders` | `0 2 * * *` (06:00 Dubai) | `run_daily_hr_reminders()` | Five independent steps (the fifth, `_emp_req_reminders`, nudges employees about overdue requests — see Employee requests): `onboarding_send_reminders()` (expires invitations, reminds new starters, overdue onboarding tasks, probation reviews), `_imm_reminders(today)` (overdue visa / work-permit steps), `_off_reminders(today)` (overdue offboarding tasks, final settlement due), `_doc_renewal_reminders(today)` (P2-5: document expiry at 60 / 30 / 7 days, on the day, and weekly for 8 weeks after — employee notice with the next step, plus one daily digest per owner / company admin, and per branch manager for non-restricted types; skipped when a new copy is already waiting for review). A failing step is rolled back alone and recorded; the others still run. At most once per Dubai day (`p_force => true` re-runs; notifications are de-duplicated by per-day keys). Each run is logged in `system_job_runs` (owner-readable). System only: no execute grant for signed-in users. |
+| `nightly-payable-time` | `30 20 * * *` (00:30 Dubai) | `run_nightly_payable_time(p_force)` | P1-5. Per active branch, each in its own sub-transaction (a failing branch is recorded and the others still run): prepares payable time for the previous Dubai day (`_seed_payable_shift_records_core`: same maths as `seed_payable_shift_records` without its role check, cancelled shifts skipped, idempotent; also refreshes still-pending, never-overridden rows whose clock-out is now known) and creates missing clock-out suggestions (never applied). At most once per Dubai day (`p_force => true` re-runs). Logged in `system_job_runs` as `nightly_payable_time`. System only. |
 | `employee-transfers-due` | `5 20 * * *` (00:05 Dubai) | `run_due_employee_transfers()` | Applies scheduled transfers whose date has arrived; one failing transfer is skipped with a warning, the rest still apply. System only. |
 | `payroll-readiness-reminders` | `0 4 * * *` (08:00 Dubai) | `run_payroll_readiness_reminders()` | From 3 days before pay day to a week after, daily until every record is approved with nothing blocking: notifies owner, company admins and payroll admins (`payroll_readiness`, high priority from the day before). Also warns when the month hasn't been opened. De-duplicated per day. System only. |

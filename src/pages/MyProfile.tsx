@@ -7,6 +7,7 @@ import { EmptyState } from '../components/EmptyState'
 import { expiryStatus } from '../lib/documents'
 import type { EmployeeChangeRequest, Location, Position, Shift } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import MyRequestedInfo from '../components/MyRequestedInfo'
 
 // UAE-readable dates / 24h times (Asia/Dubai) shared across the app.
 const fmtDate = (d: string) => fmtDayShort(d)
@@ -172,6 +173,8 @@ export default function MyProfile() {
           </button>
         </p>
       )}
+
+      <MyRequestedInfo />
 
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
         <div className="flex flex-wrap items-start justify-between gap-3">

@@ -21,4 +21,6 @@ export const NOTIFICATION_TARGET_ROUTE: Record<string, string> = {
   payslips: '/payroll',
   interviews: '/my-interviews',
   attendance_records: '/attendance',
+  // Employee requests: the employee's Home screen lists them with the button to act.
+  employee_requests: '/',
 }
