@@ -17,6 +17,7 @@ export const NOTIFICATION_TARGET_ROUTE: Record<string, string> = {
   shifts: '/schedules',
   employees: '/employees',
   payroll_periods: '/payroll',
+  payroll_records: '/payroll',
   shift_offers: '/schedules',
   payslips: '/payroll',
   interviews: '/my-interviews',

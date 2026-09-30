@@ -28,6 +28,7 @@ const TARGET_ROUTE: Record<string, string> = {
   shifts: '/schedules',
   employees: '/employees',
   payroll_periods: '/payroll',
+  payroll_records: '/payroll',
   shift_offers: '/schedules',
   // Employee requests: the employee's Home screen lists them with the button to act.
   employee_requests: '/',

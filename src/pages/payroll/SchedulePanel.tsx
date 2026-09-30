@@ -22,14 +22,15 @@ export default function SchedulePanel({
   onSaved: (message: string) => void
 }) {
   const [editing, setEditing] = useState(false)
-  const [date, setDate] = useState(period.pay_date ?? payDate ?? '')
+  // Blank = follow the pay-day setting; only a date the owner types is stored.
+  const [date, setDate] = useState(period.pay_date ?? '')
   const [publishAt, setPublishAt] = useState(toDubaiLocalInput(period.publish_payslips_at))
   const [requirePaid, setRequirePaid] = useState(period.publish_requires_paid ?? true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    setDate(period.pay_date ?? payDate ?? '')
+    setDate(period.pay_date ?? '')
     setPublishAt(toDubaiLocalInput(period.publish_payslips_at))
     setRequirePaid(period.publish_requires_paid ?? true)
     setEditing(false)
@@ -87,7 +88,9 @@ export default function SchedulePanel({
             <label className="block">
               <span className="label">Pay date (when the salary goes to the bank)</span>
               <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
-              <span className="mt-1 block text-xs text-muted">Can be in the future. Record the payment on the day it’s sent.</span>
+              <span className="mt-1 block text-xs text-muted">
+                Can be in the future. Leave empty to use the payroll settings{payDate && !period.pay_date ? ` (${fmtDate(payDate)})` : ''}. Record the payment on the day it’s sent.
+              </span>
             </label>
             <label className="block">
               <span className="label">Publish payslips on (Dubai time)</span>

@@ -157,7 +157,7 @@ function PayslipDrawer({
       description={
         detail
           ? detail.title
-            ? `${detail.title}${detail.pay_date ? ` · paid ${fmtDate(detail.pay_date)}` : ''}`
+            ? `${detail.title}${detail.pay_date ? ` · pay date ${fmtDate(detail.pay_date)}` : ''}`
             : `${fmtDate(detail.period_start)} – ${fmtDate(detail.period_end)}`
           : undefined
       }

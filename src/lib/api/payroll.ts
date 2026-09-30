@@ -238,6 +238,9 @@ export interface PeriodListItem {
   period_start: string
   period_end: string
   label: string | null
+  for_month?: string | null
+  title?: string | null
+  pay_date?: string | null
   employees: number
   approved: number
   net: number | null

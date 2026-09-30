@@ -11,8 +11,12 @@ export function fmtMoney(n: number | null | undefined, currency = 'AED'): string
 }
 
 /** "September 2026" or the off-cycle label. */
-export function periodLabel(p: { period_start: string; label?: string | null; kind?: string }): string {
-  if (p.kind === 'off_cycle' && p.label) return p.label
+export function periodLabel(p: { period_start: string; label?: string | null; kind?: string; title?: string | null; for_month?: string | null }): string {
+  if (p.kind === 'off_cycle') {
+    const month = p.for_month ? new Date(`${p.for_month}T12:00:00Z`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : null
+    if (month && p.label) return `${month} · ${p.label}`
+    if (p.label) return p.label
+  }
   const d = new Date(`${p.period_start}T12:00:00Z`)
   return d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 }

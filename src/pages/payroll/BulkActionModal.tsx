@@ -1,3 +1,4 @@
+import { fmtDate, todayDubai } from '../../lib/format'
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Modal } from '../../components/ui'
 import {
@@ -72,7 +73,11 @@ export default function BulkActionModal({
   const [mode, setMode] = useState<'per_employee' | 'distributed'>('per_employee')
   const [reason, setReason] = useState('')
   // pay
-  const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10))
+  // Default: the month's pay date, or today (Dubai) if the pay date is still ahead — payments can't be future-dated.
+  const todayStr = todayDubai()
+  const payDay = workspace.pay_date ?? null
+  const payDayAhead = !!payDay && payDay > todayStr
+  const [paidOn, setPaidOn] = useState(payDay && !payDayAhead ? payDay : todayStr)
   const [method, setMethod] = useState<PaymentMethod>(workspace.settings.default_payment_method)
   const [reference, setReference] = useState('')
   const [payStatus, setPayStatus] = useState<'recorded' | 'failed'>('recorded')
@@ -342,8 +347,13 @@ export default function BulkActionModal({
             </select>
           </label>
           <label>
-            <span className="label">Date</span>
-            <input type="date" className="input" value={paidOn} onChange={(e) => (setPaidOn(e.target.value), setServerPreview(null))} />
+            <span className="label">Date paid</span>
+            <input type="date" className="input" max={todayStr} value={paidOn} onChange={(e) => (setPaidOn(e.target.value), setServerPreview(null))} />
+            {payDayAhead && (
+              <span className="mt-1 block text-xs text-muted">
+                Pay day is {fmtDate(payDay)}. Record the payment on the day the bank sends it — payments can’t be dated in the future.
+              </span>
+            )}
           </label>
           <label>
             <span className="label">Method</span>

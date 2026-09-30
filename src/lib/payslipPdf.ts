@@ -36,7 +36,7 @@ export function buildPayslipPdf(p: MyPayslipDetail): Uint8Array {
   if (employerMeta) doc.text(L, 60, employerMeta, { size: 9, color: [0.85, 0.92, 0.9] })
   doc.text(R, 40, 'PAYSLIP', { size: 16, bold: true, color: [1, 1, 1], align: 'right' })
   const periodText = p.title
-    ? `${p.title}${p.pay_date ? `  ·  paid ${fmtDate(p.pay_date)}` : ''}`
+    ? `${p.title}${p.pay_date ? `  ·  pay date ${fmtDate(p.pay_date)}` : ''}`
     : `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`
   doc.text(R, 60, periodText, { size: 9, color: [0.85, 0.92, 0.9], align: 'right' })
 
