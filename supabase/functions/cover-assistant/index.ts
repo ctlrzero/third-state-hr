@@ -12,8 +12,8 @@
 //
 // Response: 200 { suggestion_id, ai, model, message, ranking: [{employee_id, name, reason}], candidates, not_eligible }
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { aiConfig, aiText, firstJson, type AiConfig } from '../_shared/ai.ts'
 
-const MODEL = Deno.env.get('COVER_ASSISTANT_MODEL') ?? 'claude-sonnet-5-5'
 const ALLOWED_ORIGINS = new Set(['https://hr.thirdstate.ae', 'http://localhost:5173'])
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -73,7 +73,7 @@ function ruleBased(data: CoverData): { ranking: Ranked[]; message: string } {
   return { ranking, message }
 }
 
-async function askClaude(apiKey: string, data: CoverData, absentName: string | null): Promise<{ ranking: Ranked[]; message: string } | null> {
+async function askAi(cfg: AiConfig, data: CoverData, absentName: string | null): Promise<{ ranking: Ranked[]; message: string } | null> {
   const s = data.shift
   const pool = data.candidates.slice(0, 12)
   const facts = {
@@ -102,30 +102,10 @@ async function askClaude(apiKey: string, data: CoverData, absentName: string | n
     '(max 280 characters, plain English, no emojis) the manager can send asking them to cover; include the day, ' +
     'time and branch and ask them to accept or decline in the HR app. Do not mention other people or anyone\'s ' +
     'absence reason. Reply with JSON only: {"ranking":[{"id":"...","reason":"..."}],"message":"..."}'
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 600,
-      system,
-      messages: [{ role: 'user', content: JSON.stringify(facts) }],
-    }),
-  })
-  if (!res.ok) {
-    console.error('anthropic error', res.status)
-    return null
-  }
-  const body = (await res.json()) as { content?: { type: string; text?: string }[] }
-  const text = (body.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('')
-  const match = text.match(/\{[\s\S]*\}/)
-  if (!match) return null
-  let parsed: { ranking?: { id?: string; reason?: string }[]; message?: string }
-  try {
-    parsed = JSON.parse(match[0])
-  } catch {
-    return null
-  }
+  const text = await aiText(cfg, system, JSON.stringify(facts), 600)
+  if (!text) return null
+  const parsed = firstJson<{ ranking?: { id?: string; reason?: string }[]; message?: string }>(text)
+  if (!parsed) return null
   // Keep only people from the eligible list; the model can't add anyone.
   const byId = new Map(pool.map((c) => [c.employee_id, c]))
   const seen = new Set<string>()
@@ -174,12 +154,12 @@ Deno.serve(async (req) => {
     absentName = row ? (row.preferred_name ?? row.full_name) : null
   }
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  const cfg = aiConfig('COVER_ASSISTANT_MODEL')
   let result: { ranking: Ranked[]; message: string } | null = null
   let ai = false
-  if (apiKey && data.candidates.length) {
+  if (cfg && data.candidates.length) {
     try {
-      result = await askClaude(apiKey, data, absentName)
+      result = await askAi(cfg, data, absentName)
       ai = !!result
     } catch (e) {
       console.error('cover-assistant ai failed', (e as Error).message)
@@ -192,14 +172,14 @@ Deno.serve(async (req) => {
     p_shift_id: shiftId,
     p_inputs: { shift: data.shift, candidates: data.candidates.slice(0, 12), absent: absentName },
     p_output: { ai, ranking: result.ranking, message: result.message },
-    p_model: ai ? MODEL : 'rules',
+    p_model: ai && cfg ? `${cfg.provider}:${cfg.model}` : 'rules',
   })
   if (logError) return json(req, 400, { error: 'log_failed', message: logError.message })
 
   return json(req, 200, {
     suggestion_id: suggestionId,
     ai,
-    model: ai ? MODEL : null,
+    model: ai && cfg ? `${cfg.provider}:${cfg.model}` : null,
     message: result.message,
     ranking: result.ranking,
     candidates: data.candidates,

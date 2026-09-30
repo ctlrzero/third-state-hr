@@ -10,8 +10,8 @@
 //
 // Response: 200 { suggestion_id, ai, model, summary: string[], people: [{employee_id, name, sentence}] }
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { aiConfig, aiText, firstJson, type AiConfig } from '../_shared/ai.ts'
 
-const MODEL = Deno.env.get('PAYROLL_EXPLAINER_MODEL') ?? 'claude-sonnet-5-5'
 const ALLOWED_ORIGINS = new Set(['https://hr.thirdstate.ae', 'http://localhost:5173'])
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -90,7 +90,7 @@ function ruleBased(c: Changes): { summary: string[]; people: Sentence[] } {
   return { summary, people }
 }
 
-async function askClaude(apiKey: string, c: Changes): Promise<{ summary: string[]; people: Sentence[] } | null> {
+async function askAi(cfg: AiConfig, c: Changes): Promise<{ summary: string[]; people: Sentence[] } | null> {
   const changed = c.employees.filter((p) => p.new_this_month || Number(p.net_change) !== 0).slice(0, 60)
   const facts = {
     month: c.label,
@@ -114,21 +114,11 @@ async function askClaude(apiKey: string, c: Changes): Promise<{ summary: string[
     'plain sentence (max 30 words) saying why their net pay changed, with the amounts and currency. Short part-month ' +
     'or prorated months, overtime, deductions and corrections are the usual reasons — use the line notes. No advice, no ' +
     'emojis. Reply with JSON only: {"summary":["..."],"people":[{"id":"...","sentence":"..."}]}'
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 2000, system, messages: [{ role: 'user', content: JSON.stringify(facts) }] }),
-  })
-  if (!res.ok) {
-    console.error('anthropic error', res.status)
-    return null
-  }
-  const body = (await res.json()) as { content?: { type: string; text?: string }[] }
-  const text = (body.content ?? []).filter((x) => x.type === 'text').map((x) => x.text ?? '').join('')
-  const match = text.match(/\{[\s\S]*\}/)
-  if (!match) return null
-  try {
-    const parsed = JSON.parse(match[0]) as { summary?: unknown; people?: { id?: string; sentence?: string }[] }
+  const text = await aiText(cfg, system, JSON.stringify(facts), 2000)
+  if (!text) return null
+  const parsed = firstJson<{ summary?: unknown; people?: { id?: string; sentence?: string }[] }>(text)
+  if (!parsed) return null
+  {
     const byId = new Map(changed.map((p) => [p.employee_id, p]))
     const people: Sentence[] = []
     for (const s of parsed.people ?? []) {
@@ -138,8 +128,6 @@ async function askClaude(apiKey: string, c: Changes): Promise<{ summary: string[
     }
     const summary = (Array.isArray(parsed.summary) ? parsed.summary : []).map((x) => String(x).trim().slice(0, 240)).filter(Boolean).slice(0, 4)
     return summary.length ? { summary, people } : null
-  } catch {
-    return null
   }
 }
 
@@ -166,12 +154,12 @@ Deno.serve(async (req) => {
   if (error) return json(req, error.code === '42501' ? 403 : 400, { error: 'changes_failed', message: error.message })
   const c = data as Changes
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  const cfg = aiConfig('PAYROLL_EXPLAINER_MODEL')
   let result: { summary: string[]; people: Sentence[] } | null = null
   let ai = false
-  if (apiKey) {
+  if (cfg) {
     try {
-      result = await askClaude(apiKey, c)
+      result = await askAi(cfg, c)
       ai = !!result
     } catch (e) {
       console.error('payroll-explainer ai failed', (e as Error).message)
@@ -183,9 +171,9 @@ Deno.serve(async (req) => {
     p_period_id: periodId,
     p_inputs: c,
     p_output: { ai, ...result },
-    p_model: ai ? MODEL : 'rules',
+    p_model: ai && cfg ? `${cfg.provider}:${cfg.model}` : 'rules',
   })
   if (logError) return json(req, 400, { error: 'log_failed', message: logError.message })
 
-  return json(req, 200, { suggestion_id: suggestionId, ai, model: ai ? MODEL : null, ...result })
+  return json(req, 200, { suggestion_id: suggestionId, ai, model: ai && cfg ? `${cfg.provider}:${cfg.model}` : null, ...result })
 })

@@ -13,8 +13,8 @@
 //
 // Response: 200 { suggestion_id, ai, model, headline, points: string[] }
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { aiConfig, aiText, firstJson, type AiConfig } from '../_shared/ai.ts'
 
-const MODEL = Deno.env.get('ROSTER_ASSISTANT_MODEL') ?? 'claude-sonnet-5-5'
 const ALLOWED_ORIGINS = new Set(['https://hr.thirdstate.ae', 'http://localhost:5173'])
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -105,33 +105,21 @@ function ruleBased(f: ReturnType<typeof facts>): { headline: string; points: str
   return { headline, points: points.slice(0, 5) }
 }
 
-async function askClaude(apiKey: string, f: ReturnType<typeof facts>): Promise<{ headline: string; points: string[] } | null> {
+async function askAi(cfg: AiConfig, f: ReturnType<typeof facts>): Promise<{ headline: string; points: string[] } | null> {
   const system =
     'You explain an automatically planned café staff roster to a busy branch manager in the UAE. Use only the facts ' +
     'given. Write a one-sentence headline (max 20 words), then at most 5 short bullet points (max 25 words each) in ' +
     'plain English: whether every hour is covered and which gaps remain, whether hours are shared fairly (name the ' +
     'most and least), who is working at another branch, and anything the manager should check before publishing. ' +
     'No jargon, no emojis, no advice about pay. Reply with JSON only: {"headline":"...","points":["..."]}'
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify({ model: MODEL, max_tokens: 700, system, messages: [{ role: 'user', content: JSON.stringify(f) }] }),
-  })
-  if (!res.ok) {
-    console.error('anthropic error', res.status)
-    return null
-  }
-  const body = (await res.json()) as { content?: { type: string; text?: string }[] }
-  const text = (body.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('')
-  const match = text.match(/\{[\s\S]*\}/)
-  if (!match) return null
-  try {
-    const parsed = JSON.parse(match[0]) as { headline?: unknown; points?: unknown }
+  const text = await aiText(cfg, system, JSON.stringify(f), 700)
+  if (!text) return null
+  const parsed = firstJson<{ headline?: unknown; points?: unknown }>(text)
+  if (!parsed) return null
+  {
     const headline = String(parsed.headline ?? '').trim().slice(0, 200)
     const points = (Array.isArray(parsed.points) ? parsed.points : []).map((p) => String(p).trim().slice(0, 240)).filter(Boolean).slice(0, 5)
     return headline ? { headline, points } : null
-  } catch {
-    return null
   }
 }
 
@@ -169,12 +157,12 @@ Deno.serve(async (req) => {
   if (error) return json(req, error.code === '42501' ? 403 : 400, { error: 'plan_failed', message: error.message })
   const f = facts(data as Plan)
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY')
+  const cfg = aiConfig('ROSTER_ASSISTANT_MODEL')
   let result: { headline: string; points: string[] } | null = null
   let ai = false
-  if (apiKey) {
+  if (cfg) {
     try {
-      result = await askClaude(apiKey, f)
+      result = await askAi(cfg, f)
       ai = !!result
     } catch (e) {
       console.error('roster-assistant ai failed', (e as Error).message)
@@ -186,9 +174,9 @@ Deno.serve(async (req) => {
     p_entity_id: entityId,
     p_inputs: f,
     p_output: { ai, ...result },
-    p_model: ai ? MODEL : 'rules',
+    p_model: ai && cfg ? `${cfg.provider}:${cfg.model}` : 'rules',
   })
   if (logError) return json(req, 400, { error: 'log_failed', message: logError.message })
 
-  return json(req, 200, { suggestion_id: suggestionId, ai, model: ai ? MODEL : null, ...result })
+  return json(req, 200, { suggestion_id: suggestionId, ai, model: ai && cfg ? `${cfg.provider}:${cfg.model}` : null, ...result })
 })
