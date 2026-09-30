@@ -110,12 +110,20 @@ export default function RecordDrawer({
         : blocking.length
           ? 'Fix the items marked “Fix needed” first.'
           : null
+  // Mirrors payroll_return_to_draft / payroll_create_correction server-side: once a
+  // payslip is published OR a payment is recorded, "Return to draft" is refused and
+  // "Create correction" is the only path — checking only r.paid here previously let
+  // this button appear enabled for a published-but-unpaid record, which the server
+  // then rejected.
+  const correctionOnly = r.published_at != null || r.paid > 0
   const returnBlock = !perms.prepare
     ? 'You do not have permission to change payroll.'
     : draft
       ? null
-      : r.paid > 0
-        ? 'A payment is recorded, so it cannot go back to draft. Create a correction instead.'
+      : correctionOnly
+        ? r.published_at != null
+          ? 'Payslip already published; create a correction instead.'
+          : 'A payment is recorded, so it cannot go back to draft. Create a correction instead.'
         : null
 
   return (
@@ -151,7 +159,7 @@ export default function RecordDrawer({
               Return to draft
             </button>
           )}
-          {perms.prepare && r.record_status === 'approved' && r.paid > 0 && (
+          {perms.prepare && r.record_status === 'approved' && correctionOnly && (
             <button className="btn-secondary" disabled={busy} onClick={() => setPrompt({ kind: 'correct' })}>
               Create correction
             </button>
@@ -207,7 +215,11 @@ export default function RecordDrawer({
         </section>
         {d.record.correction_reason && <Alert tone="info">Correction: {d.record.correction_reason}. Payments already made count toward it.</Alert>}
         {r.returned_reason && draft && <Alert tone="info">Returned to draft: {r.returned_reason}</Alert>}
-        {!draft && <p className="text-xs text-muted">This record is frozen. Return it to draft (or create a correction once paid) to change it.</p>}
+        {!draft && (
+          <p className="text-xs text-muted">
+            This record is frozen. Return it to draft, or — once published or paid — create a correction instead.
+          </p>
+        )}
 
         {r.attention.length > 0 && (
           <section aria-label="Needs attention" className="space-y-1">
