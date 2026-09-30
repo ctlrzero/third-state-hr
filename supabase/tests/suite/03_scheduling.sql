@@ -43,14 +43,17 @@ begin
   perform public.admin_grant_access('zz-s03-mgrx@example.invalid','location_manager',e1,la,e_mgrx);
   perform public.admin_revoke_access(u_mgrx, null, 'ZZ suite: revoked manager');
 
-  -- ===== validate_shift (manager builds drafts through the API role; note shifts.is_published defaults to TRUE) =====
+  -- ===== validate_shift (drafts are set up as the branch manager; note shifts.is_published defaults to TRUE) =====
   perform set_config('request.jwt.claims', json_build_object('sub', u_mgr, 'role', 'authenticated')::text, true);
-  perform set_config('role','authenticated',true);
   insert into public.shifts(entity_id,location_id,employee_id,shift_date,start_time,end_time,is_published) values (e1,la,e_st,t+3,'09:00','17:00',false) returning id into sh1;
   insert into public.shifts(entity_id,location_id,employee_id,shift_date,start_time,end_time,is_published) values (e1,la,e_st,t+4,'22:00','06:00',false) returning id into sh_night;
   insert into public.shifts(entity_id,location_id,employee_id,shift_date,start_time,end_time,is_published) values (e1,la,e_st,t+6,'09:00','17:00',false) returning id into sh_swap;
   insert into public.shifts(entity_id,location_id,employee_id,shift_date,start_time,end_time,is_published) values (e1,la,e_st3,t+4,'09:00','17:00',false) returning id into sh_abs;
   insert into public.shifts(entity_id,location_id,employee_id,shift_date,start_time,end_time,is_published) values (e1,la,e_st3,t+8,'09:00','17:00',false) returning id into sh_leave;
+  -- the API role must be able to read shifts through RLS (manager of the branch)
+  perform set_config('role','authenticated',true);
+  begin perform 1 from public.shifts where id = sh1; r := r || 'PASS shift: branch manager can read shifts through RLS'::text;
+  exception when others then r := r || ('FAIL shift: branch manager can read shifts through RLS (' || sqlerrm || ')'); end;
   begin insert into public.shifts(entity_id,location_id,employee_id,shift_date,start_time,end_time) values (e1,la,e_st,t+3,'12:00','20:00');
     r := r || 'FAIL shift: overlapping shift for same person refused (allowed)'::text;
   exception when others then r := r || (case when sqlerrm ilike '%overlaps%' then 'PASS ' else 'FAIL ' end || 'shift: overlapping shift for same person refused (' || sqlerrm || ')'); end;
@@ -96,7 +99,7 @@ begin
   -- ===== adjust_published_shift =====
   perform set_config('role','authenticated',true);
   begin update public.shifts set end_time = '19:00' where id = sh1; r := r || 'FAIL adjust: direct edit of a published shift without reason refused (allowed)'::text;
-  exception when others then r := r || 'PASS adjust: direct edit of a published shift without reason refused'::text; end;
+  exception when others then r := r || (case when sqlerrm ilike '%with a reason%' then 'PASS ' else 'FAIL ' end || 'adjust: direct edit of a published shift without reason refused (' || sqlerrm || ')'); end;
   begin perform public.adjust_published_shift(sh1, '   ', null, null, '18:00'); r := r || 'FAIL adjust: blank reason refused (allowed)'::text;
   exception when others then r := r || (case when sqlerrm ilike '%reason is required%' then 'PASS ' else 'FAIL ' end || 'adjust: blank reason refused (' || sqlerrm || ')'); end;
   begin perform public.adjust_published_shift(sh1, 'ZZ longer day', null, null, '18:00');

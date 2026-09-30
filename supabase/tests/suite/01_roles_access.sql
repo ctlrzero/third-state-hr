@@ -65,6 +65,15 @@ begin
     (e1,null,e_st,'zz_test','for staff'),(e1,u_mgr,null,'zz_test','for manager'),
     (e1,u_rev,null,'zz_test','for revoked'),(e2,null,e_c,'zz_test','for C');
 
+  -- ===== every function used inside an RLS policy must be executable by the API role (else reads raise 'permission denied for function') =====
+  select string_agg(distinct p.proname, ', ') into who
+    from pg_proc p
+   where p.pronamespace = 'public'::regnamespace
+     and not has_function_privilege('authenticated', p.oid, 'execute')
+     and exists (select 1 from pg_policies pol where pol.schemaname = 'public' and pol.roles::text ~ 'authenticated|public'
+                   and (pol.qual ilike '%' || p.proname || '(%' or pol.with_check ilike '%' || p.proname || '(%'));
+  r := r || (case when who is null then 'PASS ' else 'FAIL ' end || 'rls policies only call functions the API role can execute' || coalesce(' (not executable: ' || who || ')', ''))::text;
+
   -- ===== reads per role through RLS =====
   foreach who in array array['owner','entity_admin','location_manager','shift_supervisor','staff','revoked'] loop
     uid := case who when 'owner' then v_owner when 'entity_admin' then u_adm when 'location_manager' then u_mgr
@@ -77,8 +86,11 @@ begin
     perform set_config('role','authenticated',true);
     select count(*) into n from public.employees where entity_id = any(ents);
     r := r || (case when n = exp_emp then 'PASS ' else 'FAIL ' end || format('rls %s sees %s/%s employees', who, n, exp_emp));
-    select count(*) into n from public.shifts where entity_id = any(ents);
-    r := r || (case when n = exp_sh then 'PASS ' else 'FAIL ' end || format('rls %s sees %s/%s shifts', who, n, exp_sh));
+    begin
+      select count(*) into n from public.shifts where entity_id = any(ents);
+      r := r || (case when n = exp_sh then 'PASS ' else 'FAIL ' end || format('rls %s sees %s/%s shifts', who, n, exp_sh));
+    exception when others then r := r || ('FAIL rls ' || who || ' reading shifts raised an error: ' || sqlerrm);
+    end;
     select count(*) into n from public.leave_requests where employee_id in (e_st,e_b,e_c);
     r := r || (case when n = exp_lr then 'PASS ' else 'FAIL ' end || format('rls %s sees %s/%s leave_requests', who, n, exp_lr));
     select count(*) into n from public.attendance_records where entity_id = any(ents);
@@ -101,10 +113,13 @@ begin
   -- ===== targeted row checks =====
   perform set_config('request.jwt.claims', json_build_object('sub', u_st, 'role', 'authenticated')::text, true);
   perform set_config('role','authenticated',true);
-  select count(*) into n from public.shifts where id = s_draft;
-  r := r || (case when n = 0 then 'PASS ' else 'FAIL ' end || 'rls staff cannot see own unpublished shift');
-  select count(*) into n from public.shifts where id = s_b;
-  r := r || (case when n = 0 then 'PASS ' else 'FAIL ' end || 'rls staff cannot see other branch shift');
+  begin
+    select count(*) into n from public.shifts where id = s_draft;
+    r := r || (case when n = 0 then 'PASS ' else 'FAIL ' end || 'rls staff cannot see own unpublished shift');
+    select count(*) into n from public.shifts where id = s_b;
+    r := r || (case when n = 0 then 'PASS ' else 'FAIL ' end || 'rls staff cannot see other branch shift');
+  exception when others then r := r || ('FAIL rls staff reading shifts raised an error: ' || sqlerrm);
+  end;
   begin update public.employees set notes = 'zz hacked' where id = e_st; get diagnostics n = row_count;
     r := r || (case when n = 0 then 'PASS ' else 'FAIL ' end || 'rls staff cannot update own employee row');
   exception when others then r := r || ('PASS rls staff cannot update own employee row (denied: ' || sqlstate || ')'); end;
