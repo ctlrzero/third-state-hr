@@ -204,9 +204,16 @@ export default function WorkspaceDrawer({
 
   async function viewDoc(d: Doc) {
     if (!d.storage_path) return
+    // Open the tab inside the tap: iOS Safari blocks window.open() after an await.
+    const tab = window.open('', '_blank')
+    if (tab) tab.opener = null
     const url = await documentLink(d.storage_path)
-    if (url) window.open(url, '_blank', 'noopener')
-    else setError('Could not open the document.')
+    if (url && tab) tab.location.href = url
+    else if (url) window.location.assign(url)
+    else {
+      tab?.close()
+      setError('Could not open the document.')
+    }
   }
 
   const title = ws ? ws.employee.name : 'Onboarding'
@@ -328,10 +335,10 @@ export default function WorkspaceDrawer({
                     </span>
                     {p?.manage && (
                       <span className="flex gap-2">
-                        <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'section_changes', section: s.section })}>
+                        <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPrompt({ kind: 'section_changes', section: s.section })}>
                           Request changes
                         </button>
-                        <button className="btn-primary min-h-9" disabled={busy} onClick={() => act(() => reviewSection(ws.instance.id, s.section, 'approved', null), 'Section approved.')}>
+                        <button className="btn-primary min-h-11" disabled={busy} onClick={() => act(() => reviewSection(ws.instance.id, s.section, 'approved', null), 'Section approved.')}>
                           Approve
                         </button>
                       </span>
@@ -373,27 +380,27 @@ export default function WorkspaceDrawer({
                         <div className="flex flex-wrap items-center gap-2">
                           <TaskStatusBadge status={t.status} />
                           {p && t.kind === 'manual' && !isTaskDone(t.status) && t.status !== 'submitted' && canOwn(p, t.owner_role) && (
-                            <button className="btn-secondary min-h-9" disabled={busy} onClick={() => act(() => completeTask(t.id, null), `${t.item_label}: done.`)}>
+                            <button className="btn-secondary min-h-11" disabled={busy} onClick={() => act(() => completeTask(t.id, null), `${t.item_label}: done.`)}>
                               Mark done
                             </button>
                           )}
                           {p && t.status === 'submitted' && t.kind === 'manual' && canReview(p, t.reviewer_role) && (
                             <>
-                              <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'task_changes', task: t })}>
+                              <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPrompt({ kind: 'task_changes', task: t })}>
                                 Changes
                               </button>
-                              <button className="btn-primary min-h-9" disabled={busy} onClick={() => act(() => reviewTask(t.id, 'approved', null), 'Approved.')}>
+                              <button className="btn-primary min-h-11" disabled={busy} onClick={() => act(() => reviewTask(t.id, 'approved', null), 'Approved.')}>
                                 Approve
                               </button>
                             </>
                           )}
                           {p?.manage && t.is_waivable && !isTaskDone(t.status) && !['compensation', 'contract_acceptance'].includes(t.kind) && (
-                            <button className="btn-ghost min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'waive', task: t })}>
+                            <button className="btn-ghost min-h-11" disabled={busy} onClick={() => setPrompt({ kind: 'waive', task: t })}>
                               Waive
                             </button>
                           )}
                           {p?.manage && t.kind === 'document' && t.doc_type === 'contract' && !isTaskDone(t.status) && (
-                            <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPanel('contract')}>
+                            <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPanel('contract')}>
                               Upload contract
                             </button>
                           )}
@@ -433,17 +440,17 @@ export default function WorkspaceDrawer({
                     <span className="flex flex-wrap items-center gap-2">
                       <StatusBadge status={d.review_status} />
                       {d.storage_path && (
-                        <button className="btn-ghost min-h-9" onClick={() => viewDoc(d)}>
+                        <button className="btn-ghost min-h-11" onClick={() => viewDoc(d)}>
                           View
                         </button>
                       )}
                       {d.review_status === 'pending_review' && (p?.manage || p?.operate) && (
                         <>
-                          <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'doc_reject', id: d.id })}>
+                          <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPrompt({ kind: 'doc_reject', id: d.id })}>
                             Reject
                           </button>
                           <button
-                            className="btn-primary min-h-9"
+                            className="btn-primary min-h-11"
                             disabled={busy}
                             onClick={() =>
                               act(async () => {
@@ -471,7 +478,7 @@ export default function WorkspaceDrawer({
               id="ws-pay"
               actions={
                 pre && (
-                  <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPanel('pay')}>
+                  <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPanel('pay')}>
                     {ws.compensation ? 'Change pay' : 'Enter pay'}
                   </button>
                 )
@@ -497,10 +504,10 @@ export default function WorkspaceDrawer({
                   </p>
                   {p?.payroll && ws.compensation.status === 'pending_review' && pre && (
                     <div className="flex gap-2">
-                      <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'pay_changes' })}>
+                      <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPrompt({ kind: 'pay_changes' })}>
                         Request changes
                       </button>
-                      <button className="btn-primary min-h-9" disabled={busy} onClick={() => act(() => reviewPay(ws.instance.id, 'approved', null), 'Pay approved.')}>
+                      <button className="btn-primary min-h-11" disabled={busy} onClick={() => act(() => reviewPay(ws.instance.id, 'approved', null), 'Pay approved.')}>
                         Approve pay
                       </button>
                     </div>
@@ -532,10 +539,10 @@ export default function WorkspaceDrawer({
                   </p>
                   {p?.payroll && ws.payment_details.status === 'submitted' && ws.payment_details.id && (
                     <div className="flex gap-2">
-                      <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'bank_reject', id: ws.payment_details!.id! })}>
+                      <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPrompt({ kind: 'bank_reject', id: ws.payment_details!.id! })}>
                         Reject
                       </button>
-                      <button className="btn-primary min-h-9" disabled={busy} onClick={() => act(() => verifyPaymentDetails(ws.payment_details!.id!, 'verified', null), 'Bank details verified.')}>
+                      <button className="btn-primary min-h-11" disabled={busy} onClick={() => act(() => verifyPaymentDetails(ws.payment_details!.id!, 'verified', null), 'Bank details verified.')}>
                         Verify
                       </button>
                     </div>
@@ -561,12 +568,12 @@ export default function WorkspaceDrawer({
                       <StatusBadge status={x.status} />
                       <span className="text-xs text-muted">{OWNER_LABEL[x.owner_role]}</span>
                       {x.status === 'open' && p?.manage && ws.employee.employment_status === 'active' && (x.exception_type === 'no_show' || x.exception_type === 'probation_not_confirmed') && (
-                        <button className="btn-primary min-h-9" disabled={busy} onClick={() => setOffboard({ type: x.exception_type as 'no_show' | 'probation_not_confirmed', exceptionId: x.id })}>
+                        <button className="btn-primary min-h-11" disabled={busy} onClick={() => setOffboard({ type: x.exception_type as 'no_show' | 'probation_not_confirmed', exceptionId: x.id })}>
                           Start offboarding
                         </button>
                       )}
                       {x.status === 'open' && (
-                        <button className="btn-secondary min-h-9" disabled={busy} onClick={() => setPrompt({ kind: 'resolve', id: x.id })}>
+                        <button className="btn-secondary min-h-11" disabled={busy} onClick={() => setPrompt({ kind: 'resolve', id: x.id })}>
                           Resolve
                         </button>
                       )}
@@ -780,7 +787,7 @@ function SetupCard({ ws, onEdit }: { ws: Workspace; onEdit?: () => void }) {
       id="ws-setup"
       actions={
         onEdit && (
-          <button className="btn-secondary min-h-9" onClick={onEdit}>
+          <button className="btn-secondary min-h-11" onClick={onEdit}>
             Edit
           </button>
         )

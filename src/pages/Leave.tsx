@@ -304,13 +304,13 @@ function LeaveAdmin() {
                             value={overrideReason}
                             onChange={(e) => setOverrideReason(e.target.value)}
                             placeholder="Reason for overriding the balance check (required)"
-                            className="min-w-[220px] flex-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                            className="min-h-11 min-w-[220px] flex-1 rounded-lg border border-border px-2.5 py-1.5 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
                           />
                         </label>
                         <button
                           onClick={() => handleDecide(r.id, 'approve', true, overrideReason)}
                           disabled={busyId === r.id || overrideReason.trim().length === 0}
-                          className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
+                          className="min-h-11 rounded-lg bg-brand-blue px-4 py-1.5 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
                         >
                           Confirm override
                         </button>

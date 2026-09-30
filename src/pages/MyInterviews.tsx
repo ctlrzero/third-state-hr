@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { friendlyError } from '../lib/api/client'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
 import type { CandidateFileRef, InterviewRecommendation, MyInterviewDetail, MyInterviewRow } from '../types/db'
@@ -171,20 +172,26 @@ function InterviewDetailDrawer({
     // Logged before the signed URL is minted, and the signed URL itself is
     // short-lived and scoped by storage RLS to this exact object — there is
     // no folder-level access, only this specific approved file.
+    // Open the tab inside the tap: iOS Safari blocks window.open() after an await.
+    const tab = window.open('', '_blank')
+    if (tab) tab.opener = null
     const { error: logError } = await supabase.rpc('log_candidate_file_access', {
       p_interview_id: interviewId,
       p_file_id: file.id,
     })
     if (logError) {
-      setError(logError.message)
+      tab?.close()
+      setError(friendlyError(logError))
       return
     }
     const { data, error: signError } = await supabase.storage.from('candidate-files').createSignedUrl(file.storage_path, 60)
     if (signError || !data) {
-      setError(signError?.message ?? "Couldn't open that file.")
+      tab?.close()
+      setError(signError ? friendlyError(signError) : "Couldn't open that file.")
       return
     }
-    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    if (tab) tab.location.href = data.signedUrl
+    else window.location.assign(data.signedUrl)
   }
 
   async function handleSaveDraft() {

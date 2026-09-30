@@ -106,8 +106,9 @@ export const submitRequestedPaymentDetails = (args: {
   }).then(unwrapOk)
 
 /** Where the employee goes to fulfil a request. */
-export function requestActionRoute(r: { kind: EmployeeRequestKind }): string {
-  if (r.kind === 'document') return '/documents'
+export function requestActionRoute(r: { kind: EmployeeRequestKind; doc_type?: string | null }): string {
+  // ?upload= opens the upload form for that document straight away.
+  if (r.kind === 'document') return r.doc_type ? `/documents?upload=${encodeURIComponent(r.doc_type)}` : '/documents'
   if (r.kind === 'payment_details') return '/me#payment-details'
   return '/me#missing-details'
 }

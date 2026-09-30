@@ -94,7 +94,7 @@ export default function StaffHome() {
           <h2 id="next-shifts-h" className="text-base font-semibold text-ink">
             Next shifts
           </h2>
-          <Link to="/schedules" className="text-sm font-medium text-brand-blue hover:underline">
+          <Link to="/schedules" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-blue hover:underline">
             Full schedule
           </Link>
         </div>
@@ -122,7 +122,7 @@ export default function StaffHome() {
           <h2 id="leave-bal-h" className="text-base font-semibold text-ink">
             Leave balance
           </h2>
-          <Link to="/leave" className="text-sm font-medium text-brand-blue hover:underline">
+          <Link to="/leave" className="inline-flex min-h-11 items-center text-sm font-medium text-brand-blue hover:underline">
             Request leave
           </Link>
         </div>

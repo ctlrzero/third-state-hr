@@ -320,7 +320,7 @@ export default function Today() {
                   <button
                     disabled={busySwap === w.swap_id}
                     onClick={() => decideSwap(w.swap_id, 'reject')}
-                    className="press rounded-full border border-border px-4 py-2 text-sm font-medium text-ink disabled:opacity-60"
+                    className="press min-h-11 rounded-full border border-border px-4 py-2 text-sm font-medium text-ink disabled:opacity-60"
                   >
                     Reject
                   </button>
@@ -439,7 +439,7 @@ function ActionButton({ onClick, disabled, children }: { onClick: () => void; di
     <button
       onClick={onClick}
       disabled={disabled}
-      className="press shrink-0 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+      className="press min-h-11 shrink-0 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
     >
       {children}
     </button>

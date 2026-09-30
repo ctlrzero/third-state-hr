@@ -138,12 +138,15 @@ export function Modal({
   onClose,
   children,
   footer,
+  role = 'dialog',
 }: {
   open: boolean
   title: string
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  /** "alertdialog" for confirmations that interrupt; "dialog" otherwise. */
+  role?: 'dialog' | 'alertdialog'
 }) {
   const panelRef = useDialogFocus(open, onClose)
   const titleId = useId()
@@ -152,7 +155,7 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4" onMouseDown={onClose}>
       <div
         ref={panelRef}
-        role="alertdialog"
+        role={role}
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
@@ -242,7 +245,7 @@ export function Alert({
 
 export function Skeleton({ rows = 3, className = 'h-14' }: { rows?: number; className?: string }) {
   return (
-    <div className="space-y-2" aria-busy="true" aria-label="Loading">
+    <div className="space-y-2" role="status" aria-busy="true" aria-label="Loading">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className={`animate-pulse rounded-lg bg-surface-alt ${className}`} />
       ))}

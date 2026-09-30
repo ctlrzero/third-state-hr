@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { friendlyError } from '../lib/api/client'
 import { useAuth } from '../auth/AuthContext'
@@ -58,6 +59,7 @@ export default function Documents() {
   const [renewalDoc, setRenewalDoc] = useState<EmployeeDocument | null>(null)
   const [renewalAssisted, setRenewalAssisted] = useState(false)
   const [myRequirements, setMyRequirements] = useState<DocumentRequirement[]>([])
+  const [params, setParams] = useSearchParams()
 
   async function load() {
     if (!activeEntityId) return
@@ -114,6 +116,27 @@ export default function Documents() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEntityId])
 
+  // From Home ("Your manager needs something" → Upload document): open that upload form directly.
+  const uploadParam = params.get('upload')
+  useEffect(() => {
+    if (!uploadParam || canManage || loading) return
+    const req = myRequirements.find((r) => r.doc_type === uploadParam)
+    if (req) {
+      setUploadKind('self')
+      setUploadPreEmployee(req.employee_id)
+      setUploadPreDocType(req.doc_type)
+      setUploadOpen(true)
+    }
+    setParams(
+      (p) => {
+        p.delete('upload')
+        return p
+      },
+      { replace: true }
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadParam, loading, myRequirements, canManage])
+
   const visibleDocTypes = useMemo(() => DOC_TYPES.filter((t) => canRoleSeeDocType(profile?.role, t.value)), [profile])
 
   function renewalFor(currentDocId: string) {
@@ -147,20 +170,26 @@ export default function Documents() {
       setError('This document type is not visible to your role — only limited metadata (expiry, review status) is shown.')
       return
     }
+    // Open the tab inside the tap: iOS Safari blocks window.open() after an await.
+    const tab = window.open('', '_blank')
+    if (tab) tab.opener = null
     const { error: logError } = await supabase.rpc('log_document_access', {
       p_document_id: doc.id,
       p_action: 'download',
     })
     if (logError) {
+      tab?.close()
       setError(`Not authorized to open that file: ${friendlyError(logError)}`)
       return
     }
     const { data, error: signError } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 60)
     if (signError || !data) {
+      tab?.close()
       setError(`Couldn't open that file: ${friendlyError(signError)}`)
       return
     }
-    window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    if (tab) tab.location.href = data.signedUrl
+    else window.location.assign(data.signedUrl)
   }
 
   async function handleApprove(doc: EmployeeDocument) {

@@ -1684,13 +1684,13 @@ function MySchedule() {
                           value={swapNote}
                           onChange={(e) => setSwapNote(e.target.value)}
                           placeholder="Note for whoever picks this up (optional)"
-                          className="flex-1 rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+                          className="min-h-11 flex-1 rounded-lg border border-border px-2 py-1.5 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
                         />
                       </label>
                       <button
                         onClick={() => handleRequestSwap(s.id)}
                         disabled={busyId === s.id}
-                        className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+                        className="min-h-11 rounded-lg bg-brand-blue px-4 py-1.5 text-sm font-medium text-white disabled:opacity-60"
                       >
                         {busyId === s.id ? 'Sending…' : 'Send request'}
                       </button>

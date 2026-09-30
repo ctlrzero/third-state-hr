@@ -21,6 +21,7 @@ export function ConfirmHost() {
 
   return (
     <Modal
+      role="alertdialog"
       open={Boolean(req)}
       title="Please confirm"
       onClose={() => close(false)}
