@@ -364,6 +364,11 @@ export default function WorkspaceDrawer({
                           </p>
                           {t.review_reason && t.status === 'changes_required' && <p className="text-xs text-brand-risk-text">{t.review_reason}</p>}
                           {t.waived_reason && t.status === 'waived' && <p className="text-xs text-muted">Waived: {t.waived_reason}</p>}
+                          {t.kind === 'contract_acceptance' && ws.contract && (
+                            <p className="text-xs text-muted">
+                              Accepted version {ws.contract.document_version} on {fmtDateTime(ws.contract.accepted_at)}
+                            </p>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <TaskStatusBadge status={t.status} />

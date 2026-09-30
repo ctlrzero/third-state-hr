@@ -31,15 +31,25 @@ export default function Clock() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const inFlight = useRef(false)
+  const [statusFailed, setStatusFailed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [history, setHistory] = useState<MyAttendanceRow[] | null>(null)
+  // After an overnight clock-out the Dubai business date has already rolled
+  // over, so the server reports 'no_shift' (offering Clock in again). Treat
+  // that as "done" for this visit so a stray extra tap can't open an
+  // unscheduled clock-in.
+  const [justClockedOut, setJustClockedOut] = useState(false)
 
   const loadStatus = useCallback(async () => {
     const res = await getMyClockStatus()
     if (res.error && /no employee record/i.test(res.error)) setNotLinked(true)
     else if (res.error) setError(res.error)
-    else setStatus(res.data)
+    else {
+      setStatus(res.data)
+      setStatusFailed(false)
+    }
+    if (res.error) setStatusFailed(true)
     setLoading(false)
     return res.data
   }, [])
@@ -57,7 +67,31 @@ export default function Clock() {
     loadHistory()
   }, [loadStatus, loadHistory])
 
-  const model = clockButtonModel(loading ? null : (status?.state ?? null), saving)
+  // The phone may sit on this screen for hours (or lose signal): re-read the
+  // server state whenever the page becomes visible again or the connection
+  // returns, so the button never shows a stale state.
+  useEffect(() => {
+    function refresh() {
+      if (document.visibilityState === 'visible' && !inFlight.current) loadStatus()
+    }
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('online', refresh)
+    return () => {
+      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('online', refresh)
+    }
+  }, [loadStatus])
+
+  async function retryStatus() {
+    setError(null)
+    setLoading(true)
+    await loadStatus()
+    loadHistory()
+  }
+
+  const serverState = status?.state ?? null
+  const effectiveState = justClockedOut && serverState === 'no_shift' ? 'clocked_out' : serverState
+  const model = clockButtonModel(loading ? null : effectiveState, saving)
 
   async function handleClock() {
     // Double-tap guard: a ref flips synchronously, before React re-renders
@@ -69,6 +103,7 @@ export default function Clock() {
     setSuccess(null)
     const action = model.action
     if (action === 'clock_in') {
+      setJustClockedOut(false)
       const res = await clockIn()
       if (res.error || !res.data) setError(res.error ?? 'Clock-in did not complete. Please try again.')
       else
@@ -80,12 +115,14 @@ export default function Clock() {
     } else {
       const res = await clockOut()
       if (res.error || !res.data) setError(res.error ?? 'Clock-out did not complete. Please try again.')
-      else
+      else {
+        setJustClockedOut(true)
         setSuccess(
           res.data.already_clocked_out
             ? `You were already clocked out at ${fmtTime(res.data.clock_out_at)}.`
             : `Clocked out at ${fmtTime(res.data.clock_out_at)}. Saved.`
         )
+      }
     }
     // Always re-read server state so the button reflects the truth.
     await loadStatus()
@@ -95,6 +132,10 @@ export default function Clock() {
   }
 
   const shift = status?.today_shift
+  // An open clock-in from an earlier day (overnight shift or a forgotten
+  // clock-out) is not "today's" shift — name its date instead.
+  const shiftHeading =
+    shift && status && shift.shift_date !== status.business_date ? `Shift on ${fmtDayShort(shift.shift_date)}` : "Today's shift"
 
   return (
     <div className="mx-auto max-w-lg space-y-5">
@@ -110,7 +151,7 @@ export default function Clock() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 id="today-heading" className="text-sm font-semibold text-muted">
-                Today's shift
+                {shiftHeading}
               </h2>
               {loading ? (
                 <div className="mt-1 h-7 w-40 animate-pulse rounded bg-surface-alt" />
@@ -131,8 +172,8 @@ export default function Clock() {
             </div>
             {status && (
               <StatusBadge
-                status={CLOCK_STATE_LABEL[status.state]}
-                tone={status.state === 'clocked_in' ? 'success' : status.state === 'no_shift' ? 'warning' : 'neutral'}
+                status={CLOCK_STATE_LABEL[effectiveState ?? status.state]}
+                tone={effectiveState === 'clocked_in' ? 'success' : effectiveState === 'no_shift' ? 'warning' : 'neutral'}
               />
             )}
           </div>
@@ -158,9 +199,9 @@ export default function Clock() {
             aria-describedby="clock-helper"
             className={`flex min-h-14 w-full items-center justify-center rounded-xl text-lg font-semibold transition disabled:cursor-not-allowed ${
               model.tone === 'primary'
-                ? 'bg-brand-blue text-white hover:bg-brand-primary disabled:opacity-70'
+                ? 'bg-brand-blue text-white hover:bg-brand-primary'
                 : model.tone === 'danger'
-                  ? 'bg-brand-risk text-white hover:opacity-90 disabled:opacity-70'
+                  ? 'bg-brand-risk text-white hover:opacity-90'
                   : 'bg-surface-alt text-muted'
             }`}
           >
@@ -170,8 +211,13 @@ export default function Clock() {
             {model.label}
           </button>
           <p id="clock-helper" className="text-center text-sm text-muted">
-            {model.helper}
+            {statusFailed && !status ? 'We couldn’t load your status.' : model.helper}
           </p>
+          {statusFailed && !status && !loading && (
+            <button type="button" onClick={retryStatus} className="btn-secondary min-h-11 w-full">
+              Try again
+            </button>
+          )}
 
           <div aria-live="polite">
             {success && <Alert tone="success">{success}</Alert>}

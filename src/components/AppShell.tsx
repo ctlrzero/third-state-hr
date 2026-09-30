@@ -86,7 +86,28 @@ export function AppShell({ children }: { children: ReactNode }) {
     sheetRef.current?.querySelector<HTMLElement>('a,button')?.focus()
     const opener = moreButtonRef.current
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setMoreOpen(false)
+      if (e.key === 'Escape') {
+        setMoreOpen(false)
+        return
+      }
+      // aria-modal sheet: keep Tab cycling inside it.
+      const el = sheetRef.current
+      if (e.key !== 'Tab' || !el) return
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>('a[href],button:not([disabled])'))
+      if (nodes.length === 0) return
+      const first = nodes[0]
+      const last = nodes[nodes.length - 1]
+      const active = document.activeElement as HTMLElement | null
+      if (!active || !el.contains(active)) {
+        e.preventDefault()
+        first.focus()
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => {
@@ -254,6 +275,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                 className="flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left text-base text-brand-risk hover:bg-brand-risk-soft"
               >
                 Sign out
+              </button>
+              {/* Screen-reader users can't tap the backdrop or press Escape. */}
+              <button type="button" onClick={() => setMoreOpen(false)} className="sr-only focus:not-sr-only focus:flex focus:min-h-12 focus:w-full focus:items-center focus:rounded-lg focus:px-3 focus:text-base focus:text-ink">
+                Close menu
               </button>
             </div>
           </div>

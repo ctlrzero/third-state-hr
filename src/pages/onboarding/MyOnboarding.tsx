@@ -447,11 +447,19 @@ function ContractStep({ data, onDone, onError }: StepProps) {
   const [busy, setBusy] = useState(false)
   const c = data.contract
   async function view() {
+    // Open the tab inside the tap: phone browsers (iOS Safari) block
+    // window.open() once we've awaited the network, so the contract would
+    // silently never appear.
+    const tab = window.open('', '_blank')
+    if (tab) tab.opener = null
     const r = await getMyContract()
-    if (r.error || !r.data) return onError(r.error ?? 'The contract is not available yet.')
-    const url = await documentLink(r.data.storage_path)
-    if (url) window.open(url, '_blank', 'noopener')
-    else onError('Could not open the contract.')
+    const url = r.data && !r.error ? await documentLink(r.data.storage_path) : null
+    if (url && tab) tab.location.href = url
+    else if (url) window.location.assign(url)
+    else {
+      tab?.close()
+      onError(r.error ?? (r.data ? 'Could not open the contract.' : 'The contract is not available yet.'))
+    }
   }
   async function accept() {
     setBusy(true)

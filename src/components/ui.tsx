@@ -232,7 +232,7 @@ export function Alert({
     <div role={tone === 'error' ? 'alert' : 'status'} className={`flex items-start justify-between gap-3 rounded-lg px-3 py-2.5 text-sm ${cls}`}>
       <div className="min-w-0">{children}</div>
       {onDismiss && (
-        <button type="button" onClick={onDismiss} className="shrink-0 text-xs font-semibold underline" aria-label="Dismiss message">
+        <button type="button" onClick={onDismiss} className="relative shrink-0 text-xs font-semibold underline after:absolute after:-inset-x-3 after:-inset-y-3.5 after:content-['']" aria-label="Dismiss message">
           Dismiss
         </button>
       )}

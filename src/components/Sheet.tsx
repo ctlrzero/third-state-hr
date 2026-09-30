@@ -8,6 +8,8 @@ function project(velocity: number, decelerationRate = 0.998) {
 function rubberband(overshoot: number, dimension: number, constant = 0.55) {
   return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot))
 }
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 const INTERACTIVE = 'input, select, textarea, button, a, label, [contenteditable="true"], [data-no-drag]'
 
 export function Sheet({
@@ -71,7 +73,34 @@ export function Sheet({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') requestClose()
+      if (e.key === 'Escape') {
+        requestClose()
+        return
+      }
+      // Keep Tab inside the sheet (aria-modal). Skip when another dialog
+      // stacked on top owns focus or has already handled the key.
+      const el = panel.current
+      if (e.key !== 'Tab' || e.defaultPrevented || !el) return
+      const active = document.activeElement as HTMLElement | null
+      const owner = active?.closest('[aria-modal="true"]')
+      if (owner && owner !== el) return
+      const nodes = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((n) => n.offsetParent !== null)
+      if (nodes.length === 0) {
+        e.preventDefault()
+        return
+      }
+      const first = nodes[0]
+      const last = nodes[nodes.length - 1]
+      if (!active || !el.contains(active)) {
+        e.preventDefault()
+        first.focus()
+      } else if (e.shiftKey && (active === first || active === el)) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -200,7 +229,7 @@ export function Sheet({
             </h2>
             {subtitle && <p className="mt-1 text-[13px] leading-snug text-muted">{subtitle}</p>}
           </div>
-          <button onClick={requestClose} className="press shrink-0 rounded-full bg-surface-alt px-3.5 py-1.5 text-sm font-medium text-ink hover:bg-border">
+          <button type="button" onClick={requestClose} className="press relative shrink-0 after:absolute after:-inset-x-1 after:-inset-y-2 after:content-[''] rounded-full bg-surface-alt px-3.5 py-1.5 text-sm font-medium text-ink hover:bg-border">
             Done
           </button>
         </header>
