@@ -38,6 +38,7 @@ import {
 import { findOpenOnboarding, startForEmployee, type OnboardingStatus } from '../lib/api/onboarding'
 import { STATUS_LABEL as ONB_STATUS_LABEL } from '../lib/onboarding'
 import { ReasonModal } from './onboarding/shared'
+import { TransferModal, TransferStatusCard } from '../components/EmployeeTransfer'
 import ImmigrationCard from './onboarding/ImmigrationCard'
 import StartOffboarding from './offboarding/StartOffboarding'
 import type { Employee, EmployeeChangeRequest, EmployeeDocument, EmployeeStatus, LeaveBalance, LeaveRequest } from '../types/db'
@@ -102,6 +103,8 @@ export default function EmployeeProfile() {
   const [offboardCase, setOffboardCase] = useState<string | null>(null)
   const [startingOff, setStartingOff] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [transferring, setTransferring] = useState(false)
+  const [transferKey, setTransferKey] = useState(0)
   // Pay: owner / entity_admin only (get_employee_compensation re-checks).
   const [comp, setComp] = useState<CompensationView | null>(null)
   const [compError, setCompError] = useState<string | null>(null)
@@ -281,6 +284,11 @@ export default function EmployeeProfile() {
                     Open offboarding
                   </Link>
                 )}
+                {isAdmin && (status === 'active' || status === 'pre_boarding') && (
+                  <button className="btn-secondary" onClick={() => setTransferring(true)}>
+                    Transfer
+                  </button>
+                )}
                 {!offboardCase && isAdmin && status === 'active' && (
                   <button className="btn-secondary" onClick={() => setStartingOff(true)}>
                     Start offboarding
@@ -320,6 +328,27 @@ export default function EmployeeProfile() {
           </div>
         ) : null}
       </header>
+
+      <TransferStatusCard employeeId={employee.id} canManage={isAdmin} refreshKey={transferKey} onChanged={() => { setTransferKey((k) => k + 1); load() }} />
+
+      {transferring && (
+        <TransferModal
+          employee={{
+            id: employee.id,
+            name: employee.preferred_name || employee.full_name,
+            entity_id: employee.entity_id,
+            home_location_id: employee.home_location_id,
+            home_location_name: employee.locations?.name ?? null,
+          }}
+          onClose={() => setTransferring(false)}
+          onDone={(msg) => {
+            setTransferring(false)
+            setNotice(msg)
+            setTransferKey((k) => k + 1)
+            load()
+          }}
+        />
+      )}
 
       {isAdmin && (status === 'active' || status === 'pre_boarding') && (
         <details className="card">

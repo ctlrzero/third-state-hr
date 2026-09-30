@@ -54,7 +54,12 @@ export default function Notifications() {
     }
     const route = n.target_type ? NOTIFICATION_TARGET_ROUTE[n.target_type] : undefined
     // A shift notice opens that shift (e.g. "can't come in" → Find cover).
-    const target = route && n.target_type === 'shifts' && n.target_id ? `${route}?shift=${n.target_id}` : route
+    const target =
+      route && n.target_id && n.target_type === 'shifts'
+        ? `${route}?shift=${n.target_id}`
+        : route && n.target_id && n.target_type === 'employees'
+          ? `${route}/${n.target_id}`
+          : route
     if (target) navigate(target)
   }
 

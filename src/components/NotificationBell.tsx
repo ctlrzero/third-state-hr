@@ -25,6 +25,7 @@ const TARGET_ROUTE: Record<string, string> = {
   interviews: '/my-interviews',
   attendance_records: '/attendance',
   shifts: '/schedules',
+  employees: '/employees',
 }
 
 function timeAgo(iso: string): string {
@@ -104,7 +105,12 @@ export function NotificationBell() {
   function navigateToTarget(n: NotificationRow) {
     const route = n.target_type ? TARGET_ROUTE[n.target_type] : undefined
     // A shift notice opens that shift (e.g. "can't come in" → Find cover).
-    const target = route && n.target_type === 'shifts' && n.target_id ? `${route}?shift=${n.target_id}` : route
+    const target =
+      route && n.target_id && n.target_type === 'shifts'
+        ? `${route}?shift=${n.target_id}`
+        : route && n.target_id && n.target_type === 'employees'
+          ? `${route}/${n.target_id}`
+          : route
     if (route) {
       setOpen(false)
       navigate(target ?? route)
