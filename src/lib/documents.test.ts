@@ -16,12 +16,16 @@ describe('expiryStatus', () => {
     expect(expiryStatus('2026-08-13', today)).toBe('expiring')
   })
 
-  it('treats exactly 30 days out as expiring (inclusive boundary)', () => {
-    expect(expiryStatus('2026-09-12', today)).toBe('expiring')
+  it('treats exactly 60 days out as expiring (inclusive boundary, first renewal reminder)', () => {
+    expect(expiryStatus('2026-10-12', today)).toBe('expiring')
   })
 
-  it('treats 31 days out as current', () => {
-    expect(expiryStatus('2026-09-13', today)).toBe('current')
+  it('treats 61 days out as current', () => {
+    expect(expiryStatus('2026-10-13', today)).toBe('current')
+  })
+
+  it('uses the Dubai calendar day (late evening UTC is already tomorrow in Dubai)', () => {
+    expect(expiryStatus('2026-08-13', new Date('2026-08-13T21:00:00Z'))).toBe('expired')
   })
 
   it('treats a far-future date as current', () => {

@@ -1,3 +1,4 @@
+import { addDays, todayDubai } from './format'
 import type { UserRole } from '../types/db'
 
 export const DOC_TYPES = [
@@ -77,22 +78,24 @@ export function canRoleApprove(
 
 export type ExpiryStatus = 'expired' | 'expiring' | 'current' | 'non_expiring'
 
+/** Days before expiry that a document counts as "expiring" — matches the first renewal reminder (P2-5). */
+export const EXPIRING_WINDOW_DAYS = 60
+
 /**
  * Expiry status is always computed from expiry_date, never stored — kept
  * completely separate from review_status (the approval workflow state).
+ * Dates are compared as Dubai calendar days.
  *   expired:      expiry_date < today
- *   expiring:     today <= expiry_date <= today + 30 days
- *   current:      expiry_date > today + 30 days
+ *   expiring:     today <= expiry_date <= today + 60 days (staff can upload a new copy)
+ *   current:      expiry_date > today + 60 days
  *   non_expiring: expiry_date is null
  */
 export function expiryStatus(expiryDate: string | null, today: Date = new Date()): ExpiryStatus {
   if (!expiryDate) return 'non_expiring'
-  const todayStr = today.toISOString().slice(0, 10)
-  const in30 = new Date(today)
-  in30.setDate(in30.getDate() + 30)
-  const in30Str = in30.toISOString().slice(0, 10)
+  const todayStr = todayDubai(today)
+  const limitStr = addDays(todayStr, EXPIRING_WINDOW_DAYS)
   if (expiryDate < todayStr) return 'expired'
-  if (expiryDate <= in30Str) return 'expiring'
+  if (expiryDate <= limitStr) return 'expiring'
   return 'current'
 }
 
