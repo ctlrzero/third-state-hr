@@ -24,14 +24,28 @@ export function isMissingFunction(err: PgError | null | undefined): boolean {
   return msg.includes('could not find the function') || (msg.includes('function') && msg.includes('does not exist'))
 }
 
-/** Turn a raw Postgres/PostgREST error into something safe to show a user. */
-export function friendlyError(err: PgError | null | undefined): string {
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
+/**
+ * Turn any error (Postgres/PostgREST, fetch, Error, string) into plain English
+ * that is safe to show staff. Messages our own RPCs raise are already written
+ * for people and pass through; raw database / network wording is replaced.
+ */
+export function friendlyError(err: PgError | Error | string | null | undefined): string {
   if (!err) return 'Something went wrong. Please try again.'
-  const msg = err.message ?? ''
-  // Raw Postgres privilege errors are not user-friendly; RPC-raised 42501s carry a readable message.
-  if (err.code === '42501' && (!msg || /^permission denied/i.test(msg))) return 'You do not have permission to do that.'
-  if (err.code === 'P0002' && !msg) return 'Not found.'
-  if (msg && msg.length < 300) return msg
+  const code = typeof err === 'object' && 'code' in err ? (err as PgError).code : undefined
+  const raw = (typeof err === 'string' ? err : (err.message ?? '')).replace(/^ERROR:\s*/i, '').replace(/^[A-Z0-9]{5}:\s*/, '').trim()
+  const m = raw.toLowerCase()
+  if (/failed to fetch|networkerror|load failed|network request failed/.test(m)) return 'No internet connection. Check your signal and try again.'
+  if (/jwt|token (is )?expired|invalid claim|refresh token/.test(m)) return 'Your session has expired. Please sign in again.'
+  if (/row-level security|^permission denied/.test(m) || (code === '42501' && !raw)) return 'You can’t do this. Please ask your manager.'
+  if (/no home location or shift location/.test(m)) return 'We can’t tell which branch you work at. Please tell your manager.'
+  if (/duplicate key|already exists/.test(m) && /constraint|duplicate key/.test(m)) return 'This already exists.'
+  if (/violates (check|foreign key|not-null) constraint|invalid input syntax|out of range|value too long/.test(m))
+    return 'That couldn’t be saved — something doesn’t look right. Please check and try again.'
+  if (UUID_RE.test(raw)) return /not found|no longer/.test(m) ? 'This item no longer exists. Refresh and try again.' : 'Something went wrong. Please try again.'
+  if (code === 'P0002' && !raw) return 'This item no longer exists. Refresh and try again.'
+  if (raw && raw.length < 240) return raw
   return 'Something went wrong. Please try again.'
 }
 
@@ -47,7 +61,7 @@ export async function callRpc<T>(fn: string, args?: Record<string, unknown>): Pr
   } catch (e) {
     return {
       data: null,
-      error: e instanceof Error ? e.message : 'Network error. Check your connection.',
+      error: friendlyError(e instanceof Error ? e : 'Failed to fetch'),
     }
   }
 }
