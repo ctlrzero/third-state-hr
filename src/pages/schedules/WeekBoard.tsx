@@ -4,7 +4,12 @@ import { Sheet } from '../../components/Sheet'
 import type { Shift } from '../../types/db'
 import { isoAddDays, shiftKind, type ShiftKind } from './week'
 
-const KIND_LABEL: Record<ShiftKind, string> = { draft: 'Draft', published: 'Published', adjusted: 'Adjusted', cancelled: 'Cancelled' }
+const KIND_LABEL: Record<ShiftKind, string> = {
+  draft: 'Not shared',
+  published: 'Shared',
+  adjusted: 'Changed',
+  cancelled: 'Cancelled',
+}
 const KIND_PILL: Record<ShiftKind, string> = {
   draft: 'border border-dashed border-muted/60 bg-surface text-muted',
   published: 'bg-brand-blue-soft text-brand-blue-text',
@@ -277,10 +282,10 @@ export function ShiftActionsSheet({
         </dl>
         <p className="text-xs text-muted">
           {kind === 'draft'
-            ? 'Draft — staff can’t see it until it’s published.'
+            ? 'Not shared yet — staff can’t see it until you share the week with staff.'
             : kind === 'cancelled'
               ? 'Cancelled — kept for the record.'
-              : 'Published — staff can see it. Every change needs a reason and is kept in the history.'}
+              : 'Shared with staff — staff can see it. Every change needs a reason and is kept in the history.'}
         </p>
         <div className="space-y-2">
           {actions.onEdit && (
@@ -300,7 +305,7 @@ export function ShiftActionsSheet({
           )}
           {actions.onCancel && (
             <button className={`${btn} text-brand-risk`} onClick={actions.onCancel}>
-              {kind === 'draft' ? 'Cancel draft' : 'Cancel shift (with a reason)'}
+              {kind === 'draft' ? 'Cancel shift' : 'Cancel shift (with a reason)'}
             </button>
           )}
           {actions.onDelete && (

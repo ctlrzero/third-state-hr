@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { friendlyError } from '../lib/api/client'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
@@ -59,9 +60,9 @@ const EXPIRY_TONE: Record<string, 'neutral' | 'warning' | 'risk' | 'success'> = 
 
 const STATUS_ACTION_LABEL: Record<EmployeeStatus, string> = {
   candidate: 'Move to candidate',
-  pre_boarding: 'Start pre-boarding',
+  pre_boarding: 'Mark as hired (pre-boarding)',
   active: 'Activate',
-  inactive: 'Inactivate',
+  inactive: 'Deactivate',
 }
 
 type TabKey = 'overview' | 'employment' | 'documents' | 'schedule' | 'attendance' | 'leave' | 'payslips' | 'audit'
@@ -151,7 +152,7 @@ export default function EmployeeProfile() {
       .eq('id', id)
       .maybeSingle()
     if (empRes.error) {
-      setError(empRes.error.message)
+      setError(friendlyError(empRes.error))
     } else if (!empRes.data) {
       setNotFound(true)
     } else {
@@ -952,7 +953,12 @@ function StatusModal({
         Status: <StatusBadge status={employee.employment_status ?? 'candidate'} /> → <StatusBadge status={target} />
       </p>
       {target === 'inactive' && (
-        <p className="text-muted">They will no longer be able to clock in or be scheduled. Records and history are kept.</p>
+        <>
+          <p className="text-muted">They will no longer be able to clock in or be scheduled. Records and history are kept.</p>
+          <Alert tone="info">
+            Leaving the company? Cancel and use Start offboarding instead — it sets the last working day for payroll and final settlement.
+          </Alert>
+        </>
       )}
       {blocked && (
         <Alert tone="warning">
@@ -1155,7 +1161,7 @@ function SensitiveInfoPanel({ employeeId }: { employeeId: string }) {
     const idRes = await supabase.from('employee_identity_documents').select('*').eq('employee_id', employeeId).maybeSingle()
     setLoading(false)
     if (idRes.error) {
-      setError(idRes.error.message ?? 'Failed to load sensitive information.')
+      setError(friendlyError(idRes.error))
       return
     }
     setIdentity((idRes.data as IdentityDocs | null) ?? null)

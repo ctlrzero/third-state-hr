@@ -44,7 +44,10 @@ export default function StaffHome() {
     supabase
       .from('leave_balances')
       .select('*, leave_types(id, name)')
-      .then(({ data }) => setBalances((data ?? []) as unknown as LeaveBalance[]))
+      .then(({ data }) =>
+        // Same two types the Leave page offers staff.
+        setBalances(((data ?? []) as unknown as LeaveBalance[]).filter((b) => ['Annual Leave', 'Sick Leave'].includes(b.leave_types?.name ?? '')))
+      )
   }, [])
 
   const firstName = profile?.full_name?.split(' ')[0]

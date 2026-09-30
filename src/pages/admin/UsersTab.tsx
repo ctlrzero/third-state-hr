@@ -21,6 +21,15 @@ import type { UserRole } from '../../types/db'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+const ROLE_HINT: Record<UserRole, string> = {
+  owner: 'Full access to every company, including pay and settings.',
+  entity_admin: 'Runs one company: people, documents, schedules and payroll.',
+  location_manager: 'Runs one branch: schedules, attendance, leave and documents for that branch.',
+  shift_supervisor:
+    'Runs the floor at their own branch: today’s shifts, cover, swaps and clock-in fixes. Can’t see pay, leave, documents or profiles, and can’t build the schedule. Also uses the app as an employee.',
+  staff: 'Their own schedule, clock-in, leave, documents and payslips.',
+}
+
 export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; activeEntityId: string | null }) {
   const [rows, setRows] = useState<UserAccessRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -91,7 +100,7 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
       ),
     },
     { key: 'role', header: 'Role', render: (r) => ROLE_LABEL[r.role] ?? r.role },
-    { key: 'entity', header: 'Entity', render: (r) => (r.entity_id ? (entityName[r.entity_id] ?? '—') : 'All entities') },
+    { key: 'entity', header: 'Company', render: (r) => (r.entity_id ? (entityName[r.entity_id] ?? '—') : 'All companies') },
     { key: 'branch', header: 'Branch', render: (r) => (r.location_id ? (locationName[r.location_id] ?? '—') : '—') },
     {
       key: 'status',
@@ -118,7 +127,7 @@ export function UsersTab({ isOwner, activeEntityId }: { isOwner: boolean; active
           {isOwner && (
             <label className="flex min-h-11 items-center gap-2 text-sm">
               <input type="checkbox" className="h-5 w-5 accent-brand-blue" checked={allEntities} onChange={(e) => setAllEntities(e.target.checked)} />
-              Show all entities
+              Show all companies
             </label>
           )}
           <button className="btn-primary" onClick={() => setGranting(true)}>
@@ -227,7 +236,7 @@ function GrantDrawer({
   const [entityId, setEntityId] = useState(defaultEntityId ?? entities[0]?.id ?? '')
   const [locationId, setLocationId] = useState('')
   const [employeeId, setEmployeeId] = useState('')
-  const [employees, setEmployees] = useState<{ id: string; full_name: string; email: string | null }[]>([])
+  const [employees, setEmployees] = useState<{ id: string; full_name: string; email: string | null; home_location_id: string | null }[]>([])
   const [errors, setErrors] = useState<{ email?: string; entity?: string; location?: string; employee?: string }>({})
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -236,7 +245,7 @@ function GrantDrawer({
     if (!entityId) return
     supabase
       .from('employees')
-      .select('id, full_name, email')
+      .select('id, full_name, email, home_location_id')
       .eq('entity_id', entityId)
       .is('auth_user_id', null)
       .order('full_name')
@@ -251,13 +260,19 @@ function GrantDrawer({
   const needsBranch = role === 'location_manager' || role === 'shift_supervisor'
   // A supervisor is an employee login too: their branch must be the employee's home branch.
   const needsEmployee = role === 'staff' || role === 'shift_supervisor'
+  const isSupervisor = role === 'shift_supervisor'
+  // Supervisors take the linked employee's home branch automatically.
+  const chosenEmployee = employees.find((em) => em.id === employeeId)
+  const supervisorNoBranch = isSupervisor && !!chosenEmployee && !chosenEmployee.home_location_id
+  const effectiveLocationId = isSupervisor ? (chosenEmployee?.home_location_id ?? '') : locationId
 
   async function submit() {
     const e: typeof errors = {}
     if (!EMAIL_RE.test(email.trim())) e.email = 'Enter a valid email address.'
-    if (needsEntity && !entityId) e.entity = 'Choose an entity.'
-    if (needsBranch && !locationId) e.location = role === 'shift_supervisor' ? 'Supervisors need their home branch.' : 'Location managers need a branch.'
-    if (needsEmployee && !employeeId) e.employee = 'Staff and supervisor access must be linked to their employee record.'
+    if (needsEntity && !entityId) e.entity = 'Choose a company.'
+    if (needsBranch && !isSupervisor && !locationId) e.location = 'Branch managers need a branch.'
+    if (needsEmployee && !employeeId) e.employee = 'Employee and supervisor access must be linked to their employee record.'
+    else if (supervisorNoBranch) e.employee = 'Set this employee’s home branch first.'
     setErrors(e)
     if (Object.keys(e).length) return
     setSaving(true)
@@ -266,7 +281,7 @@ function GrantDrawer({
       email.trim().toLowerCase(),
       role,
       needsEntity ? entityId : null,
-      needsBranch ? locationId : null,
+      needsBranch ? effectiveLocationId : null,
       needsEmployee ? employeeId : null
     )
     setSaving(false)
@@ -295,7 +310,7 @@ function GrantDrawer({
         <Field label="Email" error={errors.email} required>
           {(p) => <input {...p} type="email" autoComplete="off" className="input" value={email} onChange={(e) => setEmail(e.target.value)} data-autofocus />}
         </Field>
-        <Field label="Role" required hint={!isOwner ? 'Only the Owner can grant Owner access.' : undefined}>
+        <Field label="Role" required hint={ROLE_HINT[role] + (!isOwner ? ' Only the Owner can grant Owner access.' : '')}>
           {(p) => (
             <select {...p} className="input" value={role} onChange={(e) => setRole(e.target.value as UserRole)}>
               {roles.map((r) => (
@@ -307,7 +322,7 @@ function GrantDrawer({
           )}
         </Field>
         {needsEntity && (
-          <Field label="Entity" error={errors.entity} required>
+          <Field label="Company" error={errors.entity} required>
             {(p) => (
               <select {...p} className="input" value={entityId} onChange={(e) => setEntityId(e.target.value)} disabled={!isOwner}>
                 {activeEntities.map((en) => (
@@ -319,7 +334,7 @@ function GrantDrawer({
             )}
           </Field>
         )}
-        {needsBranch && (
+        {needsBranch && !isSupervisor && (
           <Field label="Branch" error={errors.location} required>
             {(p) => (
               <select {...p} className="input" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
@@ -334,7 +349,12 @@ function GrantDrawer({
           </Field>
         )}
         {needsEmployee && (
-          <Field label="Linked employee" error={errors.employee} required hint="Only employees without a login are listed.">
+          <Field
+            label="Linked employee"
+            error={errors.employee ?? (supervisorNoBranch ? 'Set this employee’s home branch first.' : undefined)}
+            required
+            hint={isSupervisor ? 'Only employees without a login are listed. Their home branch is used automatically.' : 'Only employees without a login are listed.'}
+          >
             {(p) => (
               <select {...p} className="input" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
                 <option value="">Choose an employee</option>

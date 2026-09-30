@@ -31,7 +31,7 @@ export interface NavItem {
   to: string
   icon: NavIcon
   roles: UserRole[]
-  requires?: 'interviewAssignment' | 'onboarding'
+  requires?: 'interviewAssignment' | 'onboarding' | 'payrollAccess'
 }
 
 const ALL: UserRole[] = ['owner', 'entity_admin', 'location_manager', 'shift_supervisor', 'staff']
@@ -88,9 +88,9 @@ const STAFF_NAV: NavItem[] = [
   { label: 'Documents', to: '/documents', icon: 'documents', roles: SELF },
   { label: 'Attendance', to: '/attendance', icon: 'attendance', roles: ['shift_supervisor'] },
   { label: 'Payslips', to: '/payroll', icon: 'payroll', roles: SELF },
-  // Only meaningful for a payroll-admin preset staff login; the page itself
-  // checks payroll_can and shows a plain staff member a "not authorized" state.
-  { label: 'Offboarding', to: '/offboarding', icon: 'offboarding', roles: SELF },
+  // Only for a payroll-admin preset staff login (payroll_can approve); the page
+  // itself re-checks payroll_can.
+  { label: 'Offboarding', to: '/offboarding', icon: 'offboarding', roles: SELF, requires: 'payrollAccess' },
   { label: 'Profile', to: '/me', icon: 'profile', roles: SELF },
   { label: 'My Interviews', to: '/my-interviews', icon: 'interviews', roles: SELF, requires: 'interviewAssignment' },
   { label: 'Notifications', to: '/notifications', icon: 'notifications', roles: SELF },
@@ -121,6 +121,7 @@ const MANAGEMENT_NAV: NavItem[] = [
 export interface NavContext {
   hasInterviewAssignments?: boolean
   hasOnboarding?: boolean
+  hasPayrollAccess?: boolean
 }
 
 /** Full ordered nav for a role (desktop sidebar). */
@@ -131,6 +132,7 @@ export function navForRole(role: UserRole | null | undefined, ctx: NavContext = 
     if (!item.roles.includes(role)) return false
     if (item.requires === 'interviewAssignment' && !ctx.hasInterviewAssignments) return false
     if (item.requires === 'onboarding' && !ctx.hasOnboarding) return false
+    if (item.requires === 'payrollAccess' && !ctx.hasPayrollAccess) return false
     return true
   })
 }
@@ -158,9 +160,11 @@ export function mobileNavForRole(
       more: items.filter((i) => !primaryPaths.includes(i.to)),
     }
   }
-  // Managers keep Home, Today, Schedules, People in the bar; Attendance,
-  // Onboarding and Offboarding live in More on phones (Today links to them).
-  const managerPrimary = ['/', '/today', '/schedules', '/employees']
+  // Location managers get Today, Schedules, Leave, Attendance in the bar (Home
+  // and People move to More); owners/entity admins keep Home, Today,
+  // Schedules, People. Everything else lives in More on phones.
+  const managerPrimary =
+    role === 'location_manager' ? ['/today', '/schedules', '/leave', '/attendance'] : ['/', '/today', '/schedules', '/employees']
   const primary = managerPrimary.map((p) => items.find((i) => i.to === p)).filter((i): i is NavItem => Boolean(i))
   return { primary, more: items.filter((i) => !primary.includes(i)) }
 }

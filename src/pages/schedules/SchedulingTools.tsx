@@ -3,11 +3,11 @@ import { supabase } from '../../lib/supabase'
 import { fmtDayShort, fmtTime, todayDubai } from '../../lib/format'
 import { isoAddDays, thisMonday } from './week'
 import { Sheet } from '../../components/Sheet'
+import { friendlyError } from '../../lib/api/client'
 import type { Employee, Location, Position, ShiftAdjustment } from '../../types/db'
 
 const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-const errText = (err: { message: string }) => err.message.replace(/^ERROR:\s*/i, '')
 const hhmm = (t: string | null | undefined) => (t ? t.slice(0, 5) : '')
 const toMin = (t: string) => {
   const [h, m] = t.split(':').map(Number)
@@ -84,7 +84,7 @@ export function DeleteShiftsModal({
       p_reason: reason.trim() || null,
     })
     setBusy(false)
-    if (rpcError) return setError(errText(rpcError))
+    if (rpcError) return setError(friendlyError(rpcError))
     onDone(data as DeleteResult)
   }
 
@@ -173,7 +173,7 @@ export function DeletedShiftsSheet({
       .limit(200)
     if (qErr) {
       setLoading(false)
-      return setError(qErr.message)
+      return setError(friendlyError(qErr))
     }
     const list = (data ?? []) as ShiftAdjustment[]
     setRows(list)
@@ -345,7 +345,7 @@ export function BranchSetupSheet({
     })
     if (h.error) {
       setBusy(false)
-      return setError(errText(h.error))
+      return setError(friendlyError(h.error))
     }
     const n = await supabase.rpc('set_location_staffing_needs', {
       p_location_id: locId,
@@ -358,7 +358,7 @@ export function BranchSetupSheet({
       })),
     })
     setBusy(false)
-    if (n.error) return setError(errText(n.error))
+    if (n.error) return setError(friendlyError(n.error))
     setDirty(false)
     setSavedAt(Date.now())
     onSaved(`Saved opening hours and staffing needs for ${branch?.name ?? 'the branch'}.`)
@@ -657,7 +657,7 @@ export function AutoSchedulePanel({
 
   const loadSetup = useCallback(async () => {
     const { data, error: rpcError } = await supabase.rpc('get_scheduling_setup', { p_entity_id: entityId })
-    if (rpcError) return setError(errText(rpcError))
+    if (rpcError) return setError(friendlyError(rpcError))
     const list = (data ?? []) as SetupBranch[]
     setSetup(list)
     setPicked((cur) => cur ?? new Set(list.map((b) => b.location_id)))
@@ -699,7 +699,7 @@ export function AutoSchedulePanel({
     const key = inputKey
     const { data, error: rpcError } = await supabase.rpc('propose_auto_schedule', args())
     setBusy(null)
-    if (rpcError) return setError(errText(rpcError))
+    if (rpcError) return setError(friendlyError(rpcError))
     setPlan(data as Plan)
     setPlanKey(key)
   }
@@ -710,7 +710,7 @@ export function AutoSchedulePanel({
     setError(null)
     const { data, error: rpcError } = await supabase.rpc('apply_auto_schedule', args())
     setBusy(null)
-    if (rpcError) return setError(errText(rpcError))
+    if (rpcError) return setError(friendlyError(rpcError))
     onApplied((data as Plan).created ?? 0, start, allPicked ? null : [...(picked ?? [])])
   }
 
@@ -877,8 +877,8 @@ export function AutoSchedulePanel({
         </div>
         {!plan && busy !== 'preview' && (
           <p className="text-[13px] text-muted">
-            Plans draft shifts from opening hours, staffing needs, availability, approved leave and weekly limits (48 h, 6 days).
-            Home-branch staff go first; others are borrowed only to fill gaps. Nothing is saved until you create the drafts.
+            Plans shifts (not shared yet) from opening hours, staffing needs, availability, approved leave and weekly limits (48 h, 6 days).
+            Home-branch staff go first; others are borrowed only to fill gaps. Nothing is saved until you create the shifts.
           </p>
         )}
         <ErrorBox msg={error} />
@@ -911,12 +911,12 @@ export function AutoSchedulePanel({
                 <span className="font-medium text-ink tabular-nums">
                   {plan.summary.planned} shift{plan.summary.planned === 1 ? '' : 's'} · {plan.summary.planned_hours} h
                 </span>{' '}
-                saved as drafts — review them in the Week tab, then Publish week.
+                saved as not shared yet — review them in the Week tab, then share the week with staff.
               </>
             )}
           </p>
           <button className="btn-primary press shrink-0" onClick={apply} disabled={busy !== null || stale || plan.summary.planned === 0}>
-            {busy === 'apply' ? 'Creating…' : `Create ${plan.summary.planned} draft${plan.summary.planned === 1 ? '' : 's'}`}
+            {busy === 'apply' ? 'Creating…' : `Create ${plan.summary.planned} shift${plan.summary.planned === 1 ? '' : 's'} (not shared yet)`}
           </button>
         </div>
       )}
@@ -1139,7 +1139,7 @@ function WhyThisRoster({ plan, explain }: { plan: Plan; explain: RosterArgs | nu
               ))}
             </ul>
           )}
-          <p className="mt-2 text-[11px] text-muted">{summary.ai ? 'Written by the assistant from this preview.' : 'Worked out from this preview.'} Check it before you publish.</p>
+          <p className="mt-2 text-[11px] text-muted">{summary.ai ? 'Written by the assistant from this preview.' : 'Worked out from this preview.'} Check it before you share with staff.</p>
         </div>
       )}
       <div>
@@ -1318,7 +1318,7 @@ export function FindCoverSheet({
   const [data, setData] = useState<CoverResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<CoverCandidate | null>(null)
-  const [reason, setReason] = useState('')
+  const [reason, setReason] = useState(shift.currentName ? `Cover for ${shift.currentName}` : 'Open shift filled')
   const [busy, setBusy] = useState(false)
   // Published shifts can also be offered: colleagues accept in their portal (P2-1).
   const [mode, setMode] = useState<'assign' | 'offer'>('assign')
@@ -1329,7 +1329,7 @@ export function FindCoverSheet({
 
   useEffect(() => {
     supabase.rpc('suggest_shift_cover', { p_shift_id: shift.id }).then(({ data: d, error: e }) => {
-      if (e) setError(errText(e))
+      if (e) setError(friendlyError(e))
       else setData(d as CoverResult)
     })
   }, [shift.id])
@@ -1352,7 +1352,7 @@ export function FindCoverSheet({
         })
       : await supabase.from('shifts').update({ employee_id: picked.employee_id, status: 'assigned' }).eq('id', shift.id)
     setBusy(false)
-    if (res.error) return setError(errText(res.error))
+    if (res.error) return setError(friendlyError(res.error))
     onAssigned(`${picked.name} now covers ${fmtDayShort(shift.shift_date)} ${fmtTime(shift.start_time)}–${fmtTime(shift.end_time)}.`)
   }
 
@@ -1363,7 +1363,7 @@ export function FindCoverSheet({
       subtitle={
         s
           ? `${fmtDayShort(s.shift_date)} · ${fmtTime(s.start_time)}–${fmtTime(s.end_time)} · ${s.location ?? 'Branch'}${s.position ? ` · ${s.position}` : ''}${
-              shift.currentName ? ` · now ${shift.currentName}` : ' · unassigned'
+              shift.currentName ? ` · instead of ${shift.currentName}` : ' · unassigned'
             }`
           : 'Checking who can work this shift…'
       }
@@ -1373,7 +1373,7 @@ export function FindCoverSheet({
           <div className="space-y-3">
             {needsReason && (
               <label className="block">
-                <span className="label">Reason (kept in the shift history)</span>
+                <span className="label">Note for the shift history</span>
                 <input
                   className="input"
                   value={reason}
@@ -1400,8 +1400,8 @@ export function FindCoverSheet({
         <div className="mb-4 flex gap-1 rounded-full bg-surface-alt p-1 text-sm" role="tablist" aria-label="How to cover">
           {(
             [
-              ['assign', 'Assign now'],
-              ['offer', 'Send offers'],
+              ['assign', 'Pick someone'],
+              ['offer', 'Ask a few people'],
             ] as const
           ).map(([k, label]) => (
             <button
@@ -1427,8 +1427,7 @@ export function FindCoverSheet({
       {mode === 'assign' && data && (
         <div className="space-y-5">
           <p className="text-xs text-muted">
-            Only people who pass every rule are listed: right role, not on leave or a day off, available, no overlapping shift, and within 48 hours and
-            their working days that week. Their own branch comes first, then the fewest hours.
+            Only people who are free and allowed to work this shift are shown. Your branch first, then fewest hours.
           </p>
           {data.candidates.length === 0 ? (
             <p className="rounded-xl bg-brand-warning-soft px-3.5 py-2.5 text-sm text-brand-warning-solid">
@@ -1505,6 +1504,7 @@ interface AssistantResult {
 
 function OfferPanel({ shift, candidates, onSent }: { shift: CoverShift; candidates: CoverCandidate[]; onSent: (message: string) => void }) {
   const [draft, setDraft] = useState<AssistantResult | null>(null)
+  const [unavailable, setUnavailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [chosen, setChosen] = useState<Set<string>>(new Set())
   const [message, setMessage] = useState('')
@@ -1520,7 +1520,7 @@ function OfferPanel({ shift, candidates, onSent }: { shift: CoverShift; candidat
       setLoading(false)
       if (e || !data) {
         // The assistant is optional: fall back to the rule order and a plain message.
-        setError('The assistant is unavailable — you can still pick people and write the message.')
+        setUnavailable(true)
         setChosen(new Set(candidates.slice(0, 3).map((c) => c.employee_id)))
         setMessage(
           `Hi, can you cover a shift on ${fmtDayShort(shift.shift_date)}, ${fmtTime(shift.start_time)}–${fmtTime(shift.end_time)}? Please accept or decline in the HR app.`
@@ -1546,7 +1546,7 @@ function OfferPanel({ shift, candidates, onSent }: { shift: CoverShift; candidat
       p_suggestion_id: draft?.suggestion_id ?? null,
     })
     setBusy(false)
-    if (e) return setError(errText(e))
+    if (e) return setError(friendlyError(e))
     const res = data as { sent: { name: string }[]; skipped: { name?: string; reason: string }[] }
     if (!res.sent.length) {
       setSkipped(res.skipped)
@@ -1578,6 +1578,7 @@ function OfferPanel({ shift, candidates, onSent }: { shift: CoverShift; candidat
   return (
     <div className="space-y-4">
       <ErrorBox msg={error} />
+      {unavailable && <p className="text-xs text-muted">Suggestions aren’t available right now. Pick people and edit the message below.</p>}
       {draft && (
         <p className="text-xs text-muted">
           {draft.ai ? 'Suggested by the assistant — ' : 'Suggested by the scheduling rules — '}
@@ -1638,9 +1639,18 @@ function OfferPanel({ shift, candidates, onSent }: { shift: CoverShift; candidat
 // Owner switch: may staff pick up open shifts / swaps at other branches? (P0-2)
 // ---------------------------------------------------------------------------
 
-export function CrossBranchClaimsToggle({ entityId, onError }: { entityId: string; onError: (msg: string) => void }) {
+export function CrossBranchClaimsToggle({
+  entityId,
+  swapsEnabled = true,
+  onError,
+}: {
+  entityId: string
+  swapsEnabled?: boolean
+  onError: (msg: string) => void
+}) {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     supabase
@@ -1656,15 +1666,24 @@ export function CrossBranchClaimsToggle({ entityId, onError }: { entityId: strin
     setBusy(true)
     const { error } = await supabase.rpc('set_cross_outlet_claims', { p_entity_id: entityId, p_enabled: next })
     setBusy(false)
-    if (error) return onError(errText(error))
+    if (error) return onError(friendlyError(error))
     setEnabled(next)
+    flashSaved(setSaved)
   }
 
   if (enabled === null) return null
   return (
-    <label className="flex items-center gap-2 text-xs text-muted">
-      <input type="checkbox" checked={enabled} disabled={busy} onChange={toggle} className="h-4 w-4 accent-[var(--color-brand-blue)]" />
-      Staff can pick up open shifts and swaps at other branches
+    <label className="flex flex-wrap items-center gap-2 text-xs text-muted">
+      <input
+        type="checkbox"
+        checked={enabled}
+        disabled={busy || !swapsEnabled}
+        onChange={toggle}
+        className="h-4 w-4 accent-[var(--color-brand-blue)]"
+      />
+      Let staff take open shifts and cover requests at other branches of this company
+      {!swapsEnabled && <span className="text-brand-warning-solid">Turn on shift handovers first</span>}
+      {saved && <span className="font-medium text-brand-action-text">Saved</span>}
     </label>
   )
 }
@@ -1684,6 +1703,7 @@ export function ShiftSwapsToggle({
 }) {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     supabase.rpc('shift_swaps_enabled', { p_entity_id: entityId }).then(({ data, error }) => {
@@ -1699,16 +1719,24 @@ export function ShiftSwapsToggle({
     setBusy(true)
     const { error } = await supabase.rpc('set_shift_swaps_enabled', { p_entity_id: entityId, p_enabled: next })
     setBusy(false)
-    if (error) return onError(errText(error))
+    if (error) return onError(friendlyError(error))
     setEnabled(next)
     onChanged?.(next)
+    flashSaved(setSaved)
   }
 
   if (enabled === null) return null
   return (
-    <label className="flex items-center gap-2 text-xs text-muted">
+    <label className="flex flex-wrap items-center gap-2 text-xs text-muted">
       <input type="checkbox" checked={enabled} disabled={busy} onChange={toggle} className="h-4 w-4 accent-[var(--color-brand-blue)]" />
-      Shift swaps for staff
+      Let staff hand shifts to each other (all branches in this company) — a manager still approves
+      {saved && <span className="font-medium text-brand-action-text">Saved</span>}
     </label>
   )
+}
+
+// Show a short "Saved" next to a toggle after it changes.
+function flashSaved(set: (v: boolean) => void) {
+  set(true)
+  window.setTimeout(() => set(false), 2000)
 }

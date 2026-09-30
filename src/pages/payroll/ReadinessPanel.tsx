@@ -48,7 +48,14 @@ export default function ReadinessPanel({ periodId, refreshKey }: { periodId: str
     }
   }, [periodId, refreshKey])
 
-  if (error) return null // no readiness permission: the workspace itself still works
+  // No readiness permission: hide the panel; the workspace itself still works.
+  if (error && /permission|not authori[sz]ed|42501|can’t do this/i.test(error)) return null
+  if (error)
+    return (
+      <section aria-label="Payroll readiness" className="rounded-[14px] border border-border bg-surface p-4 text-sm text-muted">
+        Couldn’t load the pre-payroll checklist. Refresh the page to try again.
+      </section>
+    )
   if (!data) return null
 
   const days = data.days_to_pay_day
@@ -63,7 +70,7 @@ export default function ReadinessPanel({ periodId, refreshKey }: { periodId: str
           {done
             ? 'Everything approved'
             : data.blocking
-              ? `${data.blocking} thing${data.blocking === 1 ? '' : 's'} blocking this payroll`
+              ? `${data.blocking} to fix before you can approve`
               : data.warnings
                 ? 'Ready to approve — a few things to check'
                 : 'Ready to approve'}
@@ -72,6 +79,11 @@ export default function ReadinessPanel({ periodId, refreshKey }: { periodId: str
           Pay day {fmtDayShort(data.pay_date)} ({when}) · {data.approved} of {data.records} approved
         </p>
       </div>
+      {done ? (
+        <p className="mt-1 text-sm text-ink">Everything approved. Next: record payment, then publish payslips.</p>
+      ) : (
+        !data.blocking && <p className="mt-1 text-sm text-ink">Next: tick ‘Select all’ in the table below, then press Approve.</p>
+      )}
       {data.items.length > 0 && (
         <ul className="mt-3 space-y-2">
           {data.items.map((i) => {
@@ -85,14 +97,14 @@ export default function ReadinessPanel({ periodId, refreshKey }: { periodId: str
                       i.severity === 'blocking' ? 'bg-brand-risk-soft text-brand-risk-text' : 'bg-brand-warning-soft text-brand-warning-solid'
                     }`}
                   >
-                    {i.severity === 'blocking' ? 'Blocking' : 'Check'}
+                    {i.severity === 'blocking' ? 'Must fix' : 'Worth a look'}
                   </span>
                   <span className="min-w-0 flex-1 text-sm font-medium text-ink">
-                    {i.title} · {i.count}
+                    {i.count} × {i.title}
                   </span>
                   {details.length > 0 && (
                     <button className="text-xs font-medium text-brand-blue" onClick={() => setOpen(open === i.key ? null : i.key)}>
-                      {open === i.key ? 'Hide' : 'Why'}
+                      {open === i.key ? 'Hide details' : 'Show details'}
                     </button>
                   )}
                   <Link to={i.link} className="text-sm font-medium text-brand-blue">

@@ -45,7 +45,7 @@ export default function MyPayslips() {
         label: p.kind === 'off_cycle' ? p.label : null,
         badges: [
           ...(p.is_correction ? [{ text: 'Corrected', tone: 'info' as const }] : []),
-          ...(p.superseded ? [{ text: 'Superseded', tone: 'neutral' as const }] : []),
+          ...(p.superseded ? [{ text: 'Replaced by newer payslip', tone: 'neutral' as const }] : []),
         ],
         net: p.net,
         currency: p.currency,
@@ -58,8 +58,8 @@ export default function MyPayslips() {
         period_end: p.period_end,
         label: null,
         badges: [
-          ...(p.is_revision ? [{ text: `Revision v${p.version}`, tone: 'info' as const }] : []),
-          ...(p.superseded ? [{ text: 'Superseded', tone: 'neutral' as const }] : []),
+          ...(p.is_revision ? [{ text: 'Updated', tone: 'info' as const }] : []),
+          ...(p.superseded ? [{ text: 'Replaced by newer payslip', tone: 'neutral' as const }] : []),
         ],
         net: p.net_pay,
         currency: p.currency,
@@ -89,12 +89,13 @@ export default function MyPayslips() {
                   <span className="block font-semibold text-ink">
                     {p.label ?? `${fmtDate(p.period_start)} – ${fmtDate(p.period_end)}`}
                   </span>
-                  <span className="mt-1 flex flex-wrap gap-1">
-                    <StatusBadge status="Published" tone="success" />
-                    {p.badges.map((b) => (
-                      <StatusBadge key={b.text} status={b.text} tone={b.tone} />
-                    ))}
-                  </span>
+                  {p.badges.length > 0 && (
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      {p.badges.map((b) => (
+                        <StatusBadge key={b.text} status={b.text} tone={b.tone} />
+                      ))}
+                    </span>
+                  )}
                 </span>
                 <span className="text-right">
                   <span className="block text-xs text-muted">Net pay</span>

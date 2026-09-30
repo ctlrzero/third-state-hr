@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { KpiCard } from '../components/KpiCard'
@@ -10,6 +10,7 @@ import { fmtDate } from '../lib/format'
 import { docTypeLabel } from '../lib/documents'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { isSelfServiceRole } from '../types/db'
+import { listPeriods, type PeriodListItem } from '../lib/api/payroll'
 
 type ActionKind = 'leave' | 'document' | 'change_request' | 'shift_swap'
 
@@ -27,7 +28,7 @@ interface Kpis {
   activeEmployees: number | null
   expiringDocuments: number | null
   pendingLeave: number | null
-  openPayrollRuns: number | null
+  payroll: PeriodListItem | null
 }
 
 const KIND_LABEL: Record<ActionKind, string> = {
@@ -43,11 +44,12 @@ export default function Dashboard() {
     activeEmployees: null,
     expiringDocuments: null,
     pendingLeave: null,
-    openPayrollRuns: null,
+    payroll: null,
   })
   const [coverage, setCoverage] = useState<{ location: string; active: number }[]>([])
   const [actions, setActions] = useState<ActionItem[]>([])
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   const canSeePayroll = profile?.role === 'owner' || profile?.role === 'entity_admin'
   const activeEntity = entities.find((e) => e.id === activeEntityId)
@@ -80,6 +82,9 @@ export default function Dashboard() {
           .from('employee_documents')
           .select('id, doc_type, expiry_date, employees!inner(id, full_name, entity_id)')
           .eq('employees.entity_id', activeEntityId)
+          .eq('is_current', true)
+          .is('archived_at', null)
+          .neq('review_status', 'rejected')
           .lte('expiry_date', in30Str)
           .order('expiry_date', { ascending: true }),
         supabase
@@ -88,13 +93,7 @@ export default function Dashboard() {
           .eq('employees.entity_id', activeEntityId)
           .eq('status', 'pending')
           .order('requested_at', { ascending: true }),
-        canSeePayroll
-          ? supabase
-              .from('payroll_runs')
-              .select('id, status', { count: 'exact' })
-              .eq('entity_id', activeEntityId)
-              .in('status', ['draft', 'in_review', 'approved'])
-          : Promise.resolve({ data: [], count: 0, error: null } as const),
+        canSeePayroll && activeEntityId ? listPeriods(activeEntityId) : Promise.resolve({ data: [] as PeriodListItem[], error: null }),
         scopedLocationId
           ? supabase.from('locations').select('id, name').eq('entity_id', activeEntityId).eq('id', scopedLocationId)
           : supabase.from('locations').select('id, name').eq('entity_id', activeEntityId),
@@ -120,7 +119,13 @@ export default function Dashboard() {
         activeEmployees: employeesRes.count ?? employees.length,
         expiringDocuments: docsRes.data?.length ?? 0,
         pendingLeave: leaveRes.data?.length ?? 0,
-        openPayrollRuns: canSeePayroll ? (payrollRes.count ?? 0) : null,
+        // This month's regular payroll: the one covering today, else the latest regular month.
+        payroll: canSeePayroll
+          ? (() => {
+              const regular = (payrollRes.data ?? []).filter((p) => p.kind === 'regular').sort((a, b) => b.period_start.localeCompare(a.period_start))
+              return regular.find((p) => p.period_start <= todayStr && p.period_end >= todayStr) ?? regular[0] ?? null
+            })()
+          : null,
       })
 
       const documentActions: ActionItem[] = (docsRes.data ?? []).map((doc) => {
@@ -186,7 +191,7 @@ export default function Dashboard() {
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">
             {isSelfServiceRole(profile?.role) ? 'Home' : `${greeting}${firstName ? `, ${firstName}` : ''}`}
           </h1>
-          <p className="text-xs text-muted">Entity-level workforce, compliance and payroll status</p>
+          <p className="text-xs text-muted">Company-level workforce, compliance and payroll status</p>
         </div>
       </div>
 
@@ -198,8 +203,8 @@ export default function Dashboard() {
             {activeEntity?.name?.slice(0, 3).toUpperCase() ?? '—'}
           </span>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-ink">{activeEntity?.name ?? 'No entity selected'}</p>
-            <p className="truncate text-xs text-muted">All records below are isolated to this legal entity</p>
+            <p className="truncate text-sm font-semibold text-ink">{activeEntity?.name ?? 'No company selected'}</p>
+            <p className="truncate text-xs text-muted">All records below are isolated to this company</p>
           </div>
         </div>
         <div className="hidden shrink-0 items-center gap-4 text-xs text-muted sm:flex">
@@ -213,12 +218,12 @@ export default function Dashboard() {
         <KpiCard
           label="Employees"
           value={kpis.activeEmployees ?? '—'}
-          hint="Across this entity"
+          hint="Across this company"
           loading={loading}
           icon={<Icon d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />}
         />
         <KpiCard
-          label="Documents expiring (30d)"
+          label="Documents expiring in 30 days"
           value={kpis.expiringDocuments ?? '—'}
           hint="Documents tracked"
           tone={kpis.expiringDocuments ? 'warning' : 'default'}
@@ -236,8 +241,9 @@ export default function Dashboard() {
         {canSeePayroll && (
           <KpiCard
             label="Current payroll"
-            value={kpis.openPayrollRuns ? `${kpis.openPayrollRuns} open` : 'Not started'}
-            hint="Entity-specific pay run"
+            value={kpis.payroll ? `${kpis.payroll.approved} of ${kpis.payroll.employees} approved` : 'Not started'}
+            hint="This month’s payroll"
+            onClick={() => navigate('/payroll')}
             loading={loading}
             icon={<Icon d="M4 6h16v12H4zM4 10h16M8 15h4" />}
           />
@@ -260,7 +266,7 @@ export default function Dashboard() {
           ) : actions.length === 0 ? (
             <EmptyState
               title="Nothing needs attention right now"
-              description="Leave requests, expiring documents and other exceptions for this entity will appear here as they come up."
+              description="Leave requests, expiring documents and other exceptions for this company will appear here as they come up."
             />
           ) : (
             <ul className="divide-y divide-border">
@@ -298,7 +304,7 @@ export default function Dashboard() {
               ))}
             </div>
           ) : coverage.length === 0 ? (
-            <EmptyState title="No branches configured for this entity yet" />
+            <EmptyState title="No branches configured for this company yet" />
           ) : (
             <ul className="space-y-2">
               {coverage.map((row) => (

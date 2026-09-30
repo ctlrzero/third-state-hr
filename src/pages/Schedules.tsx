@@ -15,6 +15,7 @@ import type { ShiftAdjustment, ShiftChangeType,
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
+import { friendlyError } from '../lib/api/client'
 import {
   AutoSchedulePanel,
   DeletedShiftsSheet,
@@ -35,15 +36,9 @@ import { isSelfServiceRole } from '../types/db'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
-// Strip any "ERROR: " prefix Postgres sometimes prepends; display the
-// human-readable part the trigger raised.
-function friendlyError(err: { message: string; code?: string }): string {
-  return err.message.replace(/^ERROR:\s*/i, '')
-}
-
 const CHANGE_TYPE_LABEL: Record<ShiftChangeType, string> = {
   cancelled: 'Cancelled',
-  unpublished: 'Unpublished',
+  unpublished: 'No longer shared',
   reassigned: 'Reassigned',
   date_changed: 'Date changed',
   location_changed: 'Branch changed',
@@ -69,6 +64,13 @@ const SWAP_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success
   approved: 'success',
   rejected: 'risk',
   cancelled: 'neutral',
+}
+const SWAP_STATUS_LABEL: Record<string, string> = {
+  open: 'Waiting for a colleague',
+  claimed: 'Waiting for manager',
+  approved: 'Approved',
+  rejected: 'Not approved',
+  cancelled: 'Cancelled',
 }
 
 // UAE-readable dates / 24h times (Asia/Dubai) shared across the app.
@@ -109,6 +111,7 @@ function ScheduleAdmin() {
   const [notice, setNotice] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [locationFilter, setLocationFilter] = useState<string>('all')
+  const [branchDefaulted, setBranchDefaulted] = useState(false)
   const [templates, setTemplates] = useState<ScheduleTemplate[]>([])
   const [templateModalOpen, setTemplateModalOpen] = useState(false)
   const [adjustShift, setAdjustShift] = useState<Shift | null>(null)
@@ -140,6 +143,13 @@ function ScheduleAdmin() {
 
   const employeesById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees])
   const locationNames = useMemo(() => new Map(locations.map((l) => [l.id, l.name])), [locations])
+  // Location managers (or anyone who can only see one branch) start on their own branch.
+  const defaultBranchFor = (locs: { id: string }[]): string =>
+    profile?.role === 'location_manager' && profile.location_id
+      ? profile.location_id
+      : locs.length === 1
+        ? locs[0].id
+        : 'all'
 
   async function load() {
     if (!activeEntityId) return
@@ -182,7 +192,7 @@ function ScheduleAdmin() {
     }
     setOnLeave(leaveDays)
     const weekShifts = (shiftsRes.data ?? []) as unknown as Shift[]
-    if (shiftsRes.error) setError(shiftsRes.error.message)
+    if (shiftsRes.error) setError(friendlyError(shiftsRes.error))
     else setShifts(weekShifts)
     const publishedIds = weekShifts.filter((s) => s.is_published).map((s) => s.id)
     if (publishedIds.length) {
@@ -196,6 +206,10 @@ function ScheduleAdmin() {
     } else setAdjustedIds(new Set())
     setSwaps((swapsRes.data ?? []) as unknown as ShiftSwapRequest[])
     setLocations(locRes.data ?? [])
+    if (!branchDefaulted && !focusShiftId && locRes.data) {
+      setBranchDefaulted(true)
+      setLocationFilter(defaultBranchFor(locRes.data))
+    }
     setPositions(posRes.data ?? [])
     setEmployees((empRes.data ?? []) as AdminEmployee[])
     setTemplates((templatesRes.data ?? []) as unknown as ScheduleTemplate[])
@@ -215,14 +229,17 @@ function ScheduleAdmin() {
     setFocusWeekSet(focusShiftId)
     supabase
       .from('shifts')
-      .select('shift_date')
+      .select('shift_date, location_id')
       .eq('id', focusShiftId)
       .maybeSingle()
       .then(({ data }) => {
         if (!data) return setError('That shift is no longer in the schedule.')
+        const row = data as { shift_date: string; location_id: string }
+        const own = defaultBranchFor(locations)
         setTab('week')
-        setLocationFilter('all')
-        setWeekStart(mondayOf((data as { shift_date: string }).shift_date))
+        setBranchDefaulted(true)
+        setLocationFilter(own === 'all' || own === row.location_id ? own : 'all')
+        setWeekStart(mondayOf(row.shift_date))
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusShiftId, focusWeekSet])
@@ -261,7 +278,7 @@ function ScheduleAdmin() {
   }, [employees, visibleShifts, locationFilter])
 
   async function handleCancelDraftShift(shift: Shift) {
-    if (!(await confirmDialog('Cancel this draft shift?'))) return
+    if (!(await confirmDialog('Cancel this shift? It isn’t shared with staff yet.'))) return
     const { error: updateError } = await supabase.from('shifts').update({ status: 'cancelled' }).eq('id', shift.id)
     if (updateError) {
       setError(friendlyError(updateError))
@@ -276,10 +293,10 @@ function ScheduleAdmin() {
   }
 
   async function handleDeactivateTemplate(id: string) {
-    if (!(await confirmDialog('Deactivate this recurring template? Existing generated shifts are unaffected.'))) return
+    if (!(await confirmDialog('Stop this repeating shift? Shifts already created are not changed.'))) return
     const { error: rpcError } = await supabase.rpc('deactivate_schedule_template', { p_template_id: id })
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     load()
@@ -298,7 +315,7 @@ function ScheduleAdmin() {
   async function publishWeek() {
     if (locationFilter === 'all') return
     const branch = locationNames.get(locationFilter) ?? 'this branch'
-    if (!(await confirmDialog(`Publish ${draftCount} draft shift${draftCount === 1 ? '' : 's'} at ${branch} for ${weekLabel(weekStart)}? Staff will see them.`))) return
+    if (!(await confirmDialog(`Share ${draftCount} shift${draftCount === 1 ? '' : 's'} at ${branch} for ${weekLabel(weekStart)} with staff? They will see them.`))) return
     setPublishing(true)
     const { data, error: rpcError } = await supabase.rpc('publish_schedule_period', {
       p_location_id: locationFilter,
@@ -311,9 +328,9 @@ function ScheduleAdmin() {
     const published = res?.published ?? 0
     const skipped = res?.skipped_leave ?? []
     setNotice(
-      `Published ${published} shift${published === 1 ? '' : 's'} — now visible to staff.` +
+      `Shared ${published} shift${published === 1 ? '' : 's'} with staff.` +
         (skipped.length
-          ? ` ${skipped.length} left as draft because the person is on approved leave: ${skipped
+          ? ` ${skipped.length} not shared because the person is on approved leave: ${skipped
               .map((x) => `${x.employee} (${fmtDate(x.shift_date)})`)
               .join(', ')}.`
           : '')
@@ -353,7 +370,7 @@ function ScheduleAdmin() {
   const tabs: { id: AdminTab; label: string }[] = [
     { id: 'week', label: 'Week' },
     ...(isAdmin ? [{ id: 'auto' as AdminTab, label: 'Auto-schedule' }] : []),
-    { id: 'setup', label: 'Setup' },
+    { id: 'setup', label: isAdmin ? 'Setup' : 'Repeating shifts' },
   ]
   const actionKind = actionShift ? shiftKind(actionShift, adjustedIds) : null
   const actionOnLeave =
@@ -372,7 +389,7 @@ function ScheduleAdmin() {
           <p className="text-xs text-muted">
             {loading
               ? 'Loading…'
-              : `${weekLabel(weekStart)} · ${liveCount} shift${liveCount === 1 ? '' : 's'}${draftCount ? ` · ${draftCount} draft` : ''}`}
+              : `${weekLabel(weekStart)} · ${liveCount} shift${liveCount === 1 ? '' : 's'}${draftCount ? ` · ${draftCount} not shared yet` : ''}`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -439,12 +456,18 @@ function ScheduleAdmin() {
                   {' · '}
                   {employeesById.get(s.requested_by)?.full_name ?? 'Unknown'} → {employeesById.get(s.claimed_by ?? '')?.full_name ?? 'Unknown'}
                 </span>
-                <span className="flex gap-1">
-                  <button onClick={() => handleResolveSwap(s.id, 'approve')} className="press rounded-full bg-brand-action-soft px-2 py-1 font-medium text-brand-action-text">
-                    Approve
-                  </button>
-                  <button onClick={() => handleResolveSwap(s.id, 'reject')} className="press rounded-full bg-brand-risk-soft px-2 py-1 font-medium text-brand-risk-text">
+                <span className="flex gap-2">
+                  <button
+                    onClick={() => handleResolveSwap(s.id, 'reject')}
+                    className="press min-h-11 rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium text-brand-risk-text"
+                  >
                     Reject
+                  </button>
+                  <button
+                    onClick={() => handleResolveSwap(s.id, 'approve')}
+                    className="press min-h-11 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
+                  >
+                    Approve
                   </button>
                 </span>
               </li>
@@ -476,10 +499,10 @@ function ScheduleAdmin() {
               )}
               {draftCount > 0 &&
                 (locationFilter === 'all' ? (
-                  <span className="text-xs text-muted">Choose a branch to publish its {draftCount} draft{draftCount === 1 ? '' : 's'}</span>
+                  <span className="text-xs text-muted">Choose a branch to share its {draftCount} new shift{draftCount === 1 ? '' : 's'} with staff</span>
                 ) : (
                   <button onClick={publishWeek} disabled={publishing} className="btn-primary press">
-                    {publishing ? 'Publishing…' : `Publish week (${draftCount} draft${draftCount === 1 ? '' : 's'})`}
+                    {publishing ? 'Sharing…' : `Share week with staff (${draftCount})`}
                   </button>
                 ))}
             </div>
@@ -496,7 +519,10 @@ function ScheduleAdmin() {
           {loading ? (
             <div className="h-64 animate-pulse rounded-[14px] bg-surface" />
           ) : visibleShifts.length === 0 && people.length === 0 ? (
-            <EmptyState title="No shifts this week" description="Create a shift, generate from templates in Setup, or use Auto-schedule." />
+            <EmptyState
+              title="No shifts this week"
+              description={isAdmin ? 'Add a shift, use weekly repeating shifts in Setup, or use Auto-schedule.' : 'Add a shift, or use Repeating shifts.'}
+            />
           ) : (
             <WeekBoard
               weekStart={weekStart}
@@ -523,7 +549,7 @@ function ScheduleAdmin() {
                       {employeesById.get(s.requested_by)?.full_name ?? 'Unknown'}
                       {s.claimed_by && ` → ${employeesById.get(s.claimed_by)?.full_name ?? 'Unknown'}`}
                     </span>
-                    <StatusBadge status={s.status} tone={SWAP_STATUS_TONE[s.status]} />
+                    <StatusBadge status={SWAP_STATUS_LABEL[s.status] ?? s.status} tone={SWAP_STATUS_TONE[s.status]} />
                   </li>
                 ))}
               </ul>
@@ -544,9 +570,9 @@ function ScheduleAdmin() {
               if (locationIds && locationIds.length === 1) setLocationFilter(locationIds[0])
               setTab('week')
               setNotice(
-                `Created ${created} draft shift${created === 1 ? '' : 's'} for ${weekLabel(mondayOf(periodStart))}. Review them below, then use Publish week${
+                `Created ${created} shift${created === 1 ? '' : 's'} (not shared yet) for ${weekLabel(mondayOf(periodStart))}. Review them below, then share the week with staff${
                   locationIds && locationIds.length === 1 ? '' : ' for each branch'
-                } when you're ready for staff to see them.`
+                } when you're ready.`
               )
             }}
           />
@@ -564,7 +590,7 @@ function ScheduleAdmin() {
               setNotice(
                 created === 0
                   ? 'No new shifts — everyone already has these shifts, or they would overlap shifts already planned.'
-                  : `Created ${created} draft shift${created === 1 ? '' : 's'} from your recurring templates (split shifts included). Any that would overlap an existing shift were skipped. Review them in the week view, then publish.`
+                  : `Created ${created} shift${created === 1 ? '' : 's'} (not shared yet) from your weekly repeating shifts (split shifts included). Any that would overlap an existing shift were skipped. Review them in the week view, then share the week with staff.`
               )
               load()
             }}
@@ -589,8 +615,8 @@ function ScheduleAdmin() {
                 <h2 className="text-sm font-semibold text-ink">Staff self-service</h2>
                 <div className="flex flex-col gap-2">
                   <ShiftSwapsToggle entityId={activeEntityId} onChanged={setSwapsEnabled} onError={setError} />
-                  {profile?.role === 'owner' && <CrossBranchClaimsToggle entityId={activeEntityId} onError={setError} />}
-                  {!swapsEnabled && <p className="text-xs text-brand-warning-solid">Swaps are off — staff can't request or claim them.</p>}
+                  {profile?.role === 'owner' && <CrossBranchClaimsToggle entityId={activeEntityId} swapsEnabled={swapsEnabled} onError={setError} />}
+                  {!swapsEnabled && <p className="text-xs text-brand-warning-solid">Shift handovers are off — staff can't ask for cover or take a colleague's shift.</p>}
                 </div>
               </section>
               <section className="card flex flex-wrap items-center justify-between gap-3">
@@ -675,7 +701,7 @@ function ScheduleAdmin() {
           onClose={() => setAdjustShift(null)}
           onAdjusted={() => {
             setAdjustShift(null)
-            setNotice(adjustShift.is_published ? 'Shift updated and change recorded.' : 'Draft shift updated.')
+            setNotice(adjustShift.is_published ? 'Shift updated and change recorded.' : 'Shift updated (not shared yet).')
             load()
           }}
         />
@@ -812,7 +838,7 @@ function RecurringTemplatesPanel({
     })
     setBusy(null)
     if (error) {
-      onError(error.message)
+      onError(friendlyError(error))
       return
     }
     onGenerated(typeof data === 'number' ? data : 0)
@@ -820,7 +846,7 @@ function RecurringTemplatesPanel({
 
   async function handlePublish() {
     if (!genLocationId) return
-    if (!(await confirmDialog('Publish all draft shifts in this branch and period? They will become visible to employees.'))) return
+    if (!(await confirmDialog('Share all new shifts in this branch and period with staff? They will be able to see them.'))) return
     setBusy('publish')
     const { data, error } = await supabase.rpc('publish_schedule_period', {
       p_location_id: genLocationId,
@@ -829,16 +855,16 @@ function RecurringTemplatesPanel({
     })
     setBusy(null)
     if (error) {
-      onError(error.message)
+      onError(friendlyError(error))
       return
     }
     const res = data as { published: number; skipped_leave: { shift_date: string; employee: string }[] } | null
     const published = res?.published ?? 0
     const skipped = res?.skipped_leave ?? []
     onPublished(
-      `Published ${published} shift${published === 1 ? '' : 's'} — now visible to employees.` +
+      `Shared ${published} shift${published === 1 ? '' : 's'} with staff.` +
         (skipped.length
-          ? ` ${skipped.length} left as draft because the person is on approved leave: ${skipped
+          ? ` ${skipped.length} not shared because the person is on approved leave: ${skipped
               .map((x) => `${x.employee} (${fmtDate(x.shift_date)})`)
               .join(', ')}. Reassign or cancel them.`
           : '')
@@ -849,19 +875,16 @@ function RecurringTemplatesPanel({
     <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-ink">Recurring templates</h2>
-          <p className="text-xs text-muted">Weekly assignments that generate draft shifts for a period, then publish.</p>
+          <h2 className="text-sm font-semibold text-ink">Weekly repeating shifts</h2>
+          <p className="text-xs text-muted">Shifts that repeat every week. Create them for a period, check them, then share with staff.</p>
         </div>
-        <button
-          onClick={onNewTemplate}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
-        >
-          New template
+        <button onClick={onNewTemplate} className="btn-secondary press">
+          New repeating shift
         </button>
       </div>
 
       {templates.length === 0 ? (
-        <p className="mb-4 text-sm text-muted">No active recurring templates yet.</p>
+        <p className="mb-4 text-sm text-muted">No weekly repeating shifts yet.</p>
       ) : (
         <ul className="mb-4 space-y-1.5">
           {templates.map((t) => (
@@ -915,19 +938,11 @@ function RecurringTemplatesPanel({
             className="rounded-lg border border-border px-2 py-1.5 text-xs text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
           />
         </div>
-        <button
-          onClick={handleGenerate}
-          disabled={busy !== null || !genLocationId}
-          className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-ink hover:bg-surface-alt disabled:opacity-60"
-        >
-          {busy === 'generate' ? 'Generating…' : 'Generate drafts'}
+        <button onClick={handleGenerate} disabled={busy !== null || !genLocationId} className="btn-secondary press disabled:opacity-60">
+          {busy === 'generate' ? 'Creating…' : 'Create shifts'}
         </button>
-        <button
-          onClick={handlePublish}
-          disabled={busy !== null || !genLocationId}
-          className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
-        >
-          {busy === 'publish' ? 'Publishing…' : 'Publish period'}
+        <button onClick={handlePublish} disabled={busy !== null || !genLocationId} className="btn-primary press disabled:opacity-60">
+          {busy === 'publish' ? 'Sharing…' : 'Share with staff'}
         </button>
       </div>
     </div>
@@ -982,7 +997,7 @@ function NewTemplateModal({
     })
     setSubmitting(false)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     onCreated()
@@ -1354,7 +1369,7 @@ function MySchedule() {
       return
     }
 
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayDubai()
 
     // These three queries are each scoped by RLS to what this employee is
     // actually allowed to see (own shifts, open shifts at their own home
@@ -1394,7 +1409,7 @@ function MySchedule() {
     setOffers((offerRows ?? []) as ShiftOffer[])
     setAbsenceTypes((typesRes.data ?? []) as { id: string; name: string }[])
 
-    if (shiftsRes.error) setError(shiftsRes.error.message)
+    if (shiftsRes.error) setError(friendlyError(shiftsRes.error))
     else setMyShifts((shiftsRes.data ?? []) as unknown as Shift[])
     setOpenShifts((openRes.data ?? []) as unknown as Shift[])
 
@@ -1409,6 +1424,11 @@ function MySchedule() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.entity_id])
 
+  // Notices and errors sit at the top of the page — bring them into view on phones.
+  useEffect(() => {
+    if (notice || error) window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [notice, error])
+
   async function handleRequestSwap(shiftId: string) {
     setBusyId(shiftId)
     setError(null)
@@ -1420,10 +1440,10 @@ function MySchedule() {
     setSwapNoteFor(null)
     setSwapNote('')
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
-    setNotice('Swap request posted — a colleague can claim it, then a manager approves.')
+    setNotice('Request sent. You still work this shift until your manager approves a colleague.')
     load()
   }
 
@@ -1433,7 +1453,7 @@ function MySchedule() {
     const { data, error: rpcError } = await supabase.rpc('respond_shift_offer', { p_offer_id: offerId, p_accept: accept })
     setBusyId(null)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       load()
       return
     }
@@ -1452,7 +1472,7 @@ function MySchedule() {
     })
     setBusyId(null)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     setAbsenceFor(null)
@@ -1466,10 +1486,10 @@ function MySchedule() {
     const { error: rpcError } = await supabase.rpc('claim_open_shift', { p_shift_id: shiftId })
     setBusyId(null)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
-    setNotice('Shift picked up.')
+    setNotice('Shift taken. It’s in your upcoming shifts.')
     load()
   }
 
@@ -1479,22 +1499,24 @@ function MySchedule() {
     const { error: rpcError } = await supabase.rpc('claim_shift_swap', { p_swap_id: swapId })
     setBusyId(null)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
-    setNotice('Swap claimed — a manager needs to approve it before it’s final.')
+    setNotice('Thanks! Your manager will confirm. Until then it isn’t your shift yet.')
     load()
   }
 
   async function handleCancelSwap(swapId: string) {
+    if (!(await confirmDialog('Cancel your cover request? You will work this shift.'))) return
     setBusyId(swapId)
     setError(null)
     const { error: rpcError } = await supabase.rpc('cancel_shift_swap_request', { p_swap_id: swapId })
     setBusyId(null)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
+    setNotice('Cover request cancelled. This shift is still yours.')
     load()
   }
 
@@ -1537,7 +1559,14 @@ function MySchedule() {
         <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My schedule</h1>
       </div>
 
-      {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
+      {error && (
+        <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
+          {error}{' '}
+          <button className="underline" onClick={() => setError(null)}>
+            Dismiss
+          </button>
+        </p>
+      )}
       {notice && (
         <p className="rounded-lg bg-brand-action-soft px-3 py-2 text-sm text-brand-action-text">
           {notice}{' '}
@@ -1564,14 +1593,14 @@ function MySchedule() {
                   <button
                     onClick={() => handleOffer(o.offer_id, false)}
                     disabled={busyId === o.offer_id}
-                    className="rounded-full border border-border px-3 py-1 text-xs font-medium text-ink disabled:opacity-60"
+                    className="min-h-11 rounded-full border border-border px-4 text-sm font-medium text-ink disabled:opacity-60"
                   >
                     Decline
                   </button>
                   <button
                     onClick={() => handleOffer(o.offer_id, true)}
                     disabled={busyId === o.offer_id}
-                    className="rounded-full bg-brand-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                    className="min-h-11 rounded-full bg-brand-blue px-4 text-sm font-medium text-white disabled:opacity-60"
                   >
                     {busyId === o.offer_id ? 'Saving…' : 'Accept shift'}
                   </button>
@@ -1618,23 +1647,23 @@ function MySchedule() {
                               setAbsenceFor(absenceFor === s.id ? null : s.id)
                               setSwapNoteFor(null)
                             }}
-                            className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-brand-risk-text hover:border-brand-risk/30"
+                            className="min-h-11 rounded-full border border-border px-4 text-sm font-medium text-brand-risk-text hover:border-brand-risk/30"
                           >
                             Can’t come in
                           </button>
                         )
                       )}
                       {!swapsOn || leave ? null : existingSwap ? (
-                        <StatusBadge status={existingSwap.status} tone={SWAP_STATUS_TONE[existingSwap.status]} />
+                        <StatusBadge status={SWAP_STATUS_LABEL[existingSwap.status] ?? existingSwap.status} tone={SWAP_STATUS_TONE[existingSwap.status]} />
                       ) : (
                         <button
                           onClick={() => {
                             setSwapNoteFor(swapNoteFor === s.id ? null : s.id)
                             setAbsenceFor(null)
                           }}
-                          className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
+                          className="min-h-11 rounded-full border border-border px-4 text-sm font-medium text-brand-blue hover:border-brand-blue/30"
                         >
-                          Request swap
+                          Ask for cover
                         </button>
                       )}
                     </span>
@@ -1663,7 +1692,7 @@ function MySchedule() {
                         disabled={busyId === s.id}
                         className="rounded-lg bg-brand-blue px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
                       >
-                        {busyId === s.id ? 'Posting…' : 'Post swap'}
+                        {busyId === s.id ? 'Sending…' : 'Send request'}
                       </button>
                     </div>
                   )}
@@ -1691,9 +1720,9 @@ function MySchedule() {
                 <button
                   onClick={() => handlePickUpShift(s.id)}
                   disabled={busyId === s.id}
-                  className="rounded-full bg-brand-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                  className="min-h-11 rounded-full bg-brand-blue px-4 text-sm font-medium text-white disabled:opacity-60"
                 >
-                  {busyId === s.id ? 'Picking up…' : 'Pick up'}
+                  {busyId === s.id ? 'Saving…' : 'Take this shift'}
                 </button>
               </li>
             ))}
@@ -1703,10 +1732,10 @@ function MySchedule() {
 
       {swapsOn && (
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-        <h2 className="mb-1 text-sm font-semibold text-ink">Open swap board</h2>
+        <h2 className="mb-1 text-sm font-semibold text-ink">Colleagues need cover</h2>
         <p className="mb-3 text-xs text-muted">Shifts colleagues want covered. If you can't take one, the app tells you why.</p>
         {claimableSwapBoard.length === 0 ? (
-          <p className="text-sm text-muted">No open swap requests right now.</p>
+          <p className="text-sm text-muted">No one needs cover right now.</p>
         ) : (
           <ul className="space-y-2">
             {claimableSwapBoard.map((s) => (
@@ -1719,9 +1748,9 @@ function MySchedule() {
                 <button
                   onClick={() => handleClaimSwap(s.id)}
                   disabled={busyId === s.id}
-                  className="rounded-full bg-brand-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                  className="min-h-11 rounded-full bg-brand-blue px-4 text-sm font-medium text-white disabled:opacity-60"
                 >
-                  {busyId === s.id ? 'Claiming…' : 'Claim'}
+                  {busyId === s.id ? 'Saving…' : 'I’ll cover it'}
                 </button>
               </li>
             ))}
@@ -1732,7 +1761,7 @@ function MySchedule() {
 
       {swapsOn && myOwnSwapHistory.length > 0 && (
         <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Your swap requests</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink">Your cover requests</h2>
           <ul className="space-y-2">
             {myOwnSwapHistory.map((s) => (
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-xs">
@@ -1740,9 +1769,13 @@ function MySchedule() {
                   {s.shifts && `${fmtDate(s.shifts.shift_date)} · ${fmtTime(s.shifts.start_time)}–${fmtTime(s.shifts.end_time)}`}
                 </span>
                 <span className="flex items-center gap-2">
-                  <StatusBadge status={s.status} tone={SWAP_STATUS_TONE[s.status]} />
+                  <StatusBadge status={SWAP_STATUS_LABEL[s.status] ?? s.status} tone={SWAP_STATUS_TONE[s.status]} />
                   {(s.status === 'open' || s.status === 'claimed') && (
-                    <button onClick={() => handleCancelSwap(s.id)} className="text-muted hover:text-brand-risk">
+                    <button
+                      onClick={() => handleCancelSwap(s.id)}
+                      disabled={busyId === s.id}
+                      className="min-h-11 rounded-full border border-border bg-surface px-4 text-sm font-medium text-ink hover:border-brand-risk/30 disabled:opacity-60"
+                    >
                       Cancel
                     </button>
                   )}
@@ -1790,7 +1823,7 @@ function CancelShiftModal({
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-1 text-base font-semibold text-ink">Cancel published shift</h2>
+        <h2 className="mb-1 text-base font-semibold text-ink">Cancel shift (shared with staff)</h2>
         <p className="mb-4 text-xs text-muted">
           {fmtDate(shift.shift_date)} · {fmtTime(shift.start_time)}–{fmtTime(shift.end_time)}
           {shift.employees?.full_name ? ` · ${shift.employees.full_name}` : ''}
@@ -1893,7 +1926,7 @@ function AdjustShiftModal({
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-4 text-base font-semibold text-ink">{isDraft ? 'Edit draft shift' : 'Adjust published shift'}</h2>
+        <h2 className="mb-4 text-base font-semibold text-ink">{isDraft ? 'Edit shift (not shared yet)' : 'Change shift (shared with staff)'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label htmlFor="adjust-branch" className="mb-1 block text-sm font-medium text-ink">Branch</label>
@@ -1984,7 +2017,7 @@ function ShiftHistoryDrawer({
       .eq('shift_id', shift.id)
       .order('changed_at', { ascending: false })
     setLoading(false)
-    if (qErr) { setError(qErr.message); return }
+    if (qErr) { setError(friendlyError(qErr)); return }
     setHistory((data ?? []) as ShiftAdjustment[])
   }, [shift.id])
 

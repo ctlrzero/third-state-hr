@@ -250,10 +250,10 @@ export function operatorsFor(kind: ConditionFieldDef['kind'] | undefined) {
 
 export const ROLE_LABEL: Record<UserRole, string> = {
   owner: 'Owner',
-  entity_admin: 'Entity Admin',
-  location_manager: 'Location Manager',
+  entity_admin: 'Company Admin',
+  location_manager: 'Branch Manager',
   shift_supervisor: 'Shift Supervisor',
-  staff: 'Staff',
+  staff: 'Employee',
 }
 
 /** notify_role targets accepted by the DB. LM/staff are filtered to the event's branch. */

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { friendlyError } from '../lib/api/client'
 import { Alert, Field, Modal } from './ui'
 import { fmtDate, fmtDayShort, fmtTime, todayDubai } from '../lib/format'
 import { confirmDialog } from '../lib/confirm'
@@ -54,7 +55,7 @@ export function TransferStatusCard({
       .neq('status', 'cancelled')
       .order('created_at', { ascending: false })
       .limit(1)
-    if (e) return setError(e.message)
+    if (e) return setError(friendlyError(e))
     const t = ((data ?? []) as TransferRow[])[0] ?? null
     // Completed transfers stay visible for two weeks so the old branch can be tidied up.
     const recent = t && (t.status === 'scheduled' || (t.completed_at && Date.now() - new Date(t.completed_at).getTime() < 14 * 864e5))
@@ -65,7 +66,7 @@ export function TransferStatusCard({
     const { data: locs } = await supabase.from('locations').select('id, name').in('id', ids)
     setNames(Object.fromEntries(((locs ?? []) as { id: string; name: string }[]).map((l) => [l.id, l.name])))
     const { data: rev, error: re } = await supabase.rpc('get_transfer_review', { p_transfer_id: t.id })
-    if (re) setError(re.message)
+    if (re) setError(friendlyError(re))
     else setReview(rev as TransferReview)
   }, [employeeId])
 
@@ -82,7 +83,7 @@ export function TransferStatusCard({
     setBusy(true)
     const { error: e } = await supabase.rpc('cancel_employee_transfer', { p_transfer_id: row.id, p_reason: null })
     setBusy(false)
-    if (e) return setError(e.message)
+    if (e) return setError(friendlyError(e))
     onChanged()
   }
 
@@ -116,9 +117,9 @@ export function TransferReviewList({ review, fromName }: { review: TransferRevie
   return (
     <div className="space-y-3 text-sm">
       {nothing ? (
-        <p className="text-muted">Nothing left at {fromName} from that date — no shifts or recurring templates to change.</p>
+        <p className="text-muted">Nothing left at {fromName} from that date — no shifts or weekly repeating shifts to change.</p>
       ) : (
-        <p className="text-muted">Nothing was changed automatically. Review these at {fromName}:</p>
+        <p className="text-muted">Their shifts at {fromName} were not moved. Reassign each one below so the old branch isn’t left short.</p>
       )}
       {review.shifts.length > 0 && (
         <div>
@@ -141,11 +142,11 @@ export function TransferReviewList({ review, fromName }: { review: TransferRevie
       {review.templates.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span>
-            <span className="font-medium text-ink">Recurring templates at {fromName}:</span>{' '}
+            <span className="font-medium text-ink">Weekly repeating shifts at {fromName}:</span>{' '}
             {review.templates.map((t) => `${DAY[t.day_of_week]} ${fmtTime(t.start_time)}–${fmtTime(t.end_time)}`).join(', ')}
           </span>
           <Link to="/schedules?tab=setup" className="text-sm font-medium text-brand-blue">
-            Replace templates
+            Move weekly shifts
           </Link>
         </div>
       )}
@@ -210,7 +211,7 @@ export function TransferModal({
       p_reason: reason,
     })
     setBusy(false)
-    if (e) return setError(e.message)
+    if (e) return setError(friendlyError(e))
     setResult(data as typeof result)
   }
 
@@ -258,6 +259,7 @@ export function TransferModal({
         <p className="text-muted">This company has no other branch. To move someone to another company, offboard and onboard them.</p>
       ) : (
         <>
+          <p className="text-sm text-muted">Currently at {employee.home_location_name ?? 'no branch'}</p>
           <Field label="New home branch" required>
             {(p) => (
               <select {...p} className="input" value={to} onChange={(e) => setTo(e.target.value)}>
@@ -269,13 +271,14 @@ export function TransferModal({
               </select>
             )}
           </Field>
-          <Field label="From" required hint="Today moves them now; a later date moves them automatically that day.">
+          <Field label="Move on" required hint="Today moves them now; a later date moves them automatically that day.">
             {(p) => <input {...p} type="date" className="input" min={todayDubai()} value={date} onChange={(e) => setDate(e.target.value)} />}
           </Field>
+          {date === todayDubai() && <p className="text-sm text-brand-warning-solid">This moves them right away. To undo it, transfer them back.</p>}
           <Field label="Reason" required>
             {(p) => <textarea {...p} rows={2} className="input" value={reason} onChange={(e) => setReason(e.target.value)} />}
           </Field>
-          <p className="text-xs text-muted">Same company only. Their shifts and recurring templates at the current branch are listed for you afterwards — nothing is cancelled for you.</p>
+          <p className="text-xs text-muted">Same company only. Their shifts and weekly repeating shifts at the current branch are listed for you afterwards — nothing is cancelled for you.</p>
         </>
       )}
       {error && <Alert tone="error">{error}</Alert>}

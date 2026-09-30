@@ -6,6 +6,7 @@ import { Alert, PageHeader, Skeleton } from '../components/ui'
 import { EmptyState } from '../components/EmptyState'
 import { fmtDayShort, fmtMinutes, fmtTime } from '../lib/format'
 import { FindCoverSheet, type CoverShift } from './schedules/SchedulingTools'
+import { friendlyError } from '../lib/api/client'
 
 // Manager "Today" board (P1-3). One read — get_branch_today — scoped on the
 // server exactly like attendance exceptions; it never returns pay data.
@@ -30,6 +31,8 @@ interface TodayPerson {
   absence_leave_request_id: string | null
   absence_leave_status: 'pending' | 'approved' | null
   absence_note: string | null
+  /** A cover offer for this shift is out and nobody has accepted yet. */
+  offer_pending: boolean
 }
 
 interface BranchToday {
@@ -48,6 +51,7 @@ interface BranchToday {
     break_minutes: number
     location_id: string
     is_published: boolean
+    offer_pending: boolean
   }[]
   pending_swaps: { swap_id: string; shift_date: string; start_time: string; end_time: string; from_name: string | null; to_name: string | null; notes: string | null }[]
   on_leave: { employee_id: string; name: string; leave_type: string | null; end_date: string }[]
@@ -75,7 +79,7 @@ export default function Today() {
     if (activeEntityId) q = q.eq('entity_id', activeEntityId)
     if ((profile?.role === 'location_manager' || supervisor) && profile?.location_id) q = q.eq('id', profile.location_id)
     q.then(({ data: rows, error: e }) => {
-      if (e) return setError(e.message)
+      if (e) return setError(friendlyError(e))
       const list = (rows ?? []) as { id: string; name: string }[]
       setLocations(list)
       setLocationId((cur) => (cur && list.some((l) => l.id === cur) ? cur : (list[0]?.id ?? null)))
@@ -88,7 +92,7 @@ export default function Today() {
       if (!locationId) return
       if (!quiet) setLoading(true)
       const { data: res, error: e } = await supabase.rpc('get_branch_today', { p_location_id: locationId })
-      if (e) setError(e.message)
+      if (e) setError(friendlyError(e))
       else {
         setError(null)
         setData(res as BranchToday)
@@ -117,8 +121,9 @@ export default function Today() {
     setBusySwap(swapId)
     const { error: e } = await supabase.rpc('approve_shift_swap', { p_swap_id: swapId, p_action: action })
     setBusySwap(null)
-    if (e) return setError(e.message)
+    if (e) return setError(friendlyError(e))
     setNotice(action === 'approve' ? 'Swap approved — the shift has been reassigned.' : 'Swap rejected.')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     load(true)
   }
 
@@ -175,6 +180,7 @@ export default function Today() {
           onAssigned={(msg) => {
             setCover(null)
             setNotice(msg)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
             load(true)
           }}
         />
@@ -195,13 +201,12 @@ export default function Today() {
 
           {data.draft_shifts > 0 && (
             <Alert tone="warning">
-              {data.draft_shifts} shift{data.draft_shifts === 1 ? ' is' : 's are'} still a draft for today — staff can't see{' '}
-              {data.draft_shifts === 1 ? 'it' : 'them'}.{' '}
+              {data.draft_shifts} shift{data.draft_shifts === 1 ? ' today isn’t' : 's today aren’t'} shared with staff yet.{' '}
               {supervisor ? (
-                'Ask your manager to publish.'
+                `Ask your manager to share ${data.draft_shifts === 1 ? 'it' : 'them'}.`
               ) : (
                 <Link to="/schedules" className="font-medium underline">
-                  Publish in Schedules
+                  Share now
                 </Link>
               )}
             </Alert>
@@ -217,6 +222,7 @@ export default function Today() {
                   p.absence_leave_status === 'pending' ? ' · leave to decide' : ''
                 }`}
                 badge="Can’t come in"
+                extraBadge={p.offer_pending ? 'Offer sent · waiting' : undefined}
                 action={<ActionButton onClick={() => setCover(coverFor(p))}>Find cover</ActionButton>}
               />
             ))}
@@ -227,14 +233,16 @@ export default function Today() {
                 title={p.name}
                 subtitle={`${fmtTime(p.start_time)}–${fmtTime(p.end_time)}${p.position ? ` · ${p.position}` : ''}`}
                 badge={p.status === 'no_show' ? 'No show' : `Not in · ${fmtMinutes(p.late_minutes)} late`}
+                extraBadge={p.offer_pending ? 'Offer sent · waiting' : undefined}
                 action={
-                  p.phone ? (
-                    <ActionLink href={`tel:${p.phone}`}>Call</ActionLink>
-                  ) : p.status === 'no_show' || supervisor ? (
+                  <span className="flex shrink-0 items-center gap-3">
+                    {p.phone && (
+                      <a href={`tel:${p.phone}`} className="inline-flex min-h-[44px] items-center px-1 text-sm font-medium text-brand-blue underline">
+                        Call
+                      </a>
+                    )}
                     <ActionButton onClick={() => setCover(coverFor(p))}>Find cover</ActionButton>
-                  ) : (
-                    <ActionLink to={`/employees/${p.employee_id}`}>Profile</ActionLink>
-                  )
+                  </span>
                 }
               />
             ))}
@@ -244,7 +252,8 @@ export default function Today() {
                 tone="warning"
                 title={`Open shift ${fmtTime(g.start_time)}–${fmtTime(g.end_time)}`}
                 subtitle={g.position ?? 'No one assigned'}
-                badge={g.is_published ? 'Unfilled' : 'Draft · unfilled'}
+                badge={g.is_published ? 'Unfilled' : 'Not shared · unfilled'}
+                extraBadge={g.offer_pending ? 'Offer sent · waiting' : undefined}
                 action={
                   g.is_published ? (
                     <ActionButton
@@ -277,7 +286,7 @@ export default function Today() {
                 title={m.name}
                 subtitle={`Clocked in ${fmtDayShort(m.business_date)} at ${fmtTime(m.clock_in_at)} — never clocked out`}
                 badge="Missing clock-out"
-                action={<ActionLink to="/attendance">Fix</ActionLink>}
+                action={<ActionLink to="/attendance?tab=exceptions">Fix</ActionLink>}
               />
             ))}
             {data.unscheduled.map((u) => (
@@ -395,13 +404,28 @@ function Section({ title, count, children }: { title: string; count: number; chi
   )
 }
 
-function Card({ title, subtitle, badge, tone = 'default', action }: { title: string; subtitle?: string; badge?: string; tone?: Tone; action?: ReactNode }) {
+function Card({
+  title,
+  subtitle,
+  badge,
+  extraBadge,
+  tone = 'default',
+  action,
+}: {
+  title: string
+  subtitle?: string
+  badge?: string
+  extraBadge?: string
+  tone?: Tone
+  action?: ReactNode
+}) {
   return (
     <div className="flex items-center gap-3 rounded-[14px] border border-border bg-surface px-4 py-3 shadow-card">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate font-medium text-ink">{title}</span>
           {badge && <span className={`rounded-full px-2 py-px text-[11px] font-semibold ${BADGE_TONE[tone]}`}>{badge}</span>}
+          {extraBadge && <span className={`rounded-full px-2 py-px text-[11px] font-semibold ${BADGE_TONE.default}`}>{extraBadge}</span>}
         </div>
         {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
       </div>

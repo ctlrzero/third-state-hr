@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { friendlyError } from '../lib/api/client'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
 import { EmptyState } from '../components/EmptyState'
@@ -10,6 +11,7 @@ import {
 import type { DocumentReviewStatus, Employee, EmployeeDocument } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
+import { fmtDate } from '../lib/format'
 
 const BUCKET = 'employee-documents'
 
@@ -99,10 +101,10 @@ export default function Documents() {
         : Promise.resolve({ data: [] as DocumentRequirement[], error: null }),
     ])
 
-    if (docsRes.error) setError(docsRes.error.message)
+    if (docsRes.error) setError(friendlyError(docsRes.error))
     else setDocuments((docsRes.data ?? []) as unknown as EmployeeDocument[])
     setEmployees(employeesRes.data ?? [])
-    if (requirementsRes.error) setError(requirementsRes.error.message)
+    if (requirementsRes.error) setError(friendlyError(requirementsRes.error))
     setMyRequirements((requirementsRes.data ?? []) as unknown as DocumentRequirement[])
     setLoading(false)
   }
@@ -150,12 +152,12 @@ export default function Documents() {
       p_action: 'download',
     })
     if (logError) {
-      setError(`Not authorized to open that file: ${logError.message}`)
+      setError(`Not authorized to open that file: ${friendlyError(logError)}`)
       return
     }
     const { data, error: signError } = await supabase.storage.from(BUCKET).createSignedUrl(doc.storage_path, 60)
     if (signError || !data) {
-      setError(`Couldn't open that file: ${signError?.message ?? 'unknown error'}`)
+      setError(`Couldn't open that file: ${friendlyError(signError)}`)
       return
     }
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
@@ -164,7 +166,7 @@ export default function Documents() {
   async function handleApprove(doc: EmployeeDocument) {
     const { error: rpcError } = await supabase.rpc('approve_document', { p_document_id: doc.id })
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     setReviewDoc(null)
@@ -174,7 +176,7 @@ export default function Documents() {
   async function handleReject(doc: EmployeeDocument, reason: string) {
     const { error: rpcError } = await supabase.rpc('reject_document', { p_document_id: doc.id, p_reason: reason })
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     setReviewDoc(null)
@@ -185,7 +187,7 @@ export default function Documents() {
     if (!(await confirmDialog(`Archive this ${docTypeLabel(doc.doc_type)}? It will stay on record but stop showing as current.`))) return
     const { error: rpcError } = await supabase.rpc('archive_document', { p_document_id: doc.id })
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     await load()
@@ -199,7 +201,7 @@ export default function Documents() {
     await supabase.storage.from(BUCKET).remove([doc.storage_path])
     const { error: rpcError } = await supabase.rpc('delete_pending_document', { p_document_id: doc.id })
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     await load()
@@ -415,20 +417,23 @@ function CleanupIncompleteUploadsButton({
     const { data, error } = await supabase.rpc('cleanup_incomplete_document_uploads', { p_older_than_hours: 24 })
     setRunning(false)
     if (error) {
-      onError(error.message)
+      onError(friendlyError(error))
       return
     }
     onDone(`Cleanup complete — removed ${data ?? 0} incomplete upload(s) older than 24 hours.`)
   }
 
   return (
-    <button
-      onClick={handleRun}
-      disabled={running}
-      className="self-start rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-brand-blue/30 hover:text-ink disabled:opacity-60"
-    >
-      {running ? 'Cleaning up…' : 'Clean up incomplete uploads'}
-    </button>
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        onClick={handleRun}
+        disabled={running}
+        className="self-start rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted hover:border-brand-blue/30 hover:text-ink disabled:opacity-60"
+      >
+        {running ? 'Cleaning up…' : 'Clean up incomplete uploads'}
+      </button>
+      <span className="text-xs text-muted">Removes uploads that were started but never finished (over 24 h old). Saved documents are not touched.</span>
+    </div>
   )
 }
 
@@ -444,6 +449,13 @@ function EntityAdminSelfApprovalToggle() {
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    if (!saved) return
+    const t = setTimeout(() => setSaved(false), 2000)
+    return () => clearTimeout(t)
+  }, [saved])
 
   useEffect(() => {
     supabase.rpc('entity_admin_self_approval_enabled').then(({ data, error: rpcError }) => {
@@ -459,10 +471,11 @@ function EntityAdminSelfApprovalToggle() {
     const { error: rpcError } = await supabase.rpc('set_entity_admin_self_approval', { p_enabled: next })
     setSaving(false)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     setEnabled(next)
+    setSaved(true)
   }
 
   if (enabled === null) return null
@@ -470,23 +483,31 @@ function EntityAdminSelfApprovalToggle() {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-border bg-surface p-4 shadow-card">
       <div>
-        <p className="text-sm font-medium text-ink">Entity Admin self-approval</p>
+        <p className="text-sm font-medium text-ink">Let Company Admins approve their own uploads</p>
         <p className="text-xs text-muted">
-          When on, an Entity Admin may approve their own uploads of ordinary operational documents. Sensitive
+          When on, a Company Admin may approve their own uploads of ordinary operational documents. Sensitive
           documents (passport, Emirates ID, visa, contract, bank/payment, compensation) always require Owner
           approval regardless of this setting.
         </p>
         {error && <p className="mt-1 text-xs text-brand-risk-text">{error}</p>}
       </div>
-      <button
-        onClick={toggle}
-        disabled={saving}
-        className={`rounded-full px-3 py-1.5 text-xs font-semibold transition disabled:opacity-60 ${
-          enabled ? 'bg-brand-action-soft text-brand-action-text' : 'bg-surface-alt text-muted'
-        }`}
-      >
-        {enabled ? 'Enabled' : 'Disabled'}
-      </button>
+      <div className="flex items-center gap-2">
+        {saved && <span className="text-xs text-muted">Saved</span>}
+        <button
+          role="switch"
+          aria-checked={enabled}
+          aria-label={enabled ? 'On. Turn off' : 'Off. Turn on'}
+          title={enabled ? 'Turn off' : 'Turn on'}
+          onClick={toggle}
+          disabled={saving}
+          className="flex min-h-11 items-center gap-2 text-xs font-semibold text-ink disabled:opacity-60"
+        >
+          <span className={`relative inline-block h-6 w-11 rounded-full transition ${enabled ? 'bg-brand-blue' : 'bg-border'}`}>
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${enabled ? 'left-[22px]' : 'left-0.5'}`} />
+          </span>
+          {enabled ? 'On' : 'Off'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -703,7 +724,7 @@ function ManagerRegister({
                 </div>
                 {doc.is_current && (
                   <p className="mt-2 text-xs text-muted">
-                    {doc.expiry_date ? `Expires ${doc.expiry_date}` : 'No expiry date set'}
+                    {doc.expiry_date ? `Expires ${fmtDate(doc.expiry_date)}` : 'No expiry date set'}
                   </p>
                 )}
                 <div className="mt-3 flex gap-2">
@@ -819,7 +840,7 @@ function MyDocuments({
     <div className="space-y-5">
       {openRequirements.length > 0 && (
         <section>
-          <h2 className="mb-2 text-sm font-semibold text-ink">Requested by your admin</h2>
+          <h2 className="mb-2 text-sm font-semibold text-ink">Your manager needs these</h2>
           <ul className="space-y-3">
             {openRequirements.map((req) => {
               const linkedDoc = req.document_id ? documents.find((d) => d.id === req.document_id) : undefined
@@ -869,10 +890,13 @@ function MyDocuments({
                     <div>
                       <p className="font-medium capitalize text-ink">{docTypeLabel(doc.doc_type)}</p>
                       <p className="text-xs text-muted">
-                        {doc.expiry_date ? `Expires ${doc.expiry_date}` : 'No expiry date set'}
+                        {doc.expiry_date ? `Expires ${fmtDate(doc.expiry_date)}` : 'No expiry date set'}
                       </p>
                     </div>
-                    <StatusBadge status={expiry} />
+                    <StatusBadge
+                      status={expiry === 'current' ? 'Valid' : expiry === 'non_expiring' ? 'No expiry' : expiry}
+                      tone={expiry === 'current' ? 'success' : undefined}
+                    />
                   </div>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -880,7 +904,7 @@ function MyDocuments({
                       onClick={() => onView(doc)}
                       className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
                     >
-                      View current version
+                      View
                     </button>
 
                     {/* Only an expiring/expired document may be renewed by the employee themselves — a
@@ -891,7 +915,7 @@ function MyDocuments({
                         onClick={() => onUploadRenewal(doc)}
                         className="rounded-lg bg-brand-blue-soft px-3 py-1.5 text-xs font-medium text-brand-blue-text hover:bg-brand-blue-soft/70"
                       >
-                        Upload renewal
+                        Upload new copy
                       </button>
                     )}
                   </div>
@@ -1115,10 +1139,12 @@ function UploadDocumentModal({
       setSubmitting(false)
       if (stageError.message.includes('one_current_per_type')) {
         onError(
-          'This employee already has a current document of that type. Open its row and use the renewal workflow to replace it instead of uploading a duplicate.'
+          uploadMethod === 'self' && preEmployeeId
+            ? 'You already have this document. Tap ‘Upload new copy’ on it instead.'
+            : 'This employee already has a current document of that type. Open its row and use the renewal workflow to replace it instead of uploading a duplicate.'
         )
       } else {
-        setError(stageError.message)
+        setError(friendlyError(stageError))
       }
       return
     }
@@ -1127,7 +1153,7 @@ function UploadDocumentModal({
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false })
     if (uploadError) {
       setSubmitting(false)
-      setError(`Upload failed: ${uploadError.message}. The staged record will be cleaned up automatically.`)
+      setError('Upload failed. Please try again.')
       return
     }
 
@@ -1136,7 +1162,7 @@ function UploadDocumentModal({
     })
     setSubmitting(false)
     if (confirmError) {
-      setError(confirmError.message)
+      setError(friendlyError(confirmError))
       return
     }
     const result = confirmData as { ok: boolean; code?: string; review_status?: string }
@@ -1284,7 +1310,7 @@ function ChecklistTab({
     const { data, error } = await supabase.rpc('get_document_requirements_for_employee', { p_employee_id: empId })
     setReqLoading(false)
     if (error) {
-      setReqError(error.message)
+      setReqError(friendlyError(error))
       return
     }
     setRequirements((data ?? []) as DocumentRequirement[])
@@ -1311,7 +1337,7 @@ function ChecklistTab({
       p_reason: waiveReason.trim(),
     })
     if (error) {
-      setReqError(error.message)
+      setReqError(friendlyError(error))
       return
     }
     setWaivedId(null)
@@ -1470,7 +1496,7 @@ function RenewalModal({
     })
     if (stageError) {
       setSubmitting(false)
-      setError(stageError.message)
+      setError(friendlyError(stageError))
       return
     }
     const { id: documentId, storage_path: path } = stageData as { id: string; storage_path: string }
@@ -1478,7 +1504,7 @@ function RenewalModal({
     const { error: uploadError } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false })
     if (uploadError) {
       setSubmitting(false)
-      setError(`Upload failed: ${uploadError.message}. The staged record will be cleaned up automatically.`)
+      setError('Upload failed. Please try again.')
       return
     }
 
@@ -1487,7 +1513,7 @@ function RenewalModal({
     })
     setSubmitting(false)
     if (confirmError) {
-      setError(confirmError.message)
+      setError(friendlyError(confirmError))
       return
     }
     const result = confirmData as { ok: boolean; code?: string; review_status?: string }
@@ -1513,7 +1539,7 @@ function RenewalModal({
         <h2 className="mb-1 text-base font-semibold text-ink">
           {assisted
             ? `Renew ${docTypeLabel(currentDoc.doc_type)} for ${currentDoc.employees?.full_name ?? 'this employee'}`
-            : `Upload renewal — ${docTypeLabel(currentDoc.doc_type)}`}
+            : `Upload new copy — ${docTypeLabel(currentDoc.doc_type)}`}
         </h2>
         <p className="mb-4 text-xs text-muted">
           {assisted

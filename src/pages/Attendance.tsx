@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -33,6 +33,7 @@ import {
   type OverviewRow,
   type PayableRecord,
 } from '../lib/api/attendance'
+import { friendlyError } from '../lib/api/client'
 import type { AttendanceException } from '../types/db'
 import {
   addDays,
@@ -48,7 +49,7 @@ import {
 
 const EXCEPTION_LABEL: Record<string, string> = {
   missing_clock_out: 'Missing clock-out',
-  unmatched_shift: 'Shift never clocked',
+  unmatched_shift: 'Didn’t clock in',
   no_shift_match: 'Clock-in without a shift',
   late_clock_in: 'Late clock-in',
 }
@@ -86,7 +87,16 @@ export default function Attendance() {
   const [rangeError, setRangeError] = useState<string | null>(null)
   // A shift supervisor sees exceptions and clock corrections only — never payable time.
   const supervisor = profile?.role === 'shift_supervisor'
-  const [tab, setTab] = useState<TabKey>(supervisor ? 'exceptions' : 'overview')
+  const [searchParams] = useSearchParams()
+  const urlTab = searchParams.get('tab') as TabKey | null
+  const validUrlTab = urlTab === 'overview' || urlTab === 'exceptions' || urlTab === 'adjustments' ? urlTab : null
+  const [tab, setTabState] = useState<TabKey>(supervisor ? 'exceptions' : (validUrlTab ?? 'overview'))
+  // Once the person (or the URL) has picked a tab, the exceptions default below no longer applies.
+  const tabChosen = useRef(Boolean(validUrlTab))
+  const setTab = (t: TabKey) => {
+    tabChosen.current = true
+    setTabState(t)
+  }
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -138,7 +148,7 @@ export default function Attendance() {
         : getLocationAttendanceOverview(locationId, periodStart, periodEnd),
       getAttendanceExceptions(locationId, periodStart, periodEnd),
     ])
-    if (ov.error || ex.error) setError(ov.error ?? ex.error)
+    if (ov.error || ex.error) setError(friendlyError(ov.error ?? ex.error))
     const ovRows = ov.data ?? []
     const exRows = ex.data ?? []
     setOverview(ovRows)
@@ -171,6 +181,15 @@ export default function Attendance() {
     setLoading(false)
   }, [locationId, periodStart, periodEnd, supervisor])
 
+  // A location manager lands on Exceptions when there are clock problems to fix.
+  useEffect(() => {
+    if (profile?.role !== 'location_manager' || tabChosen.current || loading) return
+    if (exceptions.length > 0) {
+      tabChosen.current = true
+      setTabState('exceptions')
+    }
+  }, [profile?.role, exceptions.length, loading])
+
   useEffect(() => {
     load()
   }, [load])
@@ -182,7 +201,7 @@ export default function Attendance() {
     setBusyId('seed')
     const res = await seedPayableShiftRecords(locationId, periodStart, periodEnd)
     setBusyId(null)
-    if (res.error) setError(res.error)
+    if (res.error) setError(friendlyError(res.error))
     else {
       setNotice('Payable time prepared from published shifts.')
       load()
@@ -193,7 +212,7 @@ export default function Attendance() {
     setBusyId(a.id)
     const res = await applyAttendanceAdjustment(a.id)
     setBusyId(null)
-    if (res.error) setError(res.error)
+    if (res.error) setError(friendlyError(res.error))
     else {
       setNotice(`Adjustment applied — payable time set to ${fmtMinutes(a.proposed_minutes)}.`)
       load()
@@ -211,8 +230,8 @@ export default function Attendance() {
         return s ? `${fmtTime(s.start_time)}–${fmtTime(s.end_time)} (${fmtMinutes(r.planned_minutes)})` : fmtMinutes(r.planned_minutes)
       },
     },
-    { key: 'default', header: 'Default payable', render: (r) => fmtMinutes(r.default_payable_minutes) },
-    { key: 'final', header: 'Final payable', render: (r) => fmtMinutes(r.final_payable_minutes ?? r.default_payable_minutes) },
+    { key: 'default', header: 'Scheduled hours', render: (r) => fmtMinutes(r.default_payable_minutes) },
+    { key: 'final', header: 'Hours to pay', render: (r) => fmtMinutes(r.final_payable_minutes ?? r.default_payable_minutes) },
     {
       key: 'status',
       header: 'Status',
@@ -301,6 +320,12 @@ export default function Attendance() {
           load()
         }}
       >
+        {supervisor ? (
+          <div>
+            <p className="label">Branch</p>
+            <p className="py-2 text-sm font-medium text-ink">{locations.find((l) => l.id === locationId)?.name ?? 'No branch'}</p>
+          </div>
+        ) : (
         <Field label="Branch">
           {(p) => (
             <select {...p} className="input" value={locationId} onChange={(e) => setLocationId(e.target.value)}>
@@ -313,6 +338,7 @@ export default function Attendance() {
             </select>
           )}
         </Field>
+        )}
         <Field label="From">
           {(p) => <input {...p} type="date" className="input" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} />}
         </Field>
@@ -339,29 +365,27 @@ export default function Attendance() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label="Shifts in range" value={overview.length} loading={loading} />
         <KpiCard label="Exceptions" value={exceptions.length} tone={exceptions.length ? 'warning' : 'default'} loading={loading} />
-        <KpiCard label="Pending adjustments" value={pendingAdjustments.length} tone={pendingAdjustments.length ? 'warning' : 'default'} loading={loading} />
+        <KpiCard label="Hours changes waiting" value={pendingAdjustments.length} tone={pendingAdjustments.length ? 'warning' : 'default'} loading={loading} />
         <KpiCard
-          label="Final payable"
+          label="Hours to pay"
           value={fmtMinutes(overview.reduce((s, r) => s + (r.final_payable_minutes ?? r.default_payable_minutes ?? 0), 0))}
           loading={loading}
         />
       </div>
       )}
 
-      <Tabs<TabKey>
-        label="Attendance views"
-        active={tab}
-        onChange={setTab}
-        tabs={
-          supervisor
-            ? [{ key: 'exceptions', label: 'Exceptions', badge: exceptions.length }]
-            : [
-                { key: 'overview', label: 'Overview' },
-                { key: 'exceptions', label: 'Exceptions', badge: exceptions.length },
-                { key: 'adjustments', label: 'Payable adjustments', badge: pendingAdjustments.length },
-              ]
-        }
-      />
+      {!supervisor && (
+        <Tabs<TabKey>
+          label="Attendance views"
+          active={tab}
+          onChange={setTab}
+          tabs={[
+            { key: 'overview', label: 'Overview' },
+            { key: 'exceptions', label: 'Exceptions', badge: exceptions.length },
+            { key: 'adjustments', label: 'Hours changes', badge: pendingAdjustments.length },
+          ]}
+        />
+      )}
 
       {tab === 'overview' && !supervisor && (
         <TabPanel id="overview">
@@ -373,7 +397,7 @@ export default function Attendance() {
               description="Payable time is prepared from published shifts. Prepare it to review and adjust hours."
               action={
                 <button className="btn-primary mt-2" onClick={handleSeed} disabled={busyId === 'seed' || !locationId}>
-                  {busyId === 'seed' ? 'Preparing…' : 'Prepare payable time'}
+                  {busyId === 'seed' ? 'Loading…' : 'Load hours from shifts'}
                 </button>
               }
             />
@@ -393,7 +417,7 @@ export default function Attendance() {
                     title={locked ? 'Already in payroll' : r.pending_adjustment ? 'An adjustment is already pending' : undefined}
                     onClick={() => setAdjusting(r)}
                   >
-                    Adjust time
+                    Change paid hours
                   </button>
                 )
               }}
@@ -407,7 +431,7 @@ export default function Attendance() {
           {loading ? (
             <Skeleton rows={4} />
           ) : exceptions.length === 0 ? (
-            <EmptyState title="No exceptions" description="Every clock-in in this range matches a shift." />
+            <EmptyState title="No clock problems" description="Every clock-in in this range matches a shift." />
           ) : (
             <ResponsiveTable
               caption="Attendance exceptions"
@@ -481,7 +505,7 @@ export default function Attendance() {
           onClose={() => setAdjusting(null)}
           onSaved={() => {
             setAdjusting(null)
-            setNotice('Adjustment proposed. It needs to be applied before it affects payroll.')
+            setNotice('Sent for approval. Payroll uses the old hours until it’s approved.')
             load()
           }}
         />
@@ -521,7 +545,8 @@ function CorrectionDrawer({
   const actualOut = record?.clock_out_at ?? exception.clock_out_at
   const [newIn, setNewIn] = useState(toDubaiLocalInput(actualIn))
   const [newOut, setNewOut] = useState(toDubaiLocalInput(actualOut))
-  const [reason, setReason] = useState('')
+  const missingOut = exception.exception_type === 'missing_clock_out'
+  const [reason, setReason] = useState(missingOut ? 'Forgot to clock out' : '')
   const [errors, setErrors] = useState<{ in?: string; out?: string; reason?: string }>({})
   const [saving, setSaving] = useState(false)
   const [serverError, setServerError] = useState<string | null>(null)
@@ -539,6 +564,7 @@ function CorrectionDrawer({
   function validate() {
     const e: typeof errors = {}
     if (!newInIso) e.in = 'Clock-in time is required.'
+    if (missingOut && !newOutIso) e.out = 'Clock-out time is required.'
     if (newInIso && newOutIso && newOutIso <= newInIso) e.out = 'Clock-out must be after clock-in.'
     if ((newInIso && newInIso > new Date().toISOString()) || (newOutIso && newOutIso > new Date().toISOString()))
       e.out = 'Times cannot be in the future.'
@@ -561,7 +587,7 @@ function CorrectionDrawer({
     )
     setSaving(false)
     if (res.error) {
-      setServerError(res.error)
+      setServerError(friendlyError(res.error))
       setConfirming(false)
       return
     }
@@ -622,7 +648,12 @@ function CorrectionDrawer({
         <Field label="New clock-in (Dubai time)" error={errors.in} required>
           {(p) => <input {...p} type="datetime-local" className="input" value={newIn} onChange={(e) => setNewIn(e.target.value)} data-autofocus />}
         </Field>
-        <Field label="New clock-out (Dubai time)" error={errors.out} hint="Clearing this keeps the current clock-out. You cannot correct your own record.">
+        <Field
+          label={missingOut ? 'Clock-out time' : 'New clock-out (Dubai time)'}
+          error={errors.out}
+          required={missingOut}
+          hint={missingOut ? 'You cannot correct your own record.' : 'Clearing this keeps the current clock-out. You cannot correct your own record.'}
+        >
           {(p) => <input {...p} type="datetime-local" className="input" value={newOut} onChange={(e) => setNewOut(e.target.value)} />}
         </Field>
         <Field label="Reason" error={errors.reason} required hint="Recorded in the audit trail and shown to the employee.">
@@ -706,7 +737,7 @@ function AdjustmentDrawer({
     const res = await proposeAttendanceAdjustment(payable.id, proposed, reason.trim())
     setSaving(false)
     if (res.error) {
-      setServerError(res.error)
+      setServerError(friendlyError(res.error))
       return
     }
     onSaved()
@@ -715,7 +746,7 @@ function AdjustmentDrawer({
   return (
     <Drawer
       open
-      title="Adjust payable time"
+      title="Change paid hours"
       description={`${employeeName} · ${fmtDayShort(row.shift_date)}`}
       onClose={onClose}
       footer={
@@ -724,7 +755,7 @@ function AdjustmentDrawer({
             Cancel
           </button>
           <button className="btn-primary" onClick={submit} disabled={saving}>
-            {saving ? 'Submitting…' : 'Propose adjustment'}
+            {saving ? 'Sending…' : 'Send for approval'}
           </button>
         </>
       }
@@ -743,7 +774,7 @@ function AdjustmentDrawer({
             <dd className="font-medium">{fmtMinutes(payable.planned_break_minutes)}</dd>
           </div>
           <div>
-            <dt className="text-muted">Default payable</dt>
+            <dt className="text-muted">Scheduled hours</dt>
             <dd className="font-medium">{fmtMinutes(payable.default_payable_minutes)}</dd>
           </div>
           <div>
@@ -796,7 +827,7 @@ function RejectAdjustmentModal({
     const res = await rejectAttendanceAdjustment(adjustment.id, reason.trim())
     setSaving(false)
     if (res.error) {
-      setErr(res.error)
+      setErr(friendlyError(res.error))
       return
     }
     onDone()

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { friendlyError } from '../lib/api/client'
 import type { NotificationRow } from '../types/db'
 
 // Phase 2.5: shared notifications model. This component is intentionally a
@@ -79,7 +80,7 @@ export function NotificationBell() {
     })
     setLoading(false)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     setRows((data ?? []) as NotificationRow[])

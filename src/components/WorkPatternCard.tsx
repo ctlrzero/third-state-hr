@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { friendlyError } from '../lib/api/client'
 import { fmtTime } from '../lib/format'
 import { confirmDialog } from '../lib/confirm'
 
@@ -22,7 +23,7 @@ interface AvailabilityRow {
   end_time: string | null
 }
 
-const errText = (err: { message: string }) => err.message.replace(/^ERROR:\s*/i, '')
+const errText = (err: { message: string; code?: string }) => friendlyError(err)
 
 function joinDays(days: number[]) {
   const names = [...days].sort((a, b) => a - b).map((d) => DOW_LONG[d])
@@ -58,7 +59,7 @@ export default function WorkPatternCard({ employeeId, canEdit }: { employeeId: s
       supabase.from('employee_work_patterns').select('employee_id, days_per_week, days_off_mode, fixed_days_off').eq('employee_id', employeeId).maybeSingle(),
       supabase.from('employee_availability').select('day_of_week, is_available, start_time, end_time').eq('employee_id', employeeId).order('day_of_week'),
     ])
-    if (p.error) setError(p.error.message)
+    if (p.error) setError(friendlyError(p.error))
     setPattern((p.data as WorkPattern | null) ?? null)
     setAvailability((a.data ?? []) as AvailabilityRow[])
   }, [employeeId])

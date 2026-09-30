@@ -115,7 +115,7 @@ describe('workflow catalog alignment', () => {
     }
     expect(validateWorkflowDraft(d).ok).toBe(true)
     expect(validateWorkflowDraft({ ...d, condition_value: 'moved' }).errors.condition).toBeTruthy()
-    expect(buildWorkflowSummary(d)).toBe('When a published shift is changed and change type = Cancelled, notify Location Manager.')
+    expect(buildWorkflowSummary(d)).toBe('When a published shift is changed and change type = Cancelled, notify Branch Manager.')
   })
 })
 

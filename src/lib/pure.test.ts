@@ -19,7 +19,7 @@ describe('buildWorkflowSummary', () => {
         action_type: 'notify_role',
         action_target_role: 'entity_admin',
       })
-    ).toBe('When a leave request is submitted and days > 3, notify Entity Admin.')
+    ).toBe('When a leave request is submitted and days > 3, notify Company Admin.')
   })
 
   it('omits an incomplete condition', () => {
@@ -33,7 +33,7 @@ describe('buildWorkflowSummary', () => {
         action_type: 'notify_role',
         action_target_role: 'location_manager',
       })
-    ).toBe('When an employee clocks in late, notify Location Manager.')
+    ).toBe('When an employee clocks in late, notify Branch Manager.')
   })
 
   it('quotes text values and uses word operators', () => {
@@ -195,7 +195,11 @@ describe('nav mapping', () => {
   it('gives staff the 4+More bottom nav', () => {
     const { primary, more } = mobileNavForRole('staff')
     expect(primary.map((i) => i.label)).toEqual(['Home', 'Schedule', 'Clock', 'Leave'])
-    expect(more.map((i) => i.label)).toEqual(['Documents', 'Payslips', 'Offboarding', 'Profile', 'Notifications'])
+    expect(more.map((i) => i.label)).toEqual(['Documents', 'Payslips', 'Profile', 'Notifications'])
+  })
+  it('only shows staff Offboarding with payroll access', () => {
+    expect(navForRole('staff').some((i) => i.to === '/offboarding')).toBe(false)
+    expect(navForRole('staff', { hasPayrollAccess: true }).some((i) => i.to === '/offboarding')).toBe(true)
   })
   it('only shows My Interviews when assigned', () => {
     expect(navForRole('staff').some((i) => i.to === '/my-interviews')).toBe(false)
@@ -207,7 +211,9 @@ describe('nav mapping', () => {
     const { primary } = mobileNavForRole('staff', { hasOnboarding: true })
     expect(primary.map((i) => i.label)).toEqual(['Home', 'Onboarding', 'Schedule', 'Leave'])
     expect(canAccessRoute('staff', '/onboarding')).toBe(true)
-    expect(mobileNavForRole('location_manager').primary.map((i) => i.to)).toEqual(['/', '/today', '/schedules', '/employees'])
+    expect(mobileNavForRole('location_manager').primary.map((i) => i.to)).toEqual(['/today', '/schedules', '/leave', '/attendance'])
+    expect(mobileNavForRole('location_manager').more.map((i) => i.to)).toEqual(expect.arrayContaining(['/', '/employees']))
+    expect(mobileNavForRole('entity_admin').primary.map((i) => i.to)).toEqual(['/', '/today', '/schedules', '/employees'])
     // Staff reach Offboarding only for a payroll-admin preset; the page checks payroll_can.
     expect(canAccessRoute('staff', '/offboarding')).toBe(true)
     expect(canAccessRoute('staff', '/today')).toBe(false)

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import { Link } from 'react-router-dom'
 import { fmtDate as fmtDateUae, fmtDayShort, fmtTime } from '../lib/format'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -10,6 +9,8 @@ import type { LeaveBalance, LeaveRequest, LeaveType } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
 import { isSelfServiceRole } from '../types/db'
+import { friendlyError } from '../lib/api/client'
+import { FindCoverSheet, type CoverShift } from './schedules/SchedulingTools'
 
 const LEAVE_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'risk'> = {
   pending: 'warning',
@@ -26,6 +27,7 @@ interface AffectedShift {
   shift_date: string
   start_time: string
   end_time: string
+  location_id: string
   location: string | null
   is_published: boolean
 }
@@ -61,7 +63,9 @@ function LeaveAdmin() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [overridingId, setOverridingId] = useState<string | null>(null)
   const [overrideReason, setOverrideReason] = useState('')
-  const [clashes, setClashes] = useState<{ name: string; shifts: AffectedShift[] } | null>(null)
+  const [clashes, setClashes] = useState<{ name: string; employeeId: string; shifts: AffectedShift[] } | null>(null)
+  const [cover, setCover] = useState<CoverShift | null>(null)
+  const [coveredIds, setCoveredIds] = useState<string[]>([])
 
   async function load() {
     setLoading(true)
@@ -73,7 +77,7 @@ function LeaveAdmin() {
       .from('leave_requests')
       .select('*, employees(id, full_name), leave_types(id, name)')
       .order('requested_at', { ascending: false })
-    if (fetchError) setError(fetchError.message)
+    if (fetchError) setError(friendlyError(fetchError))
     else setRequests((data ?? []) as unknown as LeaveRequest[])
 
     // leave_balances_select already scopes this the same way
@@ -104,6 +108,10 @@ function LeaveAdmin() {
   // any other role — this UI only ever shows the control to owner/entity_admin in the
   // first place, but the RPC is the real enforcement point either way.
   async function handleDecide(id: string, action: 'approve' | 'reject', override = false, reason?: string) {
+    if (action === 'reject') {
+      const who = requests.find((r) => r.id === id)?.employees?.full_name ?? 'this person'
+      if (!(await confirmDialog(`Reject ${who}’s leave?`))) return
+    }
     setBusyId(id)
     setError(null)
     const { data, error: rpcError } = await supabase.rpc('approve_leave_request', {
@@ -114,12 +122,14 @@ function LeaveAdmin() {
     })
     setBusyId(null)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     const affected = ((data as { affected_shifts?: AffectedShift[] } | null)?.affected_shifts ?? [])
-    const who = requests.find((r) => r.id === id)?.employees?.full_name ?? 'This person'
-    setClashes(action === 'approve' && affected.length > 0 ? { name: who, shifts: affected } : null)
+    const req = requests.find((r) => r.id === id)
+    const who = req?.employees?.full_name ?? 'This person'
+    setCoveredIds([])
+    setClashes(action === 'approve' && affected.length > 0 && req ? { name: who, employeeId: req.employee_id, shifts: affected } : null)
     setNotice(action === 'approve' ? 'Leave approved — balance updated.' : 'Leave rejected.')
     setOverridingId(null)
     setOverrideReason('')
@@ -166,7 +176,7 @@ function LeaveAdmin() {
                 {clashes.name} still has {clashes.shifts.length} shift{clashes.shifts.length === 1 ? '' : 's'} during this leave
               </h2>
               <p className="text-xs text-brand-warning-solid">
-                They were not cancelled. Reassign or cancel each one — draft shifts on leave days won't be published.
+                They were not cancelled. Find cover for each one — shifts not shared yet won't be shared with staff on leave days.
               </p>
             </div>
             <button className="text-xs font-medium text-brand-warning-solid underline" onClick={() => setClashes(null)}>
@@ -179,15 +189,47 @@ function LeaveAdmin() {
                 <span className="text-ink">
                   {fmtDayShort(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
                   {s.location && <span className="text-muted"> · {s.location}</span>}
-                  <span className="text-muted"> · {s.is_published ? 'published' : 'draft'}</span>
+                  <span className="text-muted"> · {s.is_published ? 'shared with staff' : 'not shared yet'}</span>
                 </span>
-                <Link to={`/schedules?shift=${s.shift_id}`} className="text-xs font-medium text-brand-blue hover:underline">
-                  Reassign
-                </Link>
+                {coveredIds.includes(s.shift_id) ? (
+                  <span className="text-xs font-medium text-brand-action-text">Covered</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCover({
+                        id: s.shift_id,
+                        shift_date: s.shift_date,
+                        start_time: s.start_time,
+                        end_time: s.end_time,
+                        break_minutes: 0,
+                        location_id: s.location_id,
+                        employee_id: clashes.employeeId,
+                        is_published: s.is_published,
+                        currentName: clashes.name,
+                      })
+                    }
+                    className="min-h-[44px] rounded-lg border border-border px-4 py-2 text-sm font-medium text-brand-blue hover:bg-surface-alt"
+                  >
+                    Find cover
+                  </button>
+                )}
               </li>
             ))}
           </ul>
         </div>
+      )}
+
+      {cover && (
+        <FindCoverSheet
+          shift={cover}
+          onClose={() => setCover(null)}
+          onAssigned={(message) => {
+            setCoveredIds((ids) => [...ids, cover.id])
+            setCover(null)
+            setNotice(message)
+          }}
+        />
       )}
 
       {loading ? (
@@ -220,37 +262,37 @@ function LeaveAdmin() {
                         </p>
                         {insufficient && (
                           <p className="mt-1 text-xs font-medium text-brand-risk">
-                            Insufficient balance — approving is blocked{canOverride ? ' unless you use an authorised override' : ' until the balance is adjusted or the request is reduced'}.
+                            Not enough leave balance. Ask HR to approve it, or reject and ask {r.employees?.full_name ?? 'them'} for fewer days.
                           </p>
                         )}
                         {r.reason && <p className="mt-1 text-xs text-muted">“{r.reason}”</p>}
                       </div>
-                      <span className="flex gap-1">
-                        {!insufficient && (
-                          <button
-                            onClick={() => handleDecide(r.id, 'approve')}
-                            disabled={busyId === r.id}
-                            className="rounded-full bg-brand-action-soft px-2.5 py-1 text-xs font-medium text-brand-action-text disabled:opacity-60"
-                          >
-                            {busyId === r.id ? 'Working…' : 'Approve'}
-                          </button>
-                        )}
+                      <span className="flex gap-2">
+                        <button
+                          onClick={() => handleDecide(r.id, 'reject')}
+                          disabled={busyId === r.id}
+                          className="min-h-[44px] rounded-lg border border-brand-risk/40 bg-surface px-4 py-2 text-sm font-medium text-brand-risk-text disabled:opacity-60"
+                        >
+                          Reject
+                        </button>
                         {insufficient && canOverride && (
                           <button
                             onClick={() => setOverridingId(overridingId === r.id ? null : r.id)}
                             disabled={busyId === r.id}
-                            className="rounded-full bg-brand-risk-soft px-2.5 py-1 text-xs font-medium text-brand-risk-text disabled:opacity-60"
+                            className="min-h-[44px] rounded-lg bg-brand-risk-soft px-4 py-2 text-sm font-medium text-brand-risk-text disabled:opacity-60"
                           >
                             Override & approve…
                           </button>
                         )}
-                        <button
-                          onClick={() => handleDecide(r.id, 'reject')}
-                          disabled={busyId === r.id}
-                          className="rounded-full bg-brand-risk-soft px-2.5 py-1 text-xs font-medium text-brand-risk-text disabled:opacity-60"
-                        >
-                          Reject
-                        </button>
+                        {!insufficient && (
+                          <button
+                            onClick={() => handleDecide(r.id, 'approve')}
+                            disabled={busyId === r.id}
+                            className="min-h-[44px] rounded-lg bg-brand-action px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+                          >
+                            {busyId === r.id ? 'Working…' : 'Approve'}
+                          </button>
+                        )}
                       </span>
                     </div>
                     {overridingId === r.id && (
@@ -350,7 +392,7 @@ function MyLeave() {
         .select('*, leave_types(id, name)')
         .order('requested_at', { ascending: false }),
     ])
-    if (balRes.error) setError(balRes.error.message)
+    if (balRes.error) setError(friendlyError(balRes.error))
     else setBalances((balRes.data ?? []) as unknown as LeaveBalance[])
     const STAFF_LEAVE_TYPES = ['Annual Leave', 'Sick Leave']
     setLeaveTypes(((typesRes.data ?? []) as LeaveType[]).filter((t) => STAFF_LEAVE_TYPES.includes(t.name)))
@@ -373,7 +415,7 @@ function MyLeave() {
     const { error: rpcError } = await supabase.rpc('cancel_leave_request', { p_request_id: id, p_reason: null })
     setBusyId(null)
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     setNotice('Leave request cancelled.')
@@ -401,7 +443,7 @@ function MyLeave() {
         <button
           onClick={() => setFormOpen(true)}
           disabled={leaveTypes.length === 0}
-          className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
+          className="min-h-[44px] rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
         >
           Request leave
         </button>
@@ -420,7 +462,7 @@ function MyLeave() {
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
         <h2 className="mb-3 text-sm font-semibold text-ink">Balances</h2>
         {leaveTypes.length === 0 ? (
-          <p className="text-sm text-muted">No leave types configured for your entity yet.</p>
+          <p className="text-sm text-muted">Leave isn’t set up for you yet. Please ask your manager.</p>
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {leaveTypes.map((t) => {
@@ -457,7 +499,7 @@ function MyLeave() {
                       <button
                         onClick={() => handleCancel(r.id)}
                         disabled={busyId === r.id}
-                        className="font-medium text-brand-risk hover:underline disabled:opacity-60"
+                        className="min-h-[44px] rounded-lg border border-brand-risk/40 bg-surface px-4 py-2 text-sm font-medium text-brand-risk disabled:opacity-60"
                       >
                         {busyId === r.id ? 'Cancelling…' : 'Cancel'}
                       </button>
@@ -475,6 +517,7 @@ function MyLeave() {
       {formOpen && (
         <RequestLeaveModal
           leaveTypes={leaveTypes}
+          balances={balances}
           onClose={() => setFormOpen(false)}
           onSubmitted={() => {
             setFormOpen(false)
@@ -496,10 +539,12 @@ function daysBetweenInclusive(start: string, end: string) {
 
 function RequestLeaveModal({
   leaveTypes,
+  balances,
   onClose,
   onSubmitted,
 }: {
   leaveTypes: LeaveType[]
+  balances: LeaveBalance[]
   onClose: () => void
   onSubmitted: () => void
 }) {
@@ -511,9 +556,15 @@ function RequestLeaveModal({
   const [error, setError] = useState<string | null>(null)
 
   const days = startDate && endDate ? daysBetweenInclusive(startDate, endDate) : 0
+  const chosenType = leaveTypes.find((t) => t.id === leaveTypeId)
+  const remaining = balances.find((b) => b.leave_type_id === leaveTypeId)?.balance_days ?? 0
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (startDate && endDate && days <= 0) {
+      setError('The end date must be the same as or after the start date.')
+      return
+    }
     if (!leaveTypeId || !startDate || !endDate || days <= 0) {
       setError('Choose a leave type and a valid date range.')
       return
@@ -534,7 +585,7 @@ function RequestLeaveModal({
       .maybeSingle()
     if (empError || !empRow) {
       setSubmitting(false)
-      setError(empError?.message ?? 'No employee record linked to your account.')
+      setError(empError ? friendlyError(empError) : 'Your login isn’t connected to your staff profile yet. Please ask your manager to fix this.')
       return
     }
     const { error: insertError } = await supabase.from('leave_requests').insert({
@@ -548,18 +599,15 @@ function RequestLeaveModal({
     })
     setSubmitting(false)
     if (insertError) {
-      setError(insertError.message)
+      setError(friendlyError(insertError))
       return
     }
     onSubmitted()
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4">
+      <div className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card">
         <h2 className="mb-4 text-base font-semibold text-ink">Request leave</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
@@ -597,6 +645,14 @@ function RequestLeaveModal({
             </div>
           </div>
           {days > 0 && <p className="text-xs text-muted">{days} day{days === 1 ? '' : 's'} requested.</p>}
+          {chosenType && (
+            <p className="text-xs text-muted">
+              You have {remaining} day{remaining === 1 ? '' : 's'} of {chosenType.name} left.
+            </p>
+          )}
+          {chosenType && days > remaining && (
+            <p className="text-xs font-medium text-brand-risk">This is more than your balance — your manager may refuse it.</p>
+          )}
           <div>
             <label htmlFor="leave-reason-optional-4" className="mb-1 block text-sm font-medium text-ink">Reason (optional)</label>
             <textarea id="leave-reason-optional-4"
@@ -613,14 +669,14 @@ function RequestLeaveModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt"
+              className="min-h-[44px] rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
+              className="min-h-[44px] rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60"
             >
               {submitting ? 'Submitting…' : 'Submit request'}
             </button>

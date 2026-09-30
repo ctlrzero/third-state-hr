@@ -103,7 +103,7 @@ export default function Clock() {
       {notLinked ? (
         <EmptyState
           title="Your login isn't linked to an employee record"
-          description="Clocking in needs an employee record. Ask your Entity Admin to link your account in Admin → Users & access."
+          description="Your login isn’t connected to your staff profile yet. Please ask your manager to fix this."
         />
       ) : (
         <section className="card space-y-4" aria-labelledby="today-heading">

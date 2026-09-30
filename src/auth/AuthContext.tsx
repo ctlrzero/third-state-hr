@@ -39,6 +39,8 @@ interface AuthContextValue {
    * UI convenience; the onboarding RPCs are the real gate.
    */
   hasOnboarding: boolean
+  /** Staff only: payroll_can(entity, 'approve') — a payroll-admin preset login. UI convenience only. */
+  hasPayrollAccess: boolean
   noAssignmentReason: NoAssignmentReason
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
@@ -57,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [hasInterviewAssignments, setHasInterviewAssignments] = useState(false)
   const [hasOnboarding, setHasOnboarding] = useState(false)
+  const [hasPayrollAccess, setHasPayrollAccess] = useState(false)
   const [noAssignmentReason, setNoAssignmentReason] = useState<NoAssignmentReason>(null)
   const manualSignOut = useRef(false)
 
@@ -98,14 +101,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       )
 
     setHasOnboarding(false)
+    setHasPayrollAccess(false)
     if (isSelfServiceRole((profileRow as Profile).role)) {
       const entityId = (profileRow as Profile).entity_id
       Promise.all([
         hasOwnOpenOnboarding(),
         entityId ? supabase.rpc('payroll_can', { p_entity_id: entityId, p_cap: 'approve' }).then((r) => Boolean(r.data)) : Promise.resolve(false),
       ]).then(
-        ([own, pay]) => setHasOnboarding(own || pay),
-        () => setHasOnboarding(false)
+        ([own, pay]) => {
+          setHasOnboarding(own || pay)
+          setHasPayrollAccess(pay)
+        },
+        () => {
+          setHasOnboarding(false)
+          setHasPayrollAccess(false)
+        }
       )
     }
 
@@ -165,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setEntities([])
         setActiveEntityIdState(null)
         setHasInterviewAssignments(false)
+        setHasPayrollAccess(false)
         setNoAssignmentReason(null)
         localStorage.removeItem(LAST_ENTITY_KEY)
         setStatus('signed-out')
@@ -219,12 +230,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setActiveEntityId,
       hasInterviewAssignments,
       hasOnboarding,
+      hasPayrollAccess,
       noAssignmentReason,
       signInWithPassword,
       signOut,
       refreshProfile,
     }),
-    [status, session, profile, entities, activeEntityId, hasInterviewAssignments, hasOnboarding, noAssignmentReason]
+    [status, session, profile, entities, activeEntityId, hasInterviewAssignments, hasOnboarding, hasPayrollAccess, noAssignmentReason]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -214,7 +214,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
         <>
           {!ws.settings.confirmed && (
             <Alert tone="info">
-              Payroll settings still use the defaults (calendar-day proration, two-person approval, UAE minimum overtime rates).{' '}
+              Payroll is using the standard settings: part-month pay is counted by calendar days, a second person must approve, and overtime uses the UAE legal minimum. Check these once before your first payroll.{' '}
               <button className="font-semibold underline" onClick={() => setPanel('settings')}>
                 Review settings
               </button>
@@ -243,7 +243,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
             <Stat label="Total net payroll" value={fmtMoney(ws.summary.total_net, currency)} sub={`${ws.summary.approved} approved`} />
             <Stat label="Paid · outstanding" value={fmtMoney(ws.summary.paid, currency)} sub={`${fmtMoney(ws.summary.outstanding, currency)} outstanding`} />
             <Stat
-              label="Needs attention"
+              label="Needs a look"
               value={String(ws.summary.needs_attention)}
               tone={ws.summary.needs_attention ? 'warning' : undefined}
               onClick={ws.summary.needs_attention ? () => setStatus('attention') : undefined}
@@ -271,7 +271,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
               <span className="label">Status</span>
               <select className="input" value={status} onChange={(e) => setStatus(e.target.value as StatusFilter)}>
                 <option value="all">All</option>
-                <option value="attention">Needs attention</option>
+                <option value="attention">Needs a look</option>
                 <option value="not_prepared">Not prepared</option>
                 <option value="draft">Draft</option>
                 {reviewMode && <option value="in_review">In review</option>}

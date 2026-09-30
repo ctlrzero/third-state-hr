@@ -61,8 +61,8 @@ function AvatarBadge({ fullName }: { fullName: string | null | undefined }) {
 
 const ROLE_LABEL: Record<UserRole, string> = {
   owner: 'Owner',
-  entity_admin: 'Entity Admin',
-  location_manager: 'Location Manager',
+  entity_admin: 'Company Admin',
+  location_manager: 'Branch Manager',
   shift_supervisor: 'Shift Supervisor',
   staff: 'Employee',
 }
@@ -74,9 +74,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const moreButtonRef = useRef<HTMLButtonElement>(null)
   const sheetRef = useRef<HTMLDivElement>(null)
 
-  const ctx = { hasInterviewAssignments, hasOnboarding }
-  const items = useMemo(() => navForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments, hasOnboarding]) // eslint-disable-line react-hooks/exhaustive-deps
-  const mobile = useMemo(() => mobileNavForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments, hasOnboarding]) // eslint-disable-line react-hooks/exhaustive-deps
+  const { hasPayrollAccess } = useAuth()
+  const ctx = { hasInterviewAssignments, hasOnboarding, hasPayrollAccess }
+  const items = useMemo(() => navForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments, hasOnboarding, hasPayrollAccess]) // eslint-disable-line react-hooks/exhaustive-deps
+  const mobile = useMemo(() => mobileNavForRole(profile?.role, ctx), [profile?.role, hasInterviewAssignments, hasOnboarding, hasPayrollAccess]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close the More sheet on navigation; manage focus + Escape while open.
   useEffect(() => setMoreOpen(false), [location.pathname])
