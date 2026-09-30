@@ -21,7 +21,10 @@ import {
   DeletedShiftsSheet,
   DeleteShiftsModal,
   WorkPatternWarnings,
+  FindCoverSheet,
+  CrossBranchClaimsToggle,
   type DeletableShift,
+  type CoverShift,
 } from './schedules/SchedulingTools'
 import { useWorkPatternWarnings } from './schedules/useWorkPatternWarnings'
 
@@ -112,6 +115,7 @@ function ScheduleAdmin() {
   const [toDelete, setToDelete] = useState<Shift[] | null>(null)
   const [showDeleted, setShowDeleted] = useState(false)
   const [onLeave, setOnLeave] = useState<Set<string>>(new Set())
+  const [coverShift, setCoverShift] = useState<CoverShift | null>(null)
   const [params, setParams] = useSearchParams()
   const focusShiftId = params.get('shift')
   const mode: 'manual' | 'auto' = isAdmin && params.get('mode') === 'auto' ? 'auto' : 'manual'
@@ -443,6 +447,7 @@ function ScheduleAdmin() {
                 )}
               </>
             )}
+            {profile?.role === 'owner' && activeEntityId && <CrossBranchClaimsToggle entityId={activeEntityId} onError={setError} />}
             <button onClick={() => setShowDeleted(true)} className="press ml-auto font-medium text-muted hover:text-ink hover:underline">
               Deleted shifts log
             </button>
@@ -500,6 +505,26 @@ function ScheduleAdmin() {
                       {s.status !== 'cancelled' && s.is_published && (
                         <button onClick={() => setAdjustShift(s)} className="text-xs font-medium text-brand-blue hover:underline">
                           Adjust
+                        </button>
+                      )}
+                      {s.status !== 'cancelled' && s.shift_date >= todayIso() && (
+                        <button
+                          onClick={() =>
+                            setCoverShift({
+                              id: s.id,
+                              shift_date: s.shift_date,
+                              start_time: s.start_time,
+                              end_time: s.end_time,
+                              break_minutes: s.break_minutes,
+                              location_id: s.location_id,
+                              employee_id: s.employee_id,
+                              is_published: s.is_published,
+                              currentName: s.employee_id ? (employeesById.get(s.employee_id)?.full_name ?? null) : null,
+                            })
+                          }
+                          className="text-xs font-medium text-brand-blue hover:underline"
+                        >
+                          Find cover
                         </button>
                       )}
                       {s.status !== 'cancelled' && (
@@ -619,6 +644,18 @@ function ScheduleAdmin() {
               ? ` ${res.skipped.length} skipped: ${res.skipped.map((x) => `${fmtDate(x.shift_date)} (${x.reason})`).join(', ')}.`
               : ''
             setNotice(`Deleted ${res.deleted} shift${res.deleted === 1 ? '' : 's'} — kept in the deleted shifts log.${skipped}`)
+            load()
+          }}
+        />
+      )}
+
+      {coverShift && (
+        <FindCoverSheet
+          shift={coverShift}
+          onClose={() => setCoverShift(null)}
+          onAssigned={(msg) => {
+            setCoverShift(null)
+            setNotice(msg)
             load()
           }}
         />
@@ -1457,7 +1494,7 @@ function MySchedule() {
       </div>
 
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-        <h2 className="mb-1 text-sm font-semibold text-ink">Open shifts at your branch</h2>
+        <h2 className="mb-1 text-sm font-semibold text-ink">Open shifts</h2>
         <p className="mb-3 text-xs text-muted">Unfilled shifts you can pick up.</p>
         {openShifts.length === 0 ? (
           <p className="text-sm text-muted">No open shifts right now.</p>
@@ -1467,6 +1504,7 @@ function MySchedule() {
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-sm">
                 <span className="text-ink">
                   {fmtDate(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
+                  {s.locations?.name ? ` · ${s.locations.name}` : ''}
                   {s.positions?.title ? ` · ${s.positions.title}` : ''}
                 </span>
                 <button
@@ -1484,7 +1522,7 @@ function MySchedule() {
 
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
         <h2 className="mb-1 text-sm font-semibold text-ink">Open swap board</h2>
-        <p className="mb-3 text-xs text-muted">Shifts colleagues at your branch want covered.</p>
+        <p className="mb-3 text-xs text-muted">Shifts colleagues want covered. If you can't take one, the app tells you why.</p>
         {claimableSwapBoard.length === 0 ? (
           <p className="text-sm text-muted">No open swap requests right now.</p>
         ) : (
@@ -1493,6 +1531,7 @@ function MySchedule() {
               <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-sm">
                 <span className="text-ink">
                   {s.shifts && `${fmtDate(s.shifts.shift_date)} · ${fmtTime(s.shifts.start_time)}–${fmtTime(s.shifts.end_time)}`}
+                  {s.shifts?.locations?.name ? ` · ${s.shifts.locations.name}` : ''}
                   {s.notes ? ` · “${s.notes}”` : ''}
                 </span>
                 <button

@@ -121,6 +121,13 @@ insert into results select * from pg_temp.chk('staff A: publish_schedule_period'
 insert into results select * from pg_temp.chk('lm_b: approve Entity A leave', (select sub::text from personas where k='lm_b'), 'deny', $$public.approve_leave_request('a0000000-0000-4000-8000-000000000101','approve',false,null)$$);
 insert into results select * from pg_temp.chk('ea_b: publish Branch A1', (select sub::text from personas where k='ea_b'), 'deny', $$public.publish_schedule_period('a0000000-0000-4000-8000-000000000011', current_date, current_date + 7)$$);
 
+-- ---------------------------------------------------------------- P0-2 claims / cover
+insert into results select * from pg_temp.chk('staff A: suggest_shift_cover', (select sub::text from personas where k='st_a'), 'deny', $$public.suggest_shift_cover((select id from public.shifts limit 1))$$);
+insert into results select * from pg_temp.chk('ea_a: set_cross_outlet_claims (owner only)', (select sub::text from personas where k='ea_a'), 'deny', $$public.set_cross_outlet_claims('a0000000-0000-4000-8000-000000000001', true)$$);
+insert into results select * from pg_temp.chk('lm_a: set_cross_outlet_claims (owner only)', (select sub::text from personas where k='lm_a'), 'deny', $$public.set_cross_outlet_claims('a0000000-0000-4000-8000-000000000001', true)$$);
+insert into results select * from pg_temp.chk('staff A: _shift_eligibility not callable', (select sub::text from personas where k='st_a'), 'deny', $$public._shift_eligibility('a0000000-0000-4000-8000-000000000031', gen_random_uuid())$$);
+insert into results select * from pg_temp.chk('staff A: other-branch open shifts hidden while setting off', (select sub::text from personas where k='st_a'), 'zero', $$select * from public.shifts where status = 'open' and is_published and location_id <> 'a0000000-0000-4000-8000-000000000011'$$);
+
 -- ---------------------------------------------------------------- revoked profile (rolled back)
 insert into results select * from pg_temp.chk('setup: revoke employee B', (select sub::text from personas where k='ea_a'), 'deny', $$public.admin_revoke_access('99a456ae-bdf5-40ca-b0fb-fc741a525cd5', null, 'access test (rolled back)')$$);
 insert into results

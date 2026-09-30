@@ -231,6 +231,15 @@ A non-cancelled shift cannot be created or moved onto a day its employee has app
 `create_schedule_template`, `replace_schedule_template`, `deactivate_schedule_template`,
 `generate_shifts_from_templates(p_location_id, p_period_start, p_period_end) → int` (skips approved-leave days),
 `request_shift_swap(p_shift_id, p_notes) → uuid`, `claim_shift_swap`, `claim_open_shift`,
+(P0-2) `claim_shift_swap`, `claim_open_shift` and `approve_shift_swap` (on approve) refuse an ineligible person with
+`22023` and a plain reason from `_shift_eligibility` (internal): same company, active and employed that day, role matches
+`shifts.position_id`, not on approved leave, not a fixed day off, available, no overlapping shift, ≤ 48 working hours and
+≤ their weekly days (work pattern, default 6) in the Mon–Sun week. `claim_open_shift` also needs a published shift.
+Staff may claim only at their home branch unless the owner turns on cross-branch claims for the company:
+`set_cross_outlet_claims(p_entity_id, p_enabled) → void` (owner only; `app_settings` key `cross_outlet_claims:<entity_id>`).
+`suggest_shift_cover(p_shift_id) → jsonb {shift, candidates[], not_eligible[]}` (O, EA scoped, LM own branch): candidates are
+eligible people ranked home branch first, then fewest hours this week (`employee_id, name, home_location, position,
+home_branch, hours_this_week, days_this_week`); `not_eligible` gives each other person's reason.
 `cancel_shift_swap_request`, `approve_shift_swap(p_swap_id, p_action)`.
 
 ## 8. Payroll & payslips

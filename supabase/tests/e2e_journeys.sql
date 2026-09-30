@@ -423,6 +423,43 @@ exception when others then
   insert into e2e_results values ('J6 P0-1: approved leave flags, blocks and skips clashing shifts', false, sqlstate || ' ' || sqlerrm);
 end $j$;
 
+-- ------------------------------------------------------------ J7 P0-2 claim eligibility (employee.a, locationmanager.a)
+do $j$
+declare
+  v_day date := current_date + 46;
+  v_pos_other uuid; v_open uuid; v_role_shift uuid; v_code text; v_emp uuid; r jsonb;
+begin
+  reset role;
+  insert into public.positions (entity_id, title) values ('a0000000-0000-4000-8000-000000000001', 'e2e other role') returning id into v_pos_other;
+  insert into public.shifts (entity_id, location_id, position_id, shift_date, start_time, end_time, status, created_by, is_published)
+  values ('a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000011',
+          (select position_id from public.employees where id = 'a0000000-0000-4000-8000-000000000031'),
+          v_day, '10:00', '14:00', 'open', '81b68580-a490-4115-be98-70285a51ba99', true) returning id into v_open;
+  insert into public.shifts (entity_id, location_id, position_id, shift_date, start_time, end_time, status, created_by, is_published)
+  values ('a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000011', v_pos_other,
+          v_day + 1, '10:00', '14:00', 'open', '81b68580-a490-4115-be98-70285a51ba99', true) returning id into v_role_shift;
+
+  perform pg_temp.login('5f353b67-2e93-4cea-bd44-9ad2d6b4bfd9');
+  v_code := pg_temp.expect_error(format($$select public.claim_open_shift(%L)$$, v_role_shift), 'wrong-role claim');
+  perform pg_temp.ok(v_code = '22023', 'wrong-role claim refused with 22023 (got ' || coalesce(v_code, 'none') || ')');
+  perform public.claim_open_shift(v_open);
+  select employee_id into v_emp from public.shifts where id = v_open;
+  perform pg_temp.ok(v_emp = 'a0000000-0000-4000-8000-000000000031', 'eligible same-branch claim accepted');
+
+  perform pg_temp.login('545cf168-7595-4ccb-8c37-c4c434f5f1c0');
+  r := public.suggest_shift_cover(v_role_shift);
+  perform pg_temp.ok(r ? 'candidates' and r ? 'not_eligible', 'manager gets cover suggestions');
+  perform pg_temp.ok(exists (select 1 from jsonb_array_elements(r -> 'not_eligible') x
+                              where x ->> 'employee_id' = 'a0000000-0000-4000-8000-000000000031' and x ->> 'reason' like 'Role does not match%'),
+                     'employee A listed as not eligible (role)');
+
+  reset role;
+  insert into e2e_results values ('J7 P0-2: claims respect eligibility; manager finds cover', true, 'ok');
+exception when others then
+  reset role;
+  insert into e2e_results values ('J7 P0-2: claims respect eligibility; manager finds cover', false, sqlstate || ' ' || sqlerrm);
+end $j$;
+
 reset role;
 select journey, pass, detail from e2e_results order by journey;
 rollback;

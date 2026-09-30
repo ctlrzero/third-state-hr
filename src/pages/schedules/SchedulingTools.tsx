@@ -1165,3 +1165,241 @@ export function WorkPatternWarnings({ warnings }: { warnings: string[] }) {
     </div>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Find cover (P0-2): ranked eligible people for one shift → assign
+// ---------------------------------------------------------------------------
+
+interface CoverCandidate {
+  employee_id: string
+  name: string
+  home_location: string | null
+  position: string | null
+  home_branch: boolean
+  hours_this_week: number
+  days_this_week: number
+}
+interface CoverResult {
+  shift: {
+    id: string
+    shift_date: string
+    start_time: string
+    end_time: string
+    location_id: string
+    location: string | null
+    position: string | null
+    employee_id: string | null
+    is_published: boolean
+    status: string
+  }
+  candidates: CoverCandidate[]
+  not_eligible: { employee_id: string; name: string; reason: string }[]
+}
+
+export interface CoverShift {
+  id: string
+  shift_date: string
+  start_time: string
+  end_time: string
+  break_minutes: number
+  location_id: string
+  employee_id: string | null
+  is_published: boolean
+  currentName: string | null
+}
+
+export function FindCoverSheet({
+  shift,
+  onClose,
+  onAssigned,
+}: {
+  shift: CoverShift
+  onClose: () => void
+  onAssigned: (message: string) => void
+}) {
+  const [data, setData] = useState<CoverResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [picked, setPicked] = useState<CoverCandidate | null>(null)
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  // A published shift that already has someone is a reassignment: it goes through
+  // adjust_published_shift so the change and its reason are kept in the history.
+  const needsReason = shift.is_published && !!shift.employee_id
+
+  useEffect(() => {
+    supabase.rpc('suggest_shift_cover', { p_shift_id: shift.id }).then(({ data: d, error: e }) => {
+      if (e) setError(errText(e))
+      else setData(d as CoverResult)
+    })
+  }, [shift.id])
+
+  async function assign() {
+    if (!picked) return
+    if (needsReason && !reason.trim()) return setError('Add a reason for the change.')
+    setBusy(true)
+    setError(null)
+    const res = needsReason
+      ? await supabase.rpc('adjust_published_shift', {
+          p_shift_id: shift.id,
+          p_reason: reason.trim(),
+          p_shift_date: shift.shift_date,
+          p_start_time: shift.start_time.slice(0, 5),
+          p_end_time: shift.end_time.slice(0, 5),
+          p_break_minutes: shift.break_minutes,
+          p_employee_id: picked.employee_id,
+          p_location_id: shift.location_id,
+        })
+      : await supabase.from('shifts').update({ employee_id: picked.employee_id, status: 'assigned' }).eq('id', shift.id)
+    setBusy(false)
+    if (res.error) return setError(errText(res.error))
+    onAssigned(`${picked.name} now covers ${fmtDayShort(shift.shift_date)} ${fmtTime(shift.start_time)}–${fmtTime(shift.end_time)}.`)
+  }
+
+  const s = data?.shift
+  return (
+    <Sheet
+      title="Find cover"
+      subtitle={
+        s
+          ? `${fmtDayShort(s.shift_date)} · ${fmtTime(s.start_time)}–${fmtTime(s.end_time)} · ${s.location ?? 'Branch'}${s.position ? ` · ${s.position}` : ''}${
+              shift.currentName ? ` · now ${shift.currentName}` : ' · unassigned'
+            }`
+          : 'Checking who can work this shift…'
+      }
+      onClose={onClose}
+      footer={
+        picked ? (
+          <div className="space-y-3">
+            {needsReason && (
+              <label className="block">
+                <span className="label">Reason (kept in the shift history)</span>
+                <input
+                  className="input"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder={shift.currentName ? `e.g. Cover for ${shift.currentName}` : 'e.g. Cover'}
+                />
+              </label>
+            )}
+            <div className="flex items-center justify-between gap-3">
+              <p className="min-w-0 text-[13px] text-muted">
+                Assign <span className="font-medium text-ink">{picked.name}</span>
+                {!picked.home_branch && picked.home_location ? ` (from ${picked.home_location})` : ''}
+              </p>
+              <button className="btn-primary press shrink-0" onClick={assign} disabled={busy || (needsReason && !reason.trim())}>
+                {busy ? 'Assigning…' : 'Assign'}
+              </button>
+            </div>
+          </div>
+        ) : undefined
+      }
+    >
+      <ErrorBox msg={error} />
+      {!data && !error && (
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-14 animate-pulse rounded-xl bg-surface-alt" />
+          ))}
+        </div>
+      )}
+      {data && (
+        <div className="space-y-5">
+          <p className="text-xs text-muted">
+            Only people who pass every rule are listed: right role, not on leave or a day off, available, no overlapping shift, and within 48 hours and
+            their working days that week. Their own branch comes first, then the fewest hours.
+          </p>
+          {data.candidates.length === 0 ? (
+            <p className="rounded-xl bg-brand-warning-soft px-3.5 py-2.5 text-sm text-brand-warning-solid">
+              Nobody is eligible for this shift. See the reasons below, or change the shift.
+            </p>
+          ) : (
+            <ul className="space-y-2" role="radiogroup" aria-label="Choose who covers">
+              {data.candidates.map((c, i) => {
+                const on = picked?.employee_id === c.employee_id
+                return (
+                  <li key={c.employee_id} className="rise" style={{ '--i': Math.min(i, 10) } as React.CSSProperties}>
+                    <button
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => setPicked(c)}
+                      className={`press flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left transition-[border-color,background-color] duration-200 ${
+                        on ? 'border-brand-blue bg-brand-blue-soft/50' : 'border-border hover:bg-surface-alt'
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-medium text-ink">
+                          {c.name}
+                          {!c.home_branch && (
+                            <span className="ml-2 rounded-full bg-brand-info-soft px-2 py-0.5 text-[11px] font-medium text-brand-info-text">
+                              {c.home_location ?? 'Other branch'}
+                            </span>
+                          )}
+                        </span>
+                        <span className="block text-xs text-muted">{c.position ?? 'No role set'}</span>
+                      </span>
+                      <span className="shrink-0 text-right text-xs tabular-nums text-muted">
+                        {c.hours_this_week} h · {c.days_this_week} day{c.days_this_week === 1 ? '' : 's'}
+                        <span className="block">this week</span>
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {data.not_eligible.length > 0 && (
+            <details className="rounded-2xl border border-border px-4 py-3">
+              <summary className="cursor-pointer text-[13px] font-medium text-ink">
+                Not eligible ({data.not_eligible.length})
+              </summary>
+              <ul className="mt-2 space-y-1.5 text-xs">
+                {data.not_eligible.map((n) => (
+                  <li key={n.employee_id} className="flex justify-between gap-3">
+                    <span className="text-ink">{n.name}</span>
+                    <span className="text-right text-muted">{n.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+    </Sheet>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Owner switch: may staff pick up open shifts / swaps at other branches? (P0-2)
+// ---------------------------------------------------------------------------
+
+export function CrossBranchClaimsToggle({ entityId, onError }: { entityId: string; onError: (msg: string) => void }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', `cross_outlet_claims:${entityId}`)
+      .maybeSingle()
+      .then(({ data }) => setEnabled(!!(data as { value: boolean } | null)?.value))
+  }, [entityId])
+
+  async function toggle() {
+    const next = !enabled
+    setBusy(true)
+    const { error } = await supabase.rpc('set_cross_outlet_claims', { p_entity_id: entityId, p_enabled: next })
+    setBusy(false)
+    if (error) return onError(errText(error))
+    setEnabled(next)
+  }
+
+  if (enabled === null) return null
+  return (
+    <label className="flex items-center gap-2 text-xs text-muted">
+      <input type="checkbox" checked={enabled} disabled={busy} onChange={toggle} className="h-4 w-4 accent-[var(--color-brand-blue)]" />
+      Staff can pick up open shifts and swaps at other branches
+    </label>
+  )
+}
