@@ -19,6 +19,7 @@ import {
   fmtMoney,
   isPrepared,
   monthStart,
+  partitionForAction,
   PAYMENT_STATUS_LABEL,
   periodLabel,
   RECORD_STATUS_LABEL,
@@ -223,9 +224,9 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
           )}
 
           <ReadinessPanel periodId={ws.period.id} refreshKey={loads} />
-          <ChangesPanel periodId={ws.period.id} refreshKey={loads} />
+          {ws.period.kind === 'regular' && <ChangesPanel periodId={ws.period.id} refreshKey={loads} />}
 
-          {ws.period.kind === 'off_cycle' && perms?.prepare && (
+          {ws.period.kind === 'off_cycle' && perms?.prepare && !(ws.rows.length > 0 && ws.summary.published === ws.rows.length) && (
             <OffCycleAdd
               entityId={entityId}
               existing={ws.rows.map((r) => r.employee_id)}
@@ -243,7 +244,11 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
             <Stat label={ws.entity.name} value={periodLabel(ws.period)} />
             <Stat label="Employees" value={String(ws.summary.employees)} sub={ws.summary.not_prepared ? `${ws.summary.not_prepared} not prepared` : undefined} />
             <Stat label="Total net payroll" value={fmtMoney(ws.summary.total_net, currency)} sub={`${ws.summary.approved} approved`} />
-            <Stat label="Paid · outstanding" value={fmtMoney(ws.summary.paid, currency)} sub={`${fmtMoney(ws.summary.outstanding, currency)} outstanding`} />
+            <Stat
+              label="Paid"
+              value={fmtMoney(ws.summary.paid, currency)}
+              sub={ws.summary.outstanding > 0 ? `${fmtMoney(ws.summary.outstanding, currency)} still to pay` : 'Nothing outstanding'}
+            />
             <Stat
               label="Needs a look"
               value={String(ws.summary.needs_attention)}
@@ -288,15 +293,40 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
           {selected.size > 0 && (
             <section aria-label="Bulk actions" className="sticky top-2 z-10 flex flex-wrap items-center gap-2 rounded-[14px] border border-brand-blue/30 bg-surface p-3 shadow-card">
               <span className="text-sm font-semibold text-ink">{selected.size} selected</span>
-              {perms?.prepare && <BulkBtn onClick={() => setBulk('prepare')}>Prepare / recalculate</BulkBtn>}
-              {perms?.prepare && <BulkBtn onClick={() => setBulk('adjust')}>Adjust</BulkBtn>}
-              {perms?.prepare && reviewMode && <BulkBtn onClick={() => setBulk('review')}>Send for review</BulkBtn>}
-              {perms?.approve && <BulkBtn onClick={() => setBulk('approve')}>Approve</BulkBtn>}
-              {perms?.pay && <BulkBtn onClick={() => setBulk('export')}>Export payment list</BulkBtn>}
-              {perms?.pay && <BulkBtn onClick={() => setBulk('pay')}>Record payment</BulkBtn>}
-              {perms?.approve && <BulkBtn onClick={() => setBulk('publish')}>Publish payslips</BulkBtn>}
-              <BulkBtn onClick={() => setBulk('download')}>Download payslips</BulkBtn>
-              {perms?.prepare && <BulkBtn onClick={() => setBulk('return')}>Return to draft</BulkBtn>}
+              {/* Only the actions that apply to the selected people; the next step is the main button. */}
+              {(() => {
+                const can = (a: BulkAction) => partitionForAction(selectedRows, a, { reviewMode }).included.length > 0
+                const steps: { a: BulkAction; label: string; allowed: boolean | undefined }[] = [
+                  { a: 'prepare', label: 'Prepare / recalculate', allowed: perms?.prepare },
+                  { a: 'review', label: 'Send for review', allowed: perms?.prepare && reviewMode },
+                  { a: 'approve', label: 'Approve', allowed: perms?.approve },
+                  { a: 'pay', label: 'Record payment', allowed: perms?.pay },
+                  { a: 'publish', label: 'Publish payslips', allowed: perms?.approve },
+                ]
+                const extras: { a: BulkAction; label: string; allowed: boolean | undefined }[] = [
+                  { a: 'adjust', label: 'Adjust', allowed: perms?.prepare },
+                  { a: 'export', label: 'Export payment list', allowed: perms?.pay },
+                  { a: 'download', label: 'Download payslips', allowed: true },
+                  { a: 'return', label: 'Return to draft', allowed: perms?.prepare },
+                ]
+                const next = steps.find((x) => x.allowed && can(x.a))
+                return (
+                  <>
+                    {next && (
+                      <button type="button" className="btn-primary" onClick={() => setBulk(next.a)}>
+                        {next.label}
+                      </button>
+                    )}
+                    {[...steps.filter((x) => x !== next), ...extras]
+                      .filter((x) => x.allowed && can(x.a))
+                      .map((x) => (
+                        <BulkBtn key={x.a} onClick={() => setBulk(x.a)}>
+                          {x.label}
+                        </BulkBtn>
+                      ))}
+                  </>
+                )
+              })()}
               <button className="btn-ghost ml-auto" onClick={() => setSelected(new Set())}>
                 Clear
               </button>

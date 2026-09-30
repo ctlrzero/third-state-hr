@@ -25,6 +25,8 @@ export interface Readiness {
   blocking: number
   warnings: number
   ready: boolean
+  /** Every current payslip published — the month is finished. */
+  done?: boolean
   items: ReadinessItem[]
 }
 
@@ -60,14 +62,17 @@ export default function ReadinessPanel({ periodId, refreshKey }: { periodId: str
 
   const days = data.days_to_pay_day
   const when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : days > 1 ? `in ${days} days` : `${-days} day${days === -1 ? '' : 's'} ago`
-  const done = data.records > 0 && data.approved === data.records && data.ready
+  const finished = !!data.done
+  const done = finished || (data.records > 0 && data.approved === data.records && data.ready)
   const tone = data.blocking ? 'border-brand-risk/30 bg-brand-risk-soft' : data.warnings ? 'border-brand-warning/40 bg-brand-warning-soft' : 'border-border bg-surface'
 
   return (
     <section aria-label="Payroll readiness" className={`rounded-[14px] border p-4 ${tone}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink">
-          {done
+          {finished
+            ? 'This month is finished'
+            : done
             ? 'Everything approved'
             : data.blocking
               ? `${data.blocking} to fix before you can approve`
@@ -80,7 +85,9 @@ export default function ReadinessPanel({ periodId, refreshKey }: { periodId: str
         </p>
       </div>
       {done ? (
-        <p className="mt-1 text-sm text-ink">Everything approved. Next: record payment, then publish payslips.</p>
+        <p className="mt-1 text-sm text-ink">
+          {finished ? 'Everyone is paid and payslips are published. Nothing to do.' : 'Everything approved. Next: record payment, then publish payslips.'}
+        </p>
       ) : (
         !data.blocking && <p className="mt-1 text-sm text-ink">Next: tick ‘Select all’ in the table below, then press Approve.</p>
       )}
