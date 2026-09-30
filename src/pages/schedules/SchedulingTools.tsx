@@ -1223,6 +1223,8 @@ export function FindCoverSheet({
   const [picked, setPicked] = useState<CoverCandidate | null>(null)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  // Published shifts can also be offered: colleagues accept in their portal (P2-1).
+  const [mode, setMode] = useState<'assign' | 'offer'>('assign')
 
   // Every change to a published shift goes through adjust_published_shift with a
   // reason (the database refuses direct edits, P0-6); drafts are assigned directly.
@@ -1270,7 +1272,7 @@ export function FindCoverSheet({
       }
       onClose={onClose}
       footer={
-        picked ? (
+        mode === 'assign' && picked ? (
           <div className="space-y-3">
             {needsReason && (
               <label className="block">
@@ -1297,6 +1299,27 @@ export function FindCoverSheet({
       }
     >
       <ErrorBox msg={error} />
+      {shift.is_published && data && data.candidates.length > 0 && (
+        <div className="mb-4 flex gap-1 rounded-full bg-surface-alt p-1 text-sm" role="tablist" aria-label="How to cover">
+          {(
+            [
+              ['assign', 'Assign now'],
+              ['offer', 'Send offers'],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              role="tab"
+              aria-selected={mode === k}
+              onClick={() => setMode(k)}
+              className={`press flex-1 rounded-full px-3 py-1.5 font-medium ${mode === k ? 'bg-surface text-ink shadow-card' : 'text-muted'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {mode === 'offer' && data && <OfferPanel shift={shift} candidates={data.candidates} onSent={onAssigned} />}
       {!data && !error && (
         <div className="space-y-2">
           {[0, 1, 2].map((i) => (
@@ -1304,7 +1327,7 @@ export function FindCoverSheet({
           ))}
         </div>
       )}
-      {data && (
+      {mode === 'assign' && data && (
         <div className="space-y-5">
           <p className="text-xs text-muted">
             Only people who pass every rule are listed: right role, not on leave or a day off, available, no overlapping shift, and within 48 hours and
@@ -1367,6 +1390,150 @@ export function FindCoverSheet({
         </div>
       )}
     </Sheet>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Offers (P2-1): the cover-assistant Edge Function ranks eligible people and drafts
+// a message (Claude when configured, rules otherwise). The manager edits and sends;
+// the first person to accept in their portal gets the shift.
+// ---------------------------------------------------------------------------
+
+interface AssistantResult {
+  suggestion_id: string
+  ai: boolean
+  message: string
+  ranking: { employee_id: string; name: string; reason: string }[]
+}
+
+function OfferPanel({ shift, candidates, onSent }: { shift: CoverShift; candidates: CoverCandidate[]; onSent: (message: string) => void }) {
+  const [draft, setDraft] = useState<AssistantResult | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [chosen, setChosen] = useState<Set<string>>(new Set())
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [skipped, setSkipped] = useState<{ name?: string; reason: string }[]>([])
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    supabase.functions.invoke<AssistantResult>('cover-assistant', { body: { shift_id: shift.id } }).then(({ data, error: e }) => {
+      if (!alive) return
+      setLoading(false)
+      if (e || !data) {
+        // The assistant is optional: fall back to the rule order and a plain message.
+        setError('The assistant is unavailable — you can still pick people and write the message.')
+        setChosen(new Set(candidates.slice(0, 3).map((c) => c.employee_id)))
+        setMessage(
+          `Hi, can you cover a shift on ${fmtDayShort(shift.shift_date)}, ${fmtTime(shift.start_time)}–${fmtTime(shift.end_time)}? Please accept or decline in the HR app.`
+        )
+        return
+      }
+      setDraft(data)
+      setChosen(new Set(data.ranking.map((r) => r.employee_id)))
+      setMessage(data.message)
+    })
+    return () => {
+      alive = false
+    }
+  }, [shift.id, shift.shift_date, shift.start_time, shift.end_time, candidates])
+
+  async function send() {
+    setBusy(true)
+    setError(null)
+    const { data, error: e } = await supabase.rpc('send_shift_offer', {
+      p_shift_id: shift.id,
+      p_employee_ids: [...chosen],
+      p_message: message.trim(),
+      p_suggestion_id: draft?.suggestion_id ?? null,
+    })
+    setBusy(false)
+    if (e) return setError(errText(e))
+    const res = data as { sent: { name: string }[]; skipped: { name?: string; reason: string }[] }
+    if (!res.sent.length) {
+      setSkipped(res.skipped)
+      return setError('Nobody could be offered this shift.')
+    }
+    onSent(
+      `Offer sent to ${res.sent.map((x) => x.name).join(', ')}. The first to accept gets the shift — you'll be notified.` +
+        (res.skipped.length ? ` Not sent to: ${res.skipped.map((x) => `${x.name ?? 'someone'} (${x.reason})`).join(', ')}.` : '')
+    )
+  }
+
+  const reasons = new Map((draft?.ranking ?? []).map((r) => [r.employee_id, r.reason]))
+  const ordered = [
+    ...(draft?.ranking ?? []).map((r) => candidates.find((c) => c.employee_id === r.employee_id)).filter((c): c is CoverCandidate => !!c),
+    ...candidates.filter((c) => !reasons.has(c.employee_id)),
+  ]
+
+  if (loading) {
+    return (
+      <div className="space-y-2" aria-busy="true">
+        <p className="text-xs text-muted">Ranking who to ask and drafting a message…</p>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="h-12 animate-pulse rounded-xl bg-surface-alt" />
+        ))}
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <ErrorBox msg={error} />
+      {draft && (
+        <p className="text-xs text-muted">
+          {draft.ai ? 'Suggested by the assistant — ' : 'Suggested by the scheduling rules — '}
+          check who to ask and edit the message before sending. Nothing is sent until you press Send.
+        </p>
+      )}
+      <ul className="space-y-2" aria-label="Who to ask">
+        {ordered.map((c) => {
+          const on = chosen.has(c.employee_id)
+          return (
+            <li key={c.employee_id}>
+              <label className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 ${on ? 'border-brand-blue bg-brand-blue-soft/50' : 'border-border'}`}>
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={on}
+                  onChange={() => {
+                    const next = new Set(chosen)
+                    if (on) next.delete(c.employee_id)
+                    else next.add(c.employee_id)
+                    setChosen(next)
+                  }}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-ink">{c.name}</span>
+                  <span className="block text-xs text-muted">
+                    {reasons.get(c.employee_id) ?? `${c.position ?? 'No role set'} · ${c.hours_this_week} h this week`}
+                  </span>
+                </span>
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+      <label className="block">
+        <span className="label">Message</span>
+        <textarea className="input" rows={4} maxLength={1000} value={message} onChange={(e) => setMessage(e.target.value)} />
+      </label>
+      {skipped.length > 0 && (
+        <ul className="text-xs text-muted">
+          {skipped.map((x, i) => (
+            <li key={i}>
+              {x.name ?? 'Someone'}: {x.reason}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex justify-end">
+        <button className="btn-primary press" disabled={busy || chosen.size === 0 || !message.trim()} onClick={send}>
+          {busy ? 'Sending…' : `Send offer to ${chosen.size}`}
+        </button>
+      </div>
+    </div>
   )
 }
 

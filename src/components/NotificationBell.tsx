@@ -27,6 +27,7 @@ const TARGET_ROUTE: Record<string, string> = {
   shifts: '/schedules',
   employees: '/employees',
   payroll_periods: '/payroll',
+  shift_offers: '/schedules',
 }
 
 function timeAgo(iso: string): string {
@@ -107,7 +108,7 @@ export function NotificationBell() {
     const route = n.target_type ? TARGET_ROUTE[n.target_type] : undefined
     // A shift notice opens that shift (e.g. "can't come in" → Find cover).
     // "Can't come in" opens the Today board, where cover is found (managers and supervisors).
-    const target = n.notification_type === 'absence_reported'
+    const target = n.notification_type === 'absence_reported' || n.notification_type === 'no_clock_in'
       ? '/today'
       : route && n.target_id && n.target_type === 'shifts'
         ? `${route}?shift=${n.target_id}`

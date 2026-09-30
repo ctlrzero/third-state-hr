@@ -55,7 +55,7 @@ export default function Notifications() {
     const route = n.target_type ? NOTIFICATION_TARGET_ROUTE[n.target_type] : undefined
     // A shift notice opens that shift (e.g. "can't come in" → Find cover).
     // "Can't come in" opens the Today board, where cover is found (managers and supervisors).
-    const target = n.notification_type === 'absence_reported'
+    const target = n.notification_type === 'absence_reported' || n.notification_type === 'no_clock_in'
       ? '/today'
       : route && n.target_id && n.target_type === 'shifts'
         ? `${route}?shift=${n.target_id}`

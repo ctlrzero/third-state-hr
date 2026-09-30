@@ -1341,6 +1341,7 @@ function MySchedule() {
   const [absenceFor, setAbsenceFor] = useState<string | null>(null)
   const [myLeave, setMyLeave] = useState<{ start_date: string; end_date: string; status: string }[]>([])
   const [absenceTypes, setAbsenceTypes] = useState<{ id: string; name: string }[]>([])
+  const [offers, setOffers] = useState<ShiftOffer[]>([])
 
   async function load() {
     setLoading(true)
@@ -1389,6 +1390,8 @@ function MySchedule() {
       supabase.from('leave_types').select('id, name').in('name', ['Sick Leave', 'Annual Leave']).order('name', { ascending: false }),
     ])
     setMyLeave((leaveRes.data ?? []) as { start_date: string; end_date: string; status: string }[])
+    const { data: offerRows } = await supabase.rpc('get_my_shift_offers')
+    setOffers((offerRows ?? []) as ShiftOffer[])
     setAbsenceTypes((typesRes.data ?? []) as { id: string; name: string }[])
 
     if (shiftsRes.error) setError(shiftsRes.error.message)
@@ -1421,6 +1424,21 @@ function MySchedule() {
       return
     }
     setNotice('Swap request posted — a colleague can claim it, then a manager approves.')
+    load()
+  }
+
+  async function handleOffer(offerId: string, accept: boolean) {
+    setBusyId(offerId)
+    setError(null)
+    const { data, error: rpcError } = await supabase.rpc('respond_shift_offer', { p_offer_id: offerId, p_accept: accept })
+    setBusyId(null)
+    if (rpcError) {
+      setError(rpcError.message)
+      load()
+      return
+    }
+    const res = data as { ok: boolean; status: string; message?: string }
+    setNotice(res.ok ? (accept ? 'Thanks — the shift is yours. It’s in your upcoming shifts.' : 'Declined. Your manager has been told.') : (res.message ?? 'This offer is closed.'))
     load()
   }
 
@@ -1527,6 +1545,41 @@ function MySchedule() {
             Dismiss
           </button>
         </p>
+      )}
+
+      {offers.length > 0 && (
+        <section className="rounded-[14px] border border-brand-blue/30 bg-brand-blue-soft/40 p-4 shadow-card" aria-label="Shift offers">
+          <h2 className="mb-3 text-sm font-semibold text-ink">
+            Can you cover? · {offers.length}
+          </h2>
+          <ul className="space-y-2">
+            {offers.map((o) => (
+              <li key={o.offer_id} className="rounded-lg bg-surface px-3 py-2 text-sm">
+                <p className="font-medium text-ink">
+                  {fmtDate(o.shift_date)} · {fmtTime(o.start_time)}–{fmtTime(o.end_time)} · {o.location}
+                  {o.position ? ` · ${o.position}` : ''}
+                </p>
+                {o.message && <p className="mt-0.5 text-muted">{o.message}</p>}
+                <div className="mt-2 flex justify-end gap-2">
+                  <button
+                    onClick={() => handleOffer(o.offer_id, false)}
+                    disabled={busyId === o.offer_id}
+                    className="rounded-full border border-border px-3 py-1 text-xs font-medium text-ink disabled:opacity-60"
+                  >
+                    Decline
+                  </button>
+                  <button
+                    onClick={() => handleOffer(o.offer_id, true)}
+                    disabled={busyId === o.offer_id}
+                    className="rounded-full bg-brand-blue px-3 py-1 text-xs font-medium text-white disabled:opacity-60"
+                  >
+                    {busyId === o.offer_id ? 'Saving…' : 'Accept shift'}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <Link to="/clock" className="card flex items-center justify-between gap-3 transition hover:border-brand-blue/40">
@@ -2058,4 +2111,15 @@ function CantComeInForm({
       </div>
     </form>
   )
+}
+
+interface ShiftOffer {
+  offer_id: string
+  shift_id: string
+  shift_date: string
+  start_time: string
+  end_time: string
+  location: string
+  position: string | null
+  message: string | null
 }
