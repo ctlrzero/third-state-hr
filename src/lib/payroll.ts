@@ -221,7 +221,17 @@ export function detailToPdfData(d: RecordDetail, company: { name: string; curren
       correction_reason: d.record.correction_reason,
       superseded: false,
     },
-    period: { start: d.period.period_start, end: d.period.period_end, label: d.period.label, kind: d.period.kind },
+    period: {
+      // The salary month (not the one-day span of a one-off run) and the pay date, same as staff see.
+      start: d.period.for_month ?? d.period.period_start,
+      end: d.period.for_month
+        ? new Date(Date.UTC(Number(d.period.for_month.slice(0, 4)), Number(d.period.for_month.slice(5, 7)), 0)).toISOString().slice(0, 10)
+        : d.period.period_end,
+      label: d.period.label,
+      kind: d.period.kind,
+      title: periodLabel({ period_start: d.period.for_month ?? d.period.period_start, kind: 'regular' }),
+      pay_date: d.period.pay_date ?? null,
+    },
     company: { name: company.name, currency: company.currency, note: null },
     employee: { name: d.employee.name, position: d.row.position, branch: d.row.branch, join_date: d.employee.join_date },
     lines: d.lines,

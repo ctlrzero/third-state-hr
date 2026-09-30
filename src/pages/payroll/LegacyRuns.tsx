@@ -29,7 +29,7 @@ export default function LegacyRuns({ entityId }: { entityId: string }) {
   if (runs.length === 0) return null
   return (
     <details className="card">
-      <summary className="cursor-pointer text-sm font-semibold text-ink">Earlier payroll runs (before this version, read-only)</summary>
+      <summary className="cursor-pointer text-sm font-semibold text-ink">Earlier payroll runs (history — payroll is now run on this screen)</summary>
       <ul className="mt-3 space-y-3 text-sm">
         {runs.map((r) => (
           <li key={r.id}>

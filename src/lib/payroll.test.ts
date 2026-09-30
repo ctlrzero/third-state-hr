@@ -36,6 +36,10 @@ describe('payroll helpers', () => {
   it('labels months and off-cycle runs', () => {
     expect(periodLabel({ period_start: '2026-09-01' })).toBe('September 2026')
     expect(periodLabel({ period_start: '2026-09-20', kind: 'off_cycle', label: 'Final settlement' })).toBe('Final settlement')
+    // A one-off run with a salary month shows the month first, then the run's name.
+    expect(periodLabel({ period_start: '2026-09-01', kind: 'off_cycle', label: 'Jordan September salary', for_month: '2026-09-01' })).toBe(
+      'September 2026 · Jordan September salary'
+    )
     expect(monthStart('2026-09')).toBe('2026-09-01')
   })
 

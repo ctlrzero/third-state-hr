@@ -20,10 +20,6 @@ export const setEmployeeCompensation = (employeeId: string, v: ValidCompensation
     p_reason: v.reason,
   })
 
-/** Adds a 0-hour timesheet row for every active employee missing from a draft run; returns how many were added. */
-export const addEmployeesToPayrollRun = (payrollRunId: string) =>
-  callRpc<number>('add_employees_to_payroll_run', { p_payroll_run_id: payrollRunId })
-
 /** Pay rates for a set of employees (RLS: owner / own-entity admin only; others get no rows). */
 export async function listPayRates(employeeIds: string[]): Promise<ApiResult<{ employee_id: string; pay_rate: number | null }[]>> {
   if (employeeIds.length === 0) return { data: [], error: null }
