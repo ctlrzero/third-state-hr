@@ -50,42 +50,37 @@ Notes for writing new checks:
 `access_tests.sql` and `e2e_journeys.sql` one level up are superseded. They depend on UAT personas
 that no longer exist in production.
 
-## Latest results (2026-09-30, re-run after the payroll schedule / legacy-retirement / double-pay-guard migrations, project yclhzwghzrohusqxfasq)
+## Latest results (2026-09-30, project yclhzwghzrohusqxfasq, after migration restore_open_swap_scope_grant)
 
 | File | PASS | FAIL |
 |---|---|---|
-| 01_roles_access.sql | 63 | 8 |
+| 01_roles_access.sql | 72 | 0 |
 | 02_leave_flow.sql | 28 | 0 |
-| 03_scheduling.sql | 56 | 2 |
+| 03_scheduling.sql | 58 | 0 |
 | 04_attendance_corrections.sql | 22 | 0 |
 | 05_documents.sql | 32 | 0 |
 | 06_transfer_employee.sql | 21 | 0 |
 | 07_payroll_read_access.sql | 37 | 0 |
 | 08_payroll_workflow.sql | 37 | 0 |
-| **Total** | **296** | **10** |
+| **Total** | **307** | **0** |
 
-All 10 failures are one open bug (below). 07 still passes on empty periods (`get_payroll_readiness` / `get_payroll_changes` permission checks unchanged).
+### Bugs this suite found (all fixed; the checks stay as regression guards)
 
-### Open bug
-
-**`authenticated` cannot execute `_open_swap_in_staff_scope(uuid)`, which the `shifts_select` RLS policy calls.**
-Every read of `public.shifts` through the API role fails with `permission denied for function _open_swap_in_staff_scope`, for every role (owner through staff). The function's ACL is postgres and service_role only; the other policy helpers (`_staff_can_claim_at`, `my_role`, ...) are executable by `authenticated`. It passed in the earlier runs today, so the EXECUTE grant was removed since then (no migration with that purpose is in the recent list, so it may have been a direct grant change). Failing checks:
-- 01: `rls policies only call functions the API role can execute`, `rls <role> reading shifts raised an error` for owner, entity_admin, location_manager, shift_supervisor, staff and revoked, and `rls staff reading shifts raised an error` (8 checks)
-- 03: `shift: branch manager can read shifts through RLS`, `adjust: direct edit of a published shift without reason refused` (its update reads the shift through RLS first) (2 checks)
-
-The security-definer RPCs (swaps, offers, publish, adjust) still work because they run as the function owner, so only direct table reads and writes from the app fail. The fix is a grant, for example `GRANT EXECUTE ON FUNCTION public._open_swap_in_staff_scope(uuid) TO authenticated;` (not applied here).
-
-### Bugs found earlier (all fixed; the checks stay in the suite as regression guards)
-
-1. **FIXED (migration `no_role_guard_hotfix_3`): revoked or no-profile logins passed permission checks (NULL-role bug).**
+1. **FIXED (migration `restore_open_swap_scope_grant`): `authenticated` could not execute `_open_swap_in_staff_scope(uuid)`,
+   which the `shifts_select` RLS policy calls.** Every read of `public.shifts` through the API role failed with
+   `permission denied for function _open_swap_in_staff_scope`. Guarded by: 01 `rls policies only call functions the API role can execute`
+   (a catalog check that would flag any policy helper missing EXECUTE), the per-role `rls <role> sees N/N shifts` checks, and
+   03 `shift: branch manager can read shifts through RLS`.
+2. **FIXED (migration `no_role_guard_hotfix_3`): revoked or no-profile logins passed permission checks (NULL-role bug).**
    The functions computed `v_role := my_role()` and then ran `if not (v_role = 'owner' or ...) then raise`.
-   `my_role()` is NULL for a revoked login (`is_active = false`) or a login with no profile. The condition
-   was then NULL, so `if not NULL` did not raise. The hotfix added the no-role guard to 44 functions.
-   Checks: 03 `adjust: revoked manager ...` / `adjust: login without profile ...` (4), 04 `att: revoked manager refused` and
+   `my_role()` is NULL for a revoked login (`is_active = false`) or a login with no profile, so the condition was NULL
+   and `if not NULL` did not raise. The hotfix added the no-role guard to 44 functions.
+   Guarded by: 03 `adjust: revoked manager ...` / `adjust: login without profile ...` (4), 04 `att: revoked manager refused` and
    `att: login without any profile refused`, 05 `doc: revoked user ...` / `doc: login without profile cannot stage ...`.
-2. **FIXED (migration `swap_and_notice_fixes`): 03 `swap: cannot request swap on an unpublished (draft) shift`.**
-   `request_shift_swap` now refuses unpublished shifts.
-3. **FIXED (migration `swap_and_notice_fixes`): 02 `leave: revoked (inactive) manager not notified of new request`.**
-   Leave and swap notices to managers now go only to active managers.
+3. **FIXED (migration `swap_and_notice_fixes`): `request_shift_swap` accepted unpublished shifts.**
+   Guarded by: 03 `swap: cannot request swap on an unpublished (draft) shift`.
+4. **FIXED (migration `swap_and_notice_fixes`): revoked managers still got leave / swap notices.**
+   Guarded by: 02 `leave: revoked (inactive) manager not notified of new request`.
 
-History: first run today 258 PASS / 10 FAIL (the three bugs above); second run 268 PASS / 0 FAIL (before the payroll migrations and before suite 08 existed).
+History on 2026-09-30: first run 258 PASS / 10 FAIL (bugs 2 to 4); second run 268 / 0; after the payroll migrations and suite 08,
+296 PASS / 10 FAIL (bug 1); after the grant fix, 307 / 0.
