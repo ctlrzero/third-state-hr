@@ -320,3 +320,11 @@ the DB (see `pg_get_function_arguments`). Interviewer secrecy rules unchanged.
   requisition created by uat.owner — reassign `created_by` first).
 - UAT logins: the 8 `uat.*@example.com` users, password `TSHR-uat-2026!`.
 - Negative-access suite: `npm run test:access` (API) and `supabase/tests/access_tests.sql` (rolled-back SQL mirror).
+
+
+## Scheduled jobs (pg_cron, UTC)
+
+| Job | Schedule | Runs | Notes |
+|---|---|---|---|
+| `document-expiry-t30-check` | `0 2 * * *` (06:00 Dubai) | `run_document_expiry_workflow_check()` | Documents expiring within 30 days → workflow rules. |
+| `daily-hr-reminders` | `0 2 * * *` (06:00 Dubai) | `run_daily_hr_reminders()` | Three independent steps: `onboarding_send_reminders()` (expires invitations, reminds new starters, overdue onboarding tasks, probation reviews), `_imm_reminders(today)` (overdue visa / work-permit steps), `_off_reminders(today)` (overdue offboarding tasks, final settlement due). A failing step is rolled back alone and recorded; the others still run. At most once per Dubai day (`p_force => true` re-runs; notifications are de-duplicated by per-day keys). Each run is logged in `system_job_runs` (owner-readable). System only: no execute grant for signed-in users. |
