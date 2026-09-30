@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase'
 import { sendInvite } from '../../lib/api/admin'
 import { inviteOutcomeMessage } from '../../lib/authFlows'
 import {
+  activateWithOpenItems,
   approveAndActivate,
   cancelOnboarding,
   closeOnboarding,
@@ -48,6 +49,7 @@ import { OnboardingStatusBadge, ReadinessPanel, ReasonModal, Section, TaskStatus
 import { EMPLOYMENT_TYPES, loadPickers, type Pickers } from './pickers'
 import ImmigrationCard from './ImmigrationCard'
 import StartOffboarding from '../offboarding/StartOffboarding'
+import { useAuth } from '../../auth/AuthContext'
 
 type Perms = Workspace['permissions']
 
@@ -103,7 +105,8 @@ export default function WorkspaceDrawer({
   const [notice, setNotice] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [prompt, setPrompt] = useState<Prompt>(null)
-  const [panel, setPanel] = useState<'setup' | 'pay' | 'exception' | 'dayone' | 'activate' | 'contract' | null>(null)
+  const { profile } = useAuth()
+  const [panel, setPanel] = useState<'setup' | 'pay' | 'exception' | 'dayone' | 'activate' | 'activate_anyway' | 'contract' | null>(null)
   const [offboard, setOffboard] = useState<{ type: 'no_show' | 'probation_not_confirmed'; exceptionId: string } | null>(null)
   const navigate = useNavigate()
 
@@ -151,6 +154,10 @@ export default function WorkspaceDrawer({
   const p = ws?.permissions
   const pre = status ? isPreActivation(status) : false
   const post = status ? isPostStart(status) : false
+  // Owner / company admin may activate before onboarding is complete; the open items stay tracked here.
+  const canOverride = profile?.role === 'owner' || profile?.role === 'entity_admin'
+  const openAfterActivation =
+    !!ws?.instance.activated_with_open_items && !ws.instance.open_items_cleared_at && !pre && (ws?.readiness.blocking_count ?? 0) > 0
   const phases = useMemo(() => {
     if (!ws) return []
     return (['pre_activation', 'day_one', 'initial_period'] as const)
@@ -245,6 +252,11 @@ export default function WorkspaceDrawer({
                 Approve and activate
               </button>
             )}
+            {pre && canOverride && !ws.readiness.ready && (
+              <button className="btn-secondary" disabled={busy} onClick={() => setPanel('activate_anyway')}>
+                Activate anyway
+              </button>
+            )}
             {pre && p?.manage && !ws.employee.has_login && (
               <button className="btn-secondary" disabled={busy} onClick={() => (ws.invitation && ws.invitation.status !== 'revoked' ? setPrompt({ kind: 'reissue' }) : invite(false))}>
                 {ws.invitation ? (ws.invitation.status === 'expired' ? 'Reissue invitation' : 'Resend invitation') : 'Invite to portal'}
@@ -277,7 +289,13 @@ export default function WorkspaceDrawer({
             )}
           </div>
 
-          {pre && <ReadinessPanel readiness={ws.readiness} onTask={(id) => document.getElementById(`task-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />}
+          {openAfterActivation && (
+            <Alert tone="warning">
+              Activated before onboarding was complete — {ws.readiness.blocking_count} item{ws.readiness.blocking_count === 1 ? '' : 's'} still
+              open. The employee is reminded daily and HR every Monday until they are done.
+            </Alert>
+          )}
+          {(pre || openAfterActivation) && <ReadinessPanel readiness={ws.readiness} onTask={(id) => document.getElementById(`task-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })} />}
           {ws.instance.end_reason && <Alert tone="info">Ended: {ws.instance.end_reason}</Alert>}
 
           {/* ------------------------------------------------------- setup */}
@@ -700,6 +718,7 @@ export default function WorkspaceDrawer({
           {panel === 'exception' && <ExceptionEditor ws={ws} onClose={() => setPanel(null)} act={act} />}
           {panel === 'dayone' && <DayOneEditor ws={ws} onClose={() => setPanel(null)} act={act} />}
           {panel === 'activate' && <ActivateDialog ws={ws} onClose={() => setPanel(null)} act={act} />}
+          {panel === 'activate_anyway' && <ActivateAnywayDialog ws={ws} onClose={() => setPanel(null)} act={act} />}
           {panel === 'contract' && <ContractUpload ws={ws} onClose={() => setPanel(null)} act={act} />}
           {offboard && (
             <StartOffboarding
@@ -1115,6 +1134,58 @@ function ActivateDialog({ ws, onClose, act }: { ws: Workspace; onClose: () => vo
       <label className="block">
         <span className="label">Note (optional)</span>
         <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} />
+      </label>
+      {err && <p className="text-xs font-medium text-brand-risk-text">{err}</p>}
+    </Modal>
+  )
+}
+
+// ------------------------------------------------ activate with open items
+function ActivateAnywayDialog({ ws, onClose, act }: { ws: Workspace; onClose: () => void; act: Act }) {
+  const [reason, setReason] = useState('')
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  async function go() {
+    if (!reason.trim()) return setErr('Give a reason.')
+    setBusy(true)
+    const e = await act(
+      () => activateWithOpenItems(ws.instance.id, ws.instance.row_version, reason.trim()),
+      `${ws.employee.name} is now active. The open onboarding items stay on this page until they are done.`
+    )
+    setBusy(false)
+    if (e) setErr(e)
+    else onClose()
+  }
+  const blockers = ws.readiness.blockers
+  return (
+    <Modal
+      open
+      title={`Activate ${ws.employee.name} before onboarding is complete?`}
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn-primary" onClick={go} disabled={busy || !reason.trim()}>
+            {busy ? 'Activating…' : 'Activate anyway'}
+          </button>
+        </>
+      }
+    >
+      <p>They become active from {fmtDate(ws.instance.proposed_start_date)} and can be scheduled and clock in. These stay open:</p>
+      <ul className="max-h-48 list-disc space-y-1 overflow-y-auto pl-5 text-sm">
+        {blockers.map((b, n) => (
+          <li key={n}>{b.message}</li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted">
+        Starting pay is applied only once payroll has approved it — until then payroll shows “No pay set”. The employee is reminded daily and HR every
+        Monday until everything is done. Home branch, start date and duplicate checks still apply.
+      </p>
+      <label className="block">
+        <span className="label">Reason *</span>
+        <input className="input" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. starts tomorrow, visa in process" />
       </label>
       {err && <p className="text-xs font-medium text-brand-risk-text">{err}</p>}
     </Modal>

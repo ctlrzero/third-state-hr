@@ -76,6 +76,9 @@ export default function MyOnboarding() {
   const byKind = (k: OnboardingTask['kind']) => tasks.filter((t) => t.kind === k && t.owner_role === 'employee' && t.phase === 'pre_activation')
   const outstanding = employeeOutstanding(tasks)
   const changes = tasks.filter((t) => t.status === 'changes_required' && t.owner_role === 'employee')
+  // Activated before onboarding was complete: keep the joining steps on screen until they are done.
+  const catchUp = post && (outstanding.length > 0 || changes.some((t) => t.phase === 'pre_activation'))
+  const showSteps = pre || catchUp
   const firstName = (data.profile.preferred_name || data.profile.full_name).split(' ')[0]
   const start = data.actual_start_date ?? data.proposed_start_date
 
@@ -119,9 +122,16 @@ export default function MyOnboarding() {
         </section>
       )}
 
+      {catchUp && (
+        <Alert tone="warning">
+          You&rsquo;re already working, but {outstanding.length || changes.length} joining step
+          {(outstanding.length || changes.length) === 1 ? ' is' : 's are'} still open. Please finish them below.
+        </Alert>
+      )}
+
       {post && <DayOneCard data={data} onDone={say} onError={setError} />}
 
-      {pre && (
+      {showSteps && (
         <>
           <ProfileStep data={data} onDone={say} onError={setError} />
           {byKind('document').length > 0 && <DocumentsStep data={data} tasks={byKind('document')} onDone={say} onError={setError} />}

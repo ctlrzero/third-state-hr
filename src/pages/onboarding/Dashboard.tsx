@@ -26,6 +26,7 @@ const LIST_TABS: { key: ListTab; label: string }[] = [
   { key: 'blocked', label: 'Blocked' },
   { key: 'ready', label: 'Ready to activate' },
   { key: 'in_progress', label: 'Started' },
+  { key: 'incomplete', label: 'Working, onboarding not finished' },
   { key: 'completed', label: 'Completed' },
   { key: 'cancelled', label: 'Cancelled' },
 ]
@@ -100,7 +101,11 @@ export default function OnboardingDashboard({ payrollOnly = false }: { payrollOn
         key: 'blocking',
         header: 'Outstanding',
         render: (r) =>
-          r.blocking_count === 0 ? (
+          r.activated_with_open_items && (r.open_items ?? 0) > 0 ? (
+            <span className="text-brand-warning-solid">
+              Working · {r.open_items} onboarding item{r.open_items === 1 ? '' : 's'} open
+            </span>
+          ) : r.blocking_count === 0 ? (
             <span className="text-brand-action-text">Nothing blocking</span>
           ) : (
             <span>
@@ -151,6 +156,16 @@ export default function OnboardingDashboard({ payrollOnly = false }: { payrollOn
       {isAdmin && hasTemplate === false && (
         <Alert tone="warning">
           No onboarding template yet. Open <strong>Setup</strong> and add the standard template before starting onboarding.
+        </Alert>
+      )}
+
+      {(summary?.activated_incomplete ?? 0) > 0 && (
+        <Alert tone="warning">
+          {summary!.activated_incomplete} staff {summary!.activated_incomplete === 1 ? 'is' : 'are'} working with onboarding not finished (activated
+          before documents or tasks were complete).{' '}
+          <button className="font-semibold underline" onClick={() => (setTop('pipeline'), setTab('incomplete'))}>
+            Show them
+          </button>
         </Alert>
       )}
 

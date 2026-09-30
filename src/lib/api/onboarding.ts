@@ -34,6 +34,7 @@ export type ListTab =
   | 'ready'
   | 'starting_soon'
   | 'in_progress'
+  | 'incomplete'
   | 'completed'
   | 'cancelled'
 
@@ -74,6 +75,9 @@ export interface OnboardingRow {
   overdue_tasks: number
   next_due: string | null
   last_activity: string
+  /** Activated before onboarding was complete (owner / company admin override). */
+  activated_with_open_items?: boolean
+  open_items?: number | null
 }
 
 export interface OnboardingTask {
@@ -170,6 +174,8 @@ export interface OnboardingInstance {
   completed_at: string | null
   end_reason: string | null
   started_at: string
+  activated_with_open_items?: boolean
+  open_items_cleared_at?: string | null
 }
 
 export interface Workspace {
@@ -205,6 +211,8 @@ export interface DashboardSummary {
   starting_7_days: number
   start_at_risk: number
   ready_for_activation: number
+  /** People activated with onboarding items still open. */
+  activated_incomplete?: number
   awaiting_review: number
   overdue_tasks: number
   open_exceptions: number
@@ -627,6 +635,14 @@ export interface ActivationResult {
   probation_end_date?: string | null
   post_start_tasks?: number
 }
+
+/** Owner / company admin: activate now; documents, tasks, pay review or contract may still be open. */
+export const activateWithOpenItems = (instanceId: string, expectedVersion: number, reason: string) =>
+  callRpc<ActivationResult & { open_items?: number }>('activate_employee_with_open_items', {
+    p_instance_id: instanceId,
+    p_expected_version: expectedVersion,
+    p_reason: reason,
+  })
 
 export const approveAndActivate = (instanceId: string, expectedVersion: number, reason: string | null) =>
   callRpc<ActivationResult>('approve_and_activate_employee', {
