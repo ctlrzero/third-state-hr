@@ -31,6 +31,7 @@ import {
 import { ShiftActionsSheet, StatusLegend, WeekBoard, type BoardPerson } from './schedules/WeekBoard'
 import { isoAddDays, mondayOf, shiftKind, thisMonday, weekLabel } from './schedules/week'
 import { useWorkPatternWarnings } from './schedules/useWorkPatternWarnings'
+import { isSelfServiceRole } from '../types/db'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -84,7 +85,7 @@ const fmtDate = (d: string) => fmtDayShort(d)
 // insert/update shifts or shift_swap_requests.
 export default function Schedules() {
   const { profile } = useAuth()
-  if (profile?.role === 'staff') return <MySchedule />
+  if (isSelfServiceRole(profile?.role)) return <MySchedule />
   return <ScheduleAdmin />
 }
 

@@ -157,6 +157,9 @@ insert into results select * from pg_temp.chk('revoked B: approve_leave_request'
 insert into results select * from pg_temp.chk('revoked B: grant_leave_balance', (select sub::text from personas where k='st_b'), 'deny', $$public.grant_leave_balance('a0000000-0000-4000-8000-000000000031', gen_random_uuid(), 5, 'x')$$);
 insert into results select * from pg_temp.chk('revoked B: publish_schedule_period', (select sub::text from personas where k='st_b'), 'deny', $$public.publish_schedule_period('a0000000-0000-4000-8000-000000000011', current_date, current_date + 7)$$);
 
+-- Shift supervisor (P1-7): covered by the self-contained supabase/tests/p1_7_supervisor_test.sql,
+-- which builds its own data (the UAT personas above have no supervisor).
+
 -- ---------------------------------------------------------------- anon
 insert into results
 select r.* from (values ('employees'), ('profiles'), ('shifts'), ('leave_requests'), ('attendance_records'), ('payslips'),

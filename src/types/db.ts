@@ -1,7 +1,12 @@
 // Hand-authored types reflecting the live TS-HR Supabase schema (project yclhzwghzrohusqxfasq).
 // Regenerate with `supabase gen types typescript` once the schema stabilises further.
 
-export type UserRole = 'owner' | 'entity_admin' | 'location_manager' | 'staff'
+export type UserRole = 'owner' | 'entity_admin' | 'location_manager' | 'shift_supervisor' | 'staff'
+
+/** Staff and shift supervisors use the employee self-service screens (own schedule, leave, payslips...). */
+export function isSelfServiceRole(role: UserRole | null | undefined): boolean {
+  return role === 'staff' || role === 'shift_supervisor'
+}
 
 export type EmployeeStatus = 'candidate' | 'pre_boarding' | 'active' | 'inactive'
 export type EmploymentType = 'full_time' | 'part_time' | 'on_call' | 'seasonal'

@@ -84,7 +84,9 @@ export default function Attendance() {
   const [periodEnd, setPeriodEnd] = useState(todayDubai())
   const [periodStart, setPeriodStart] = useState(addDays(todayDubai(), -6))
   const [rangeError, setRangeError] = useState<string | null>(null)
-  const [tab, setTab] = useState<TabKey>('overview')
+  // A shift supervisor sees exceptions and clock corrections only — never payable time.
+  const supervisor = profile?.role === 'shift_supervisor'
+  const [tab, setTab] = useState<TabKey>(supervisor ? 'exceptions' : 'overview')
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -112,7 +114,8 @@ export default function Attendance() {
     let q = supabase.from('locations').select('id, name').order('name')
     if (activeEntityId) q = q.eq('entity_id', activeEntityId)
     // A location manager can only act on their own branch (RPCs enforce it).
-    if (profile?.role === 'location_manager' && profile.location_id) q = q.eq('id', profile.location_id)
+    if ((profile?.role === 'location_manager' || profile?.role === 'shift_supervisor') && profile.location_id)
+      q = q.eq('id', profile.location_id)
     q.then(({ data }) => {
       const locs = (data ?? []) as { id: string; name: string }[]
       setLocations(locs)
@@ -130,7 +133,9 @@ export default function Attendance() {
     setLoading(true)
     setError(null)
     const [ov, ex] = await Promise.all([
-      getLocationAttendanceOverview(locationId, periodStart, periodEnd),
+      supervisor
+        ? Promise.resolve({ data: [] as OverviewRow[], error: null })
+        : getLocationAttendanceOverview(locationId, periodStart, periodEnd),
       getAttendanceExceptions(locationId, periodStart, periodEnd),
     ])
     if (ov.error || ex.error) setError(ov.error ?? ex.error)
@@ -149,7 +154,7 @@ export default function Attendance() {
       empIds.length
         ? supabase.from('employees').select('id, full_name, preferred_name').in('id', empIds)
         : Promise.resolve({ data: [] as { id: string; full_name: string; preferred_name: string | null }[] }),
-      getPayableRecords(ovRows.map((r) => r.shift_id)),
+      supervisor ? Promise.resolve({ data: [] as PayableRecord[] }) : getPayableRecords(ovRows.map((r) => r.shift_id)),
     ])
     setShifts(Object.fromEntries(((sh.data ?? []) as ShiftLite[]).map((s) => [s.id, s])))
     setRecords(Object.fromEntries(((rec.data ?? []) as RecordLite[]).map((r) => [r.id, r])))
@@ -161,10 +166,10 @@ export default function Attendance() {
     setNames(nm)
     const payRows = pay.data ?? []
     setPayables(payRows)
-    const adj = await getAdjustments(payRows.map((p) => p.id))
+    const adj = supervisor ? { data: [] as AttendanceAdjustment[] } : await getAdjustments(payRows.map((p) => p.id))
     setAdjustments(adj.data ?? [])
     setLoading(false)
-  }, [locationId, periodStart, periodEnd])
+  }, [locationId, periodStart, periodEnd, supervisor])
 
   useEffect(() => {
     load()
@@ -275,7 +280,11 @@ export default function Attendance() {
     <div className="space-y-5">
       <PageHeader
         title="Attendance"
-        description="Planned shifts vs actual clock-ins, exceptions and payable time."
+        description={
+          supervisor
+            ? 'Missed clock-outs, late clock-ins and clock-ins without a shift at your branch.'
+            : 'Planned shifts vs actual clock-ins, exceptions and payable time.'
+        }
         actions={
           profile?.role !== 'owner' ? (
             <Link to="/clock" className="btn-secondary">
@@ -326,6 +335,7 @@ export default function Attendance() {
         </Alert>
       )}
 
+      {!supervisor && (
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiCard label="Shifts in range" value={overview.length} loading={loading} />
         <KpiCard label="Exceptions" value={exceptions.length} tone={exceptions.length ? 'warning' : 'default'} loading={loading} />
@@ -336,19 +346,24 @@ export default function Attendance() {
           loading={loading}
         />
       </div>
+      )}
 
       <Tabs<TabKey>
         label="Attendance views"
         active={tab}
         onChange={setTab}
-        tabs={[
-          { key: 'overview', label: 'Overview' },
-          { key: 'exceptions', label: 'Exceptions', badge: exceptions.length },
-          { key: 'adjustments', label: 'Payable adjustments', badge: pendingAdjustments.length },
-        ]}
+        tabs={
+          supervisor
+            ? [{ key: 'exceptions', label: 'Exceptions', badge: exceptions.length }]
+            : [
+                { key: 'overview', label: 'Overview' },
+                { key: 'exceptions', label: 'Exceptions', badge: exceptions.length },
+                { key: 'adjustments', label: 'Payable adjustments', badge: pendingAdjustments.length },
+              ]
+        }
       />
 
-      {tab === 'overview' && (
+      {tab === 'overview' && !supervisor && (
         <TabPanel id="overview">
           {loading ? (
             <Skeleton rows={4} />
@@ -413,7 +428,7 @@ export default function Attendance() {
         </TabPanel>
       )}
 
-      {tab === 'adjustments' && (
+      {tab === 'adjustments' && !supervisor && (
         <TabPanel id="adjustments">
           {loading ? (
             <Skeleton rows={3} />

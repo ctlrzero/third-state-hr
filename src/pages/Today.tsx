@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext'
 import { Alert, PageHeader, Skeleton } from '../components/ui'
 import { EmptyState } from '../components/EmptyState'
 import { fmtDayShort, fmtMinutes, fmtTime } from '../lib/format'
+import { FindCoverSheet, type CoverShift } from './schedules/SchedulingTools'
 
 // Manager "Today" board (P1-3). One read — get_branch_today — scoped on the
 // server exactly like attendance exceptions; it never returns pay data.
@@ -13,6 +14,9 @@ type PersonStatus = 'upcoming' | 'not_in' | 'in' | 'in_late' | 'done' | 'no_show
 
 interface TodayPerson {
   shift_id: string
+  shift_date: string
+  break_minutes: number
+  location_id: string
   employee_id: string
   name: string
   phone: string | null
@@ -35,7 +39,17 @@ interface BranchToday {
   people: TodayPerson[]
   unscheduled: { attendance_id: string; employee_id: string; name: string; clock_in_at: string; clock_out_at: string | null }[]
   missing_clock_outs: { attendance_id: string; employee_id: string; name: string; business_date: string; clock_in_at: string }[]
-  open_gaps: { shift_id: string; position: string | null; start_time: string; end_time: string; is_published: boolean }[]
+  open_gaps: {
+    shift_id: string
+    position: string | null
+    shift_date: string
+    start_time: string
+    end_time: string
+    break_minutes: number
+    location_id: string
+    is_published: boolean
+  }[]
+  pending_swaps: { swap_id: string; shift_date: string; start_time: string; end_time: string; from_name: string | null; to_name: string | null; notes: string | null }[]
   on_leave: { employee_id: string; name: string; leave_type: string | null; end_date: string }[]
   draft_shifts: number
   approvals: { leave: number; swaps: number; documents: number }
@@ -50,11 +64,16 @@ export default function Today() {
   const [data, setData] = useState<BranchToday | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [cover, setCover] = useState<CoverShift | null>(null)
+  const [busySwap, setBusySwap] = useState<string | null>(null)
+  // Supervisors run the floor: swaps, cover and clock fixes — no leave, documents, profiles or scheduling.
+  const supervisor = profile?.role === 'shift_supervisor'
 
   useEffect(() => {
     let q = supabase.from('locations').select('id, name').order('name')
     if (activeEntityId) q = q.eq('entity_id', activeEntityId)
-    if (profile?.role === 'location_manager' && profile.location_id) q = q.eq('id', profile.location_id)
+    if ((profile?.role === 'location_manager' || supervisor) && profile?.location_id) q = q.eq('id', profile.location_id)
     q.then(({ data: rows, error: e }) => {
       if (e) return setError(e.message)
       const list = (rows ?? []) as { id: string; name: string }[]
@@ -62,7 +81,7 @@ export default function Today() {
       setLocationId((cur) => (cur && list.some((l) => l.id === cur) ? cur : (list[0]?.id ?? null)))
       if (list.length === 0) setLoading(false)
     })
-  }, [activeEntityId, profile?.role, profile?.location_id])
+  }, [activeEntityId, profile?.role, profile?.location_id, supervisor])
 
   const load = useCallback(
     async (quiet = false) => {
@@ -94,6 +113,27 @@ export default function Today() {
   const done = data ? data.people.filter((p) => p.status === 'done') : []
   const approvalsTotal = data ? data.approvals.leave + data.approvals.swaps + data.approvals.documents : 0
 
+  async function decideSwap(swapId: string, action: 'approve' | 'reject') {
+    setBusySwap(swapId)
+    const { error: e } = await supabase.rpc('approve_shift_swap', { p_swap_id: swapId, p_action: action })
+    setBusySwap(null)
+    if (e) return setError(e.message)
+    setNotice(action === 'approve' ? 'Swap approved — the shift has been reassigned.' : 'Swap rejected.')
+    load(true)
+  }
+
+  const coverFor = (p: TodayPerson): CoverShift => ({
+    id: p.shift_id,
+    shift_date: p.shift_date,
+    start_time: p.start_time,
+    end_time: p.end_time,
+    break_minutes: p.break_minutes,
+    location_id: p.location_id,
+    employee_id: p.employee_id,
+    is_published: true,
+    currentName: p.name,
+  })
+
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <PageHeader
@@ -123,6 +163,22 @@ export default function Today() {
       />
 
       {error && <Alert tone="error">{error}</Alert>}
+      {notice && (
+        <Alert tone="success" onDismiss={() => setNotice(null)}>
+          {notice}
+        </Alert>
+      )}
+      {cover && (
+        <FindCoverSheet
+          shift={cover}
+          onClose={() => setCover(null)}
+          onAssigned={(msg) => {
+            setCover(null)
+            setNotice(msg)
+            load(true)
+          }}
+        />
+      )}
 
       {loading && !data ? (
         <Skeleton rows={4} className="h-20" />
@@ -140,7 +196,14 @@ export default function Today() {
           {data.draft_shifts > 0 && (
             <Alert tone="warning">
               {data.draft_shifts} shift{data.draft_shifts === 1 ? ' is' : 's are'} still a draft for today — staff can't see{' '}
-              {data.draft_shifts === 1 ? 'it' : 'them'}. <Link to="/schedules" className="font-medium underline">Publish in Schedules</Link>
+              {data.draft_shifts === 1 ? 'it' : 'them'}.{' '}
+              {supervisor ? (
+                'Ask your manager to publish.'
+              ) : (
+                <Link to="/schedules" className="font-medium underline">
+                  Publish in Schedules
+                </Link>
+              )}
             </Alert>
           )}
 
@@ -154,7 +217,7 @@ export default function Today() {
                   p.absence_leave_status === 'pending' ? ' · leave to decide' : ''
                 }`}
                 badge="Can’t come in"
-                action={<ActionLink to={`/schedules?shift=${p.shift_id}`}>Find cover</ActionLink>}
+                action={<ActionButton onClick={() => setCover(coverFor(p))}>Find cover</ActionButton>}
               />
             ))}
             {needsAction.map((p) => (
@@ -164,7 +227,15 @@ export default function Today() {
                 title={p.name}
                 subtitle={`${fmtTime(p.start_time)}–${fmtTime(p.end_time)}${p.position ? ` · ${p.position}` : ''}`}
                 badge={p.status === 'no_show' ? 'No show' : `Not in · ${fmtMinutes(p.late_minutes)} late`}
-                action={p.phone ? <ActionLink href={`tel:${p.phone}`}>Call</ActionLink> : <ActionLink to={`/employees/${p.employee_id}`}>Profile</ActionLink>}
+                action={
+                  p.phone ? (
+                    <ActionLink href={`tel:${p.phone}`}>Call</ActionLink>
+                  ) : p.status === 'no_show' || supervisor ? (
+                    <ActionButton onClick={() => setCover(coverFor(p))}>Find cover</ActionButton>
+                  ) : (
+                    <ActionLink to={`/employees/${p.employee_id}`}>Profile</ActionLink>
+                  )
+                }
               />
             ))}
             {data.open_gaps.map((g) => (
@@ -174,7 +245,29 @@ export default function Today() {
                 title={`Open shift ${fmtTime(g.start_time)}–${fmtTime(g.end_time)}`}
                 subtitle={g.position ?? 'No one assigned'}
                 badge={g.is_published ? 'Unfilled' : 'Draft · unfilled'}
-                action={<ActionLink to={`/schedules?shift=${g.shift_id}`}>Find cover</ActionLink>}
+                action={
+                  g.is_published ? (
+                    <ActionButton
+                      onClick={() =>
+                        setCover({
+                          id: g.shift_id,
+                          shift_date: g.shift_date,
+                          start_time: g.start_time,
+                          end_time: g.end_time,
+                          break_minutes: g.break_minutes,
+                          location_id: g.location_id,
+                          employee_id: null,
+                          is_published: true,
+                          currentName: null,
+                        })
+                      }
+                    >
+                      Find cover
+                    </ActionButton>
+                  ) : supervisor ? undefined : (
+                    <ActionLink to={`/schedules?shift=${g.shift_id}`}>Open</ActionLink>
+                  )
+                }
               />
             ))}
             {data.missing_clock_outs.map((m) => (
@@ -204,9 +297,29 @@ export default function Today() {
               {data.approvals.leave > 0 && (
                 <Card title={`${data.approvals.leave} leave request${data.approvals.leave === 1 ? '' : 's'}`} action={<ActionLink to="/leave">Review</ActionLink>} />
               )}
-              {data.approvals.swaps > 0 && (
-                <Card title={`${data.approvals.swaps} shift swap${data.approvals.swaps === 1 ? '' : 's'}`} action={<ActionLink to="/schedules">Review</ActionLink>} />
-              )}
+              {data.pending_swaps.map((w) => (
+                <div key={w.swap_id} className="flex flex-wrap items-center gap-3 rounded-[14px] border border-border bg-surface px-4 py-3 shadow-card">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium text-ink">
+                      Swap: {w.from_name ?? 'Someone'} → {w.to_name ?? 'someone'}
+                    </span>
+                    <p className="mt-0.5 text-sm text-muted">
+                      {fmtDayShort(w.shift_date)} · {fmtTime(w.start_time)}–{fmtTime(w.end_time)}
+                      {w.notes ? ` · “${w.notes}”` : ''}
+                    </p>
+                  </div>
+                  <button
+                    disabled={busySwap === w.swap_id}
+                    onClick={() => decideSwap(w.swap_id, 'reject')}
+                    className="press rounded-full border border-border px-4 py-2 text-sm font-medium text-ink disabled:opacity-60"
+                  >
+                    Reject
+                  </button>
+                  <ActionButton disabled={busySwap === w.swap_id} onClick={() => decideSwap(w.swap_id, 'approve')}>
+                    Approve
+                  </ActionButton>
+                </div>
+              ))}
               {data.approvals.documents > 0 && (
                 <Card title={`${data.approvals.documents} document${data.approvals.documents === 1 ? '' : 's'} to check`} action={<ActionLink to="/documents">Review</ActionLink>} />
               )}
@@ -294,6 +407,18 @@ function Card({ title, subtitle, badge, tone = 'default', action }: { title: str
       </div>
       {action}
     </div>
+  )
+}
+
+function ActionButton({ onClick, disabled, children }: { onClick: () => void; disabled?: boolean; children: ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="press shrink-0 rounded-full bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+    >
+      {children}
+    </button>
   )
 }
 

@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { hasOwnOpenOnboarding } from '../lib/api/onboarding'
 import type { Entity, Profile } from '../types/db'
+import { isSelfServiceRole } from '../types/db'
 
 type AuthStatus = 'loading' | 'signed-out' | 'no-assignment' | 'ready'
 
@@ -97,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       )
 
     setHasOnboarding(false)
-    if ((profileRow as Profile).role === 'staff') {
+    if (isSelfServiceRole((profileRow as Profile).role)) {
       const entityId = (profileRow as Profile).entity_id
       Promise.all([
         hasOwnOpenOnboarding(),

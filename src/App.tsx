@@ -10,6 +10,7 @@ import { canAccessRoute } from './lib/nav'
 import SignIn from './pages/SignIn'
 import NoAssignment from './pages/NoAssignment'
 import SetPassword from './pages/SetPassword'
+import { isSelfServiceRole } from './types/db'
 
 // Every authenticated page is its own chunk so the entry bundle only carries
 // the shell, auth and router.
@@ -48,7 +49,7 @@ function RoleGate({ route, children }: { route: string; children: ReactNode }) {
 /** Staff get a personal home; everyone else the entity dashboard. */
 function Home() {
   const { profile } = useAuth()
-  return profile?.role === 'staff' ? <StaffHome /> : <Dashboard />
+  return isSelfServiceRole(profile?.role) ? <StaffHome /> : <Dashboard />
 }
 
 function Shell({ route, children }: { route: string; children: ReactNode }) {

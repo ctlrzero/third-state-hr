@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge'
 import type { Employee, Location } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { fmtDateTime } from '../lib/format'
+import { isSelfServiceRole } from '../types/db'
 
 interface Metrics {
   activeEmployees: number
@@ -51,7 +52,7 @@ interface AuditRow {
 export default function Reports() {
   const { profile, activeEntityId } = useAuth()
 
-  if (profile?.role === 'staff') {
+  if (isSelfServiceRole(profile?.role)) {
     return (
       <div className="space-y-5">
         <div>

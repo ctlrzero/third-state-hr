@@ -219,7 +219,9 @@ function GrantDrawer({
   onDone: (email: string) => void
 }) {
   // Entity Admin can never grant Owner — enforced server-side too.
-  const roles: UserRole[] = isOwner ? ['owner', 'entity_admin', 'location_manager', 'staff'] : ['entity_admin', 'location_manager', 'staff']
+  const roles: UserRole[] = isOwner
+    ? ['owner', 'entity_admin', 'location_manager', 'shift_supervisor', 'staff']
+    : ['entity_admin', 'location_manager', 'shift_supervisor', 'staff']
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<UserRole>('staff')
   const [entityId, setEntityId] = useState(defaultEntityId ?? entities[0]?.id ?? '')
@@ -246,15 +248,16 @@ function GrantDrawer({
   const activeEntities = entities.filter((e) => e.is_active !== false)
   const branchOptions = locations.filter((l) => l.entity_id === entityId && l.is_active !== false)
   const needsEntity = role !== 'owner'
-  const needsBranch = role === 'location_manager'
-  const needsEmployee = role === 'staff'
+  const needsBranch = role === 'location_manager' || role === 'shift_supervisor'
+  // A supervisor is an employee login too: their branch must be the employee's home branch.
+  const needsEmployee = role === 'staff' || role === 'shift_supervisor'
 
   async function submit() {
     const e: typeof errors = {}
     if (!EMAIL_RE.test(email.trim())) e.email = 'Enter a valid email address.'
     if (needsEntity && !entityId) e.entity = 'Choose an entity.'
-    if (needsBranch && !locationId) e.location = 'Location managers need a branch.'
-    if (needsEmployee && !employeeId) e.employee = 'Staff access must be linked to their employee record.'
+    if (needsBranch && !locationId) e.location = role === 'shift_supervisor' ? 'Supervisors need their home branch.' : 'Location managers need a branch.'
+    if (needsEmployee && !employeeId) e.employee = 'Staff and supervisor access must be linked to their employee record.'
     setErrors(e)
     if (Object.keys(e).length) return
     setSaving(true)

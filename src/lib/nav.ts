@@ -1,4 +1,4 @@
-import type { UserRole } from '../types/db'
+import { isSelfServiceRole, type UserRole } from '../types/db'
 
 // Single source of truth for which roles may see which destination. Hidden
 // nav is a UX convenience only — RLS/RPC checks are the real boundary — but
@@ -34,13 +34,15 @@ export interface NavItem {
   requires?: 'interviewAssignment' | 'onboarding'
 }
 
-const ALL: UserRole[] = ['owner', 'entity_admin', 'location_manager', 'staff']
+const ALL: UserRole[] = ['owner', 'entity_admin', 'location_manager', 'shift_supervisor', 'staff']
+// Employee self-service logins. A shift supervisor is staff plus the Today board and attendance for their branch.
+const SELF: UserRole[] = ['shift_supervisor', 'staff']
 const ADMINS: UserRole[] = ['owner', 'entity_admin']
 const MANAGERS: UserRole[] = ['owner', 'entity_admin', 'location_manager']
 
 export const ROUTE_ROLES: Record<string, UserRole[]> = {
   '/': ALL,
-  '/today': MANAGERS,
+  '/today': [...MANAGERS, 'shift_supervisor'],
   '/employees': MANAGERS,
   '/employees/:id': MANAGERS,
   // Managers see the dashboard; staff see their own onboarding (or pay/bank
@@ -49,7 +51,7 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   // Managers see the branch/company checklist; staff with payroll access
   // (e.g. a payroll-admin preset) see the settlement side. The page itself
   // checks payroll_can for a staff caller.
-  '/offboarding': ['owner', 'entity_admin', 'location_manager', 'staff'],
+  '/offboarding': ['owner', 'entity_admin', 'location_manager', 'shift_supervisor', 'staff'],
   '/me': ALL,
   '/my-interviews': ALL,
   '/documents': ALL,
@@ -57,12 +59,13 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   '/recruiting': ALL,
   '/schedules': ALL,
   '/clock': ALL,
-  '/attendance': MANAGERS,
+  // Supervisors see exceptions and clock corrections only (no payable time).
+  '/attendance': [...MANAGERS, 'shift_supervisor'],
   '/leave': ALL,
   // Staff see their own payslips (or the workspace if granted payroll
   // access); location managers get the hours/tips inputs sheet — the
   // server never returns pay amounts to them.
-  '/payroll': ['owner', 'entity_admin', 'location_manager', 'staff'],
+  '/payroll': ['owner', 'entity_admin', 'location_manager', 'shift_supervisor', 'staff'],
   '/reports': MANAGERS,
   '/workflows': ADMINS,
   '/admin': ADMINS,
@@ -76,19 +79,21 @@ export function canAccessRoute(role: UserRole | null | undefined, route: string)
 }
 
 const STAFF_NAV: NavItem[] = [
-  { label: 'Home', to: '/', icon: 'home', roles: ['staff'] },
-  { label: 'Onboarding', to: '/onboarding', icon: 'onboarding', roles: ['staff'], requires: 'onboarding' },
-  { label: 'Schedule', to: '/schedules', icon: 'schedule', roles: ['staff'] },
-  { label: 'Clock', to: '/clock', icon: 'clock', roles: ['staff'] },
-  { label: 'Leave', to: '/leave', icon: 'leave', roles: ['staff'] },
-  { label: 'Documents', to: '/documents', icon: 'documents', roles: ['staff'] },
-  { label: 'Payslips', to: '/payroll', icon: 'payroll', roles: ['staff'] },
+  { label: 'Home', to: '/', icon: 'home', roles: SELF },
+  { label: 'Onboarding', to: '/onboarding', icon: 'onboarding', roles: SELF, requires: 'onboarding' },
+  { label: 'Today', to: '/today', icon: 'today', roles: ['shift_supervisor'] },
+  { label: 'Schedule', to: '/schedules', icon: 'schedule', roles: SELF },
+  { label: 'Clock', to: '/clock', icon: 'clock', roles: SELF },
+  { label: 'Leave', to: '/leave', icon: 'leave', roles: SELF },
+  { label: 'Documents', to: '/documents', icon: 'documents', roles: SELF },
+  { label: 'Attendance', to: '/attendance', icon: 'attendance', roles: ['shift_supervisor'] },
+  { label: 'Payslips', to: '/payroll', icon: 'payroll', roles: SELF },
   // Only meaningful for a payroll-admin preset staff login; the page itself
   // checks payroll_can and shows a plain staff member a "not authorized" state.
-  { label: 'Offboarding', to: '/offboarding', icon: 'offboarding', roles: ['staff'] },
-  { label: 'Profile', to: '/me', icon: 'profile', roles: ['staff'] },
-  { label: 'My Interviews', to: '/my-interviews', icon: 'interviews', roles: ['staff'], requires: 'interviewAssignment' },
-  { label: 'Notifications', to: '/notifications', icon: 'notifications', roles: ['staff'] },
+  { label: 'Offboarding', to: '/offboarding', icon: 'offboarding', roles: SELF },
+  { label: 'Profile', to: '/me', icon: 'profile', roles: SELF },
+  { label: 'My Interviews', to: '/my-interviews', icon: 'interviews', roles: SELF, requires: 'interviewAssignment' },
+  { label: 'Notifications', to: '/notifications', icon: 'notifications', roles: SELF },
 ]
 
 const MANAGEMENT_NAV: NavItem[] = [
@@ -121,7 +126,7 @@ export interface NavContext {
 /** Full ordered nav for a role (desktop sidebar). */
 export function navForRole(role: UserRole | null | undefined, ctx: NavContext = {}): NavItem[] {
   if (!role) return []
-  const source = role === 'staff' ? STAFF_NAV : MANAGEMENT_NAV
+  const source = isSelfServiceRole(role) ? STAFF_NAV : MANAGEMENT_NAV
   return source.filter((item) => {
     if (!item.roles.includes(role)) return false
     if (item.requires === 'interviewAssignment' && !ctx.hasInterviewAssignments) return false
@@ -140,9 +145,14 @@ export function mobileNavForRole(
   ctx: NavContext = {}
 ): { primary: NavItem[]; more: NavItem[] } {
   const items = navForRole(role, ctx)
-  if (role === 'staff') {
-    // A new starter's onboarding replaces Clock in the bar until it is closed.
-    const primaryPaths = ctx.hasOnboarding ? ['/', '/onboarding', '/schedules', '/leave'] : ['/', '/schedules', '/clock', '/leave']
+  if (isSelfServiceRole(role)) {
+    // A new starter's onboarding replaces Clock in the bar until it is closed;
+    // a supervisor's Today board replaces Leave.
+    const primaryPaths = ctx.hasOnboarding
+      ? ['/', '/onboarding', '/schedules', '/leave']
+      : role === 'shift_supervisor'
+        ? ['/', '/today', '/schedules', '/clock']
+        : ['/', '/schedules', '/clock', '/leave']
     return {
       primary: primaryPaths.map((p) => items.find((i) => i.to === p)!).filter(Boolean),
       more: items.filter((i) => !primaryPaths.includes(i.to)),

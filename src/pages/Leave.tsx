@@ -9,6 +9,7 @@ import { AccrualPolicyPanel } from '../components/AccrualPolicyPanel'
 import type { LeaveBalance, LeaveRequest, LeaveType } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
+import { isSelfServiceRole } from '../types/db'
 
 const LEAVE_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'risk'> = {
   pending: 'warning',
@@ -44,7 +45,7 @@ interface AffectedShift {
 // self-insert-as-pending-only policy mirroring employee_change_requests.
 export default function Leave() {
   const { profile } = useAuth()
-  if (profile?.role === 'staff') return <MyLeave />
+  if (isSelfServiceRole(profile?.role)) return <MyLeave />
   return <LeaveAdmin />
 }
 

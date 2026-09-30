@@ -56,7 +56,7 @@ export function canRoleApprove(
   if (reviewerRole === 'owner') return true
   const sensitive = isRestrictedDocType(docType)
 
-  if (submitterRole === 'staff') {
+  if (submitterRole === 'staff' || submitterRole === 'shift_supervisor') {
     if (isSelf) return false
     if (reviewerRole === 'entity_admin') return true
     if (reviewerRole === 'location_manager') return !sensitive

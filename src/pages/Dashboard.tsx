@@ -9,6 +9,7 @@ import { GroupOverview } from '../components/GroupOverview'
 import { fmtDate } from '../lib/format'
 import { docTypeLabel } from '../lib/documents'
 import { EntityEyebrow } from '../components/EntityEyebrow'
+import { isSelfServiceRole } from '../types/db'
 
 type ActionKind = 'leave' | 'document' | 'change_request' | 'shift_swap'
 
@@ -183,7 +184,7 @@ export default function Dashboard() {
         <div>
           <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">
-            {profile?.role === 'staff' ? 'Home' : `${greeting}${firstName ? `, ${firstName}` : ''}`}
+            {isSelfServiceRole(profile?.role) ? 'Home' : `${greeting}${firstName ? `, ${firstName}` : ''}`}
           </h1>
           <p className="text-xs text-muted">Entity-level workforce, compliance and payroll status</p>
         </div>

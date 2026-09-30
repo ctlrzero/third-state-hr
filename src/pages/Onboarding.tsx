@@ -4,6 +4,7 @@ import { Skeleton } from '../components/ui'
 import { canPayroll } from '../lib/api/payroll'
 import OnboardingDashboard from './onboarding/Dashboard'
 import MyOnboarding from './onboarding/MyOnboarding'
+import { isSelfServiceRole } from '../types/db'
 
 // Onboarding entry point:
 //   owner / entity admin / branch manager      → dashboard (scope enforced server-side)
@@ -15,7 +16,7 @@ export default function Onboarding() {
 
   useEffect(() => {
     let alive = true
-    if (profile?.role && profile.role !== 'staff') {
+    if (profile?.role && !isSelfServiceRole(profile.role)) {
       setMode('manage')
       return
     }

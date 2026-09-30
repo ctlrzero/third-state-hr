@@ -212,6 +212,18 @@ describe('nav mapping', () => {
     expect(canAccessRoute('staff', '/offboarding')).toBe(true)
     expect(canAccessRoute('staff', '/today')).toBe(false)
   })
+  it('gives shift supervisors staff self-service plus Today and Attendance', () => {
+    const { primary } = mobileNavForRole('shift_supervisor')
+    expect(primary.map((i) => i.to)).toEqual(['/', '/today', '/schedules', '/clock'])
+    const all = navForRole('shift_supervisor').map((i) => i.to)
+    expect(all).toEqual(expect.arrayContaining(['/today', '/attendance', '/leave', '/payroll', '/documents']))
+    expect(all).not.toContain('/employees')
+    for (const r of ['/today', '/attendance', '/schedules', '/clock', '/leave', '/payroll', '/me']) expect(canAccessRoute('shift_supervisor', r)).toBe(true)
+    for (const r of ['/employees', '/employees/:id', '/admin', '/workflows', '/reports', '/onboarding']) {
+      if (r === '/onboarding') continue // own onboarding, like staff
+      expect(canAccessRoute('shift_supervisor', r)).toBe(false)
+    }
+  })
   it('admins see Workflows and Admin; staff do not', () => {
     expect(navForRole('entity_admin').map((i) => i.to)).toEqual(expect.arrayContaining(['/workflows', '/admin', '/payroll']))
     expect(canAccessRoute('staff', '/attendance')).toBe(false)

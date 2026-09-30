@@ -252,6 +252,7 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   owner: 'Owner',
   entity_admin: 'Entity Admin',
   location_manager: 'Location Manager',
+  shift_supervisor: 'Shift Supervisor',
   staff: 'Staff',
 }
 
