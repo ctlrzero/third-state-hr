@@ -26,6 +26,7 @@ const TARGET_ROUTE: Record<string, string> = {
   attendance_records: '/attendance',
   shifts: '/schedules',
   employees: '/employees',
+  payroll_periods: '/payroll',
 }
 
 function timeAgo(iso: string): string {

@@ -34,6 +34,7 @@ import AdvancesDrawer from './AdvancesDrawer'
 import ReportsDrawer from './ReportsDrawer'
 import SettingsDrawer from './SettingsDrawer'
 import LegacyRuns from './LegacyRuns'
+import ReadinessPanel from './ReadinessPanel'
 
 const thisMonth = () => new Date().toISOString().slice(0, 7)
 
@@ -52,6 +53,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
   const [bulk, setBulk] = useState<BulkAction | null>(null)
   const [panel, setPanel] = useState<'tips' | 'advances' | 'reports' | 'settings' | 'offcycle' | null>(null)
   const [result, setResult] = useState<{ title: string; res: BulkResult } | null>(null)
+  const [loads, setLoads] = useState(0)
 
   const loadPeriods = useCallback(async () => {
     const res = await listPeriods(entityId)
@@ -65,6 +67,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
     const res = await getWorkspace(id)
     if (res.error) setError(res.error)
     else setWs(res.data)
+    setLoads((n) => n + 1)
   }, [])
 
   useEffect(() => {
@@ -217,6 +220,8 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
               </button>
             </Alert>
           )}
+
+          <ReadinessPanel periodId={ws.period.id} refreshKey={loads} />
 
           {ws.period.kind === 'off_cycle' && perms?.prepare && (
             <OffCycleAdd
