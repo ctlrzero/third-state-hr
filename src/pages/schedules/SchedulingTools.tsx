@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { fmtDayShort, fmtTime } from '../../lib/format'
+import { fmtDayShort, fmtTime, todayDubai } from '../../lib/format'
+import { isoAddDays, thisMonday } from './week'
 import { Sheet } from '../../components/Sheet'
 import type { Employee, Location, Position, ShiftAdjustment } from '../../types/db'
 
@@ -624,13 +625,13 @@ interface Plan {
 
 type Preset = 'week' | 'next7' | 'twoweeks' | 'custom'
 
+// Weeks run Monday–Sunday, like the week grid and the 48 h / working-day rules.
 function presetRange(p: Exclude<Preset, 'custom'>): [string, string] {
-  const t = todayIso()
-  if (p === 'next7') return [addDaysIso(t, 1), addDaysIso(t, 7)]
-  if (p === 'twoweeks') return [addDaysIso(t, 1), addDaysIso(t, 14)]
-  const dow = new Date(t + 'T00:00:00').getDay()
-  const nextSunday = addDaysIso(t, 7 - dow)
-  return [nextSunday, addDaysIso(nextSunday, 6)]
+  const t = todayDubai()
+  if (p === 'next7') return [isoAddDays(t, 1), isoAddDays(t, 7)]
+  const nextMonday = isoAddDays(thisMonday(), 7)
+  if (p === 'twoweeks') return [nextMonday, isoAddDays(nextMonday, 13)]
+  return [nextMonday, isoAddDays(nextMonday, 6)]
 }
 
 export function AutoSchedulePanel({
@@ -641,7 +642,7 @@ export function AutoSchedulePanel({
 }: {
   entityId: string
   positions: Pos[]
-  onApplied: (created: number) => void
+  onApplied: (created: number, periodStart: string, locationIds: string[] | null) => void
   onNotice: (msg: string) => void
 }) {
   const [setup, setSetup] = useState<SetupBranch[] | null>(null)
@@ -710,7 +711,7 @@ export function AutoSchedulePanel({
     const { data, error: rpcError } = await supabase.rpc('apply_auto_schedule', args())
     setBusy(null)
     if (rpcError) return setError(errText(rpcError))
-    onApplied((data as Plan).created ?? 0)
+    onApplied((data as Plan).created ?? 0, start, allPicked ? null : [...(picked ?? [])])
   }
 
   function choosePreset(p: Preset) {
@@ -910,7 +911,7 @@ export function AutoSchedulePanel({
                 <span className="font-medium text-ink tabular-nums">
                   {plan.summary.planned} shift{plan.summary.planned === 1 ? '' : 's'} · {plan.summary.planned_hours} h
                 </span>{' '}
-                saved as drafts — you publish them later.
+                saved as drafts — review them in the Week tab, then Publish week.
               </>
             )}
           </p>

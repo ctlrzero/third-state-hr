@@ -530,12 +530,16 @@ function ScheduleAdmin() {
             entityId={activeEntityId}
             positions={positions}
             onNotice={setNotice}
-            onApplied={(created) => {
+            onApplied={(created, periodStart, locationIds) => {
+              // Land on the week that was just planned so it can be reviewed and published.
+              setWeekStart(mondayOf(periodStart))
+              if (locationIds && locationIds.length === 1) setLocationFilter(locationIds[0])
               setTab('week')
               setNotice(
-                `Created ${created} draft shift${created === 1 ? '' : 's'}. Review them in the week view, then use Publish week when you're ready for staff to see them.`
+                `Created ${created} draft shift${created === 1 ? '' : 's'} for ${weekLabel(mondayOf(periodStart))}. Review them below, then use Publish week${
+                  locationIds && locationIds.length === 1 ? '' : ' for each branch'
+                } when you're ready for staff to see them.`
               )
-              load()
             }}
           />
         </div>
