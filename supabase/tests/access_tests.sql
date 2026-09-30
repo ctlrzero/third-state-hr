@@ -1,3 +1,4 @@
+-- SUPERSEDED: depends on UAT personas/fixtures that no longer exist in production. Use the self-contained suite in supabase/tests/suite/ (see suite/README.md) instead.
 -- ============================================================
 -- SQL mirror of scripts/access-tests.mjs (negative-access tests).
 -- Runs every check with the same Postgres role + JWT claims PostgREST

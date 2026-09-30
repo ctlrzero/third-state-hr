@@ -1,3 +1,4 @@
+-- SUPERSEDED: depends on UAT personas/fixtures that no longer exist in production. Use the self-contained suite in supabase/tests/suite/ (see suite/README.md) instead.
 -- ============================================================
 -- DB-side end-to-end journeys (TS-HR UAT personas).
 --
