@@ -28,7 +28,8 @@ interface Kpis {
   activeEmployees: number | null
   expiringDocuments: number | null
   pendingLeave: number | null
-  payroll: PeriodListItem | null
+  /** "2 of 3 approved", "Approved on the old payroll screen" or "Not started" — for the month covering today. */
+  payroll: string | null
 }
 
 const KIND_LABEL: Record<ActionKind, string> = {
@@ -72,7 +73,7 @@ export default function Dashboard() {
       const todayStr = today.toISOString().slice(0, 10)
       const in30Str = in30.toISOString().slice(0, 10)
 
-      const [employeesRes, docsRes, leaveRes, payrollRes, locationsRes] = await Promise.all([
+      const [employeesRes, docsRes, leaveRes, payrollRes, legacyRes, locationsRes] = await Promise.all([
         supabase
           .from('employees')
           .select('id, home_location_id, locations(name)', { count: 'exact' })
@@ -94,6 +95,15 @@ export default function Dashboard() {
           .eq('status', 'pending')
           .order('requested_at', { ascending: true }),
         canSeePayroll && activeEntityId ? listPeriods(activeEntityId) : Promise.resolve({ data: [] as PeriodListItem[], error: null }),
+        // Months can still be run on the old payroll screen (payroll_runs); count those too.
+        canSeePayroll
+          ? supabase
+              .from('payroll_runs')
+              .select('status, period_start, period_end')
+              .eq('entity_id', activeEntityId)
+              .lte('period_start', todayStr)
+              .gte('period_end', todayStr)
+          : Promise.resolve({ data: [] as { status: string }[] }),
         scopedLocationId
           ? supabase.from('locations').select('id, name').eq('entity_id', activeEntityId).eq('id', scopedLocationId)
           : supabase.from('locations').select('id, name').eq('entity_id', activeEntityId),
@@ -119,11 +129,19 @@ export default function Dashboard() {
         activeEmployees: employeesRes.count ?? employees.length,
         expiringDocuments: docsRes.data?.length ?? 0,
         pendingLeave: leaveRes.data?.length ?? 0,
-        // This month's regular payroll: the one covering today, else the latest regular month.
+        // This month's regular payroll: the payroll screen's month covering today, else a run on the old
+        // payroll screen for this month, else "Not started".
         payroll: canSeePayroll
           ? (() => {
-              const regular = (payrollRes.data ?? []).filter((p) => p.kind === 'regular').sort((a, b) => b.period_start.localeCompare(a.period_start))
-              return regular.find((p) => p.period_start <= todayStr && p.period_end >= todayStr) ?? regular[0] ?? null
+              const current = (payrollRes.data ?? []).find(
+                (p) => p.kind === 'regular' && p.period_start <= todayStr && p.period_end >= todayStr
+              )
+              if (current) return `${current.approved} of ${current.employees} approved`
+              const legacy = ((legacyRes.data ?? []) as { status: string }[]).map((r) => r.status)
+              if (legacy.includes('paid')) return 'Paid (old payroll screen)'
+              if (legacy.includes('approved')) return 'Approved (old payroll screen)'
+              if (legacy.length) return 'In progress (old payroll screen)'
+              return 'Not started'
             })()
           : null,
       })
@@ -241,7 +259,7 @@ export default function Dashboard() {
         {canSeePayroll && (
           <KpiCard
             label="Current payroll"
-            value={kpis.payroll ? `${kpis.payroll.approved} of ${kpis.payroll.employees} approved` : 'Not started'}
+            value={kpis.payroll ?? '—'}
             hint="This month’s payroll"
             onClick={() => navigate('/payroll')}
             loading={loading}
