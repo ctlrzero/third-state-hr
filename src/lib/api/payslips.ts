@@ -39,6 +39,9 @@ export interface MyPayslipDetail {
   run_status: string
   period_start: string
   period_end: string
+  /** Salary month in words ("September 2026") and the pay date, when known. */
+  title?: string | null
+  pay_date?: string | null
   published_at: string | null
   generated_at: string | null
   currency: string

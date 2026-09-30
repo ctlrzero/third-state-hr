@@ -35,7 +35,10 @@ export function buildPayslipPdf(p: MyPayslipDetail): Uint8Array {
   const employerMeta = [p.employer?.emirate, p.employer?.trade_license_no && `Trade licence ${p.employer.trade_license_no}`].filter(Boolean).join('  ·  ')
   if (employerMeta) doc.text(L, 60, employerMeta, { size: 9, color: [0.85, 0.92, 0.9] })
   doc.text(R, 40, 'PAYSLIP', { size: 16, bold: true, color: [1, 1, 1], align: 'right' })
-  doc.text(R, 60, `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`, { size: 9, color: [0.85, 0.92, 0.9], align: 'right' })
+  const periodText = p.title
+    ? `${p.title}${p.pay_date ? `  ·  paid ${fmtDate(p.pay_date)}` : ''}`
+    : `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`
+  doc.text(R, 60, periodText, { size: 9, color: [0.85, 0.92, 0.9], align: 'right' })
 
   let y = 124
   if (p.is_revision || p.superseded) {
@@ -110,5 +113,5 @@ export function buildPayslipPdf(p: MyPayslipDetail): Uint8Array {
   doc.text(L, A4.height - 44, 'Computer-generated payslip from Third State HR. No signature required.', { size: 8, color: MUTED })
   doc.text(R, A4.height - 44, `Generated ${fmtDate(new Date().toISOString())}`, { size: 8, color: MUTED, align: 'right' })
 
-  return doc.toBytes({ title: `Payslip ${p.period_start} to ${p.period_end}` })
+  return doc.toBytes({ title: p.title ? `Payslip ${p.title}` : `Payslip ${p.period_start} to ${p.period_end}` })
 }

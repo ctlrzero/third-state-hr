@@ -44,7 +44,8 @@ export default function MyPayslips() {
         id: p.record_id,
         period_start: p.period_start,
         period_end: p.period_end,
-        label: p.kind === 'off_cycle' ? p.label : null,
+        // Staff see the salary month ("September 2026"), never the admin's run title.
+        label: p.title ?? (p.kind === 'off_cycle' ? p.label : null),
         badges: [...(p.is_correction ? [{ text: 'Corrected', tone: 'info' as const }] : [])],
         net: p.net,
         currency: p.currency,
@@ -153,7 +154,13 @@ function PayslipDrawer({
       open
       wide
       title="Payslip"
-      description={detail ? `${fmtDate(detail.period_start)} – ${fmtDate(detail.period_end)}` : undefined}
+      description={
+        detail
+          ? detail.title
+            ? `${detail.title}${detail.pay_date ? ` · paid ${fmtDate(detail.pay_date)}` : ''}`
+            : `${fmtDate(detail.period_start)} – ${fmtDate(detail.period_end)}`
+          : undefined
+      }
       onClose={onClose}
       footer={
         <>

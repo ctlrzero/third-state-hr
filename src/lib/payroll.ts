@@ -181,6 +181,8 @@ export function myV2ToPdfData(d: MyPayslipV2Detail): MyPayslipDetail {
     run_status: 'approved',
     period_start: d.period.start,
     period_end: d.period.end,
+    title: d.period.title ?? null,
+    pay_date: d.period.pay_date ?? null,
     published_at: d.record.published_at,
     generated_at: d.record.published_at,
     currency: d.company.currency,

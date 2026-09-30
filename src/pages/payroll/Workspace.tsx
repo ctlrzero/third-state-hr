@@ -37,6 +37,7 @@ import SettingsDrawer from './SettingsDrawer'
 import LegacyRuns from './LegacyRuns'
 import ReadinessPanel from './ReadinessPanel'
 import ChangesPanel from './ChangesPanel'
+import SchedulePanel from './SchedulePanel'
 
 const thisMonth = () => new Date().toISOString().slice(0, 7)
 
@@ -56,6 +57,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
   const [panel, setPanel] = useState<'tips' | 'advances' | 'reports' | 'settings' | 'offcycle' | null>(null)
   const [result, setResult] = useState<{ title: string; res: BulkResult } | null>(null)
   const [loads, setLoads] = useState(0)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const loadPeriods = useCallback(async () => {
     const res = await listPeriods(entityId)
@@ -223,6 +225,21 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
             </Alert>
           )}
 
+          {notice && (
+            <Alert tone="success" onDismiss={() => setNotice(null)}>
+              {notice}
+            </Alert>
+          )}
+          <SchedulePanel
+            period={ws.period}
+            payDate={ws.pay_date ?? null}
+            canEdit={!!perms?.approve}
+            onSaved={(msg) => {
+              setError(null)
+              setNotice(msg)
+              refresh()
+            }}
+          />
           <ReadinessPanel periodId={ws.period.id} refreshKey={loads} />
           {ws.period.kind === 'regular' && <ChangesPanel periodId={ws.period.id} refreshKey={loads} />}
 
@@ -565,6 +582,7 @@ function OffCycleAdd({ entityId, existing, onAdd }: { entityId: string; existing
 function OffCycleModal({ entityId, onClose, onCreated }: { entityId: string; onClose: () => void; onCreated: (id: string) => void }) {
   const [label, setLabel] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [forMonth, setForMonth] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   return (
@@ -582,7 +600,7 @@ function OffCycleModal({ entityId, onClose, onCreated }: { entityId: string; onC
             disabled={saving || !label.trim()}
             onClick={async () => {
               setSaving(true)
-              const res = await openOffCycle(entityId, date, label)
+              const res = await openOffCycle(entityId, date, label, forMonth ? `${forMonth}-01` : null)
               setSaving(false)
               if (res.error || !res.data) return setErr(res.error ?? 'Could not create it')
               onCreated(res.data)
@@ -602,6 +620,11 @@ function OffCycleModal({ entityId, onClose, onCreated }: { entityId: string; onC
       <label className="block">
         <span className="label">Pay date</span>
         <input type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+      </label>
+      <label className="block">
+        <span className="label">Salary month (optional)</span>
+        <input type="month" className="input" value={forMonth} onChange={(e) => setForMonth(e.target.value)} />
+        <span className="mt-1 block text-xs text-muted">Payslips show this month, e.g. “September 2026”. For monthly salary, prefer Prepare payroll for that month.</span>
       </label>
     </Modal>
   )

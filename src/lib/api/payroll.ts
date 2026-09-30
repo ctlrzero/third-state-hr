@@ -81,10 +81,19 @@ export interface PayrollPeriod {
   period_start: string
   period_end: string
   label: string | null
+  /** Stored pay date (null = worked out from the pay-day setting). */
+  pay_date?: string | null
+  publish_payslips_at?: string | null
+  publish_requires_paid?: boolean
+  /** Salary month of a one-off (off-cycle) run. */
+  for_month?: string | null
 }
 
 export interface Workspace {
   period: PayrollPeriod
+  /** Effective pay date and the salary month in words. */
+  pay_date?: string | null
+  title?: string | null
   entity: { id: string; name: string; currency: string }
   settings: { approval_mode: ApprovalMode; confirmed: boolean; pay_day: number; default_payment_method: PaymentMethod }
   permissions: { prepare: boolean; approve: boolean; pay: boolean; settings: boolean; single_step: boolean; user_id: string }
@@ -279,6 +288,9 @@ export interface MyPayslipV2 {
   period_end: string
   label: string | null
   kind: 'regular' | 'off_cycle'
+  /** The salary month in words, e.g. "September 2026" — what staff see (never the admin's run title). */
+  title?: string | null
+  pay_date?: string | null
   gross: number
   deductions: number
   net: number
@@ -290,7 +302,7 @@ export interface MyPayslipV2 {
 
 export interface MyPayslipV2Detail {
   record: { id: string; gross: number; deductions: number; net: number; published_at: string; is_correction: boolean; correction_reason: string | null; superseded: boolean }
-  period: { start: string; end: string; label: string | null; kind: string }
+  period: { start: string; end: string; label: string | null; kind: string; title?: string | null; pay_date?: string | null }
   company: { name: string; currency: string; note: string | null }
   employee: { name: string; position: string | null; branch: string | null; join_date: string | null }
   lines: { kind: 'earning' | 'deduction' | 'info'; code: string; label: string; quantity: number | null; amount: number; explanation: string }[]
@@ -315,8 +327,15 @@ export const getMyPayslipV2 = (recordId: string) => callRpc<MyPayslipV2Detail>('
 // ---------------------------------------------------------------- actions
 export const openPeriod = (entityId: string, month: string) =>
   callRpc<string>('payroll_open_period', { p_entity_id: entityId, p_month: month })
-export const openOffCycle = (entityId: string, payDate: string, label: string) =>
-  callRpc<string>('payroll_open_off_cycle', { p_entity_id: entityId, p_pay_date: payDate, p_label: label })
+export const openOffCycle = (entityId: string, payDate: string, label: string, forMonth?: string | null) =>
+  callRpc<string>('payroll_open_off_cycle', { p_entity_id: entityId, p_pay_date: payDate, p_label: label, p_for_month: forMonth ?? null })
+export const setPayrollSchedule = (periodId: string, payDate: string | null, publishAt: string | null, requirePaid: boolean) =>
+  callRpc<{ ok: boolean; pay_date: string | null; publish_payslips_at: string | null; warning: string | null }>('payroll_set_schedule', {
+    p_period_id: periodId,
+    p_pay_date: payDate,
+    p_publish_at: publishAt,
+    p_require_paid: requirePaid,
+  })
 export const preparePayroll = (periodId: string, employeeIds: string[] | null) =>
   callRpc<BulkResult>('payroll_prepare', { p_period_id: periodId, p_employee_ids: employeeIds })
 export const recalculate = (recordIds: string[]) => callRpc<BulkResult>('payroll_recalculate', { p_record_ids: recordIds })
