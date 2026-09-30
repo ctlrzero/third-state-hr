@@ -36,31 +36,27 @@ export default function MyPayslips() {
   useEffect(() => {
     Promise.all([getMyPayslipsV2(), getMyPayslips()]).then(([v2, v1]) => {
       if (v2.error && v1.error) setError(v2.error)
-      const a: ListItem[] = (v2.data ?? []).map((p) => ({
+      // A payslip replaced by a correction is hidden here: the employee only sees the current one.
+      // The replaced record is kept (audit / WPS) and stays visible to payroll in the workspace.
+      const a: ListItem[] = (v2.data ?? []).filter((p) => !p.superseded).map((p) => ({
         key: `v2-${p.record_id}`,
         source: 'v2',
         id: p.record_id,
         period_start: p.period_start,
         period_end: p.period_end,
         label: p.kind === 'off_cycle' ? p.label : null,
-        badges: [
-          ...(p.is_correction ? [{ text: 'Corrected', tone: 'info' as const }] : []),
-          ...(p.superseded ? [{ text: 'Replaced by newer payslip', tone: 'neutral' as const }] : []),
-        ],
+        badges: [...(p.is_correction ? [{ text: 'Corrected', tone: 'info' as const }] : [])],
         net: p.net,
         currency: p.currency,
       }))
-      const b: ListItem[] = (v1.data ?? []).map((p: MyPayslipListRow) => ({
+      const b: ListItem[] = (v1.data ?? []).filter((p: MyPayslipListRow) => !p.superseded).map((p: MyPayslipListRow) => ({
         key: `v1-${p.payslip_id}`,
         source: 'v1',
         id: p.payslip_id,
         period_start: p.period_start,
         period_end: p.period_end,
         label: null,
-        badges: [
-          ...(p.is_revision ? [{ text: 'Updated', tone: 'info' as const }] : []),
-          ...(p.superseded ? [{ text: 'Replaced by newer payslip', tone: 'neutral' as const }] : []),
-        ],
+        badges: [...(p.is_revision ? [{ text: 'Updated', tone: 'info' as const }] : [])],
         net: p.net_pay,
         currency: p.currency,
       }))
