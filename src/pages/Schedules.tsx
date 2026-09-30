@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import { fmtDayShort, fmtTime } from '../lib/format'
+import { fmtDateTime, fmtDayShort, fmtTime } from '../lib/format'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -11,7 +11,6 @@ import type { ShiftAdjustment, ShiftChangeType,
   Position,
   ScheduleTemplate,
   Shift,
-  ShiftStatus,
   ShiftSwapRequest,
 } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
@@ -24,9 +23,13 @@ import {
   FindCoverSheet,
   CrossBranchClaimsToggle,
   ShiftSwapsToggle,
+  BranchSetupSheet,
   type DeletableShift,
   type CoverShift,
+  type SetupBranch,
 } from './schedules/SchedulingTools'
+import { ShiftActionsSheet, StatusLegend, WeekBoard, type BoardPerson } from './schedules/WeekBoard'
+import { isoAddDays, mondayOf, shiftKind, thisMonday, weekLabel } from './schedules/week'
 import { useWorkPatternWarnings } from './schedules/useWorkPatternWarnings'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -56,12 +59,6 @@ function addDaysIso(iso: string, days: number) {
   const d = new Date(iso + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
-}
-
-const SHIFT_STATUS_TONE: Record<ShiftStatus, 'neutral' | 'info' | 'success'> = {
-  open: 'info',
-  assigned: 'success',
-  cancelled: 'neutral',
 }
 
 const SWAP_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'risk'> = {
@@ -94,6 +91,9 @@ export default function Schedules() {
 // Admin / manager roster
 // ---------------------------------------------------------------------------
 
+type AdminTab = 'week' | 'auto' | 'setup'
+type AdminEmployee = Pick<Employee, 'id' | 'full_name' | 'home_location_id' | 'employment_status'>
+
 function ScheduleAdmin() {
   const { activeEntityId, profile } = useAuth()
   const isAdmin = profile?.role === 'owner' || profile?.role === 'entity_admin'
@@ -101,7 +101,7 @@ function ScheduleAdmin() {
   const [swaps, setSwaps] = useState<ShiftSwapRequest[]>([])
   const [locations, setLocations] = useState<Pick<Location, 'id' | 'name'>[]>([])
   const [positions, setPositions] = useState<Pick<Position, 'id' | 'title'>[]>([])
-  const [employees, setEmployees] = useState<Pick<Employee, 'id' | 'full_name' | 'home_location_id'>[]>([])
+  const [employees, setEmployees] = useState<AdminEmployee[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -112,37 +112,46 @@ function ScheduleAdmin() {
   const [adjustShift, setAdjustShift] = useState<Shift | null>(null)
   const [cancelPublishedShift, setCancelPublishedShift] = useState<Shift | null>(null)
   const [historyShift, setHistoryShift] = useState<Shift | null>(null)
-  const [selectedCancelled, setSelectedCancelled] = useState<Set<string>>(new Set())
+  const [actionShift, setActionShift] = useState<Shift | null>(null)
   const [toDelete, setToDelete] = useState<Shift[] | null>(null)
   const [showDeleted, setShowDeleted] = useState(false)
   const [onLeave, setOnLeave] = useState<Set<string>>(new Set())
+  const [adjustedIds, setAdjustedIds] = useState<Set<string>>(new Set())
   const [coverShift, setCoverShift] = useState<CoverShift | null>(null)
   const [swapsEnabled, setSwapsEnabled] = useState(true)
+  const [weekStart, setWeekStart] = useState(thisMonday())
+  const [publishing, setPublishing] = useState(false)
+  const [branchSetup, setBranchSetup] = useState<SetupBranch[] | null>(null)
+  const [branchSetupOpen, setBranchSetupOpen] = useState(false)
   const [params, setParams] = useSearchParams()
   const focusShiftId = params.get('shift')
-  const mode: 'manual' | 'auto' = isAdmin && params.get('mode') === 'auto' ? 'auto' : 'manual'
-  const setMode = (m: 'manual' | 'auto') => {
+  const rawTab = params.get('tab') ?? (params.get('mode') === 'auto' ? 'auto' : 'week')
+  const tab: AdminTab = rawTab === 'setup' ? 'setup' : rawTab === 'auto' && isAdmin ? 'auto' : 'week'
+  const setTab = (t: AdminTab) => {
     const next = new URLSearchParams(params)
-    if (m === 'auto') next.set('mode', 'auto')
-    else next.delete('mode')
+    next.delete('mode')
+    if (t === 'week') next.delete('tab')
+    else next.set('tab', t)
     setParams(next, { replace: true })
   }
+  const weekEnd = isoAddDays(weekStart, 6)
 
   const employeesById = useMemo(() => new Map(employees.map((e) => [e.id, e])), [employees])
+  const locationNames = useMemo(() => new Map(locations.map((l) => [l.id, l.name])), [locations])
 
   async function load() {
     if (!activeEntityId) return
     setLoading(true)
     setError(null)
-    const from = new Date()
-    from.setDate(from.getDate() - 3)
     const [shiftsRes, swapsRes, locRes, posRes, empRes, templatesRes, leaveRes] = await Promise.all([
       supabase
         .from('shifts')
         .select('*, locations(id, name), positions(id, title)')
         .eq('entity_id', activeEntityId)
-        .gte('shift_date', from.toISOString().slice(0, 10))
-        .order('shift_date', { ascending: true }),
+        .gte('shift_date', weekStart)
+        .lte('shift_date', weekEnd)
+        .order('shift_date', { ascending: true })
+        .order('start_time', { ascending: true }),
       supabase
         .from('shift_swap_requests')
         .select('*, shifts!inner(id, shift_date, start_time, end_time, location_id, entity_id, locations(id, name))')
@@ -150,7 +159,7 @@ function ScheduleAdmin() {
         .order('created_at', { ascending: false }),
       supabase.from('locations').select('id, name').eq('entity_id', activeEntityId).order('name'),
       supabase.from('positions').select('id, title').eq('entity_id', activeEntityId).order('title'),
-      supabase.from('employees').select('id, full_name, home_location_id').eq('entity_id', activeEntityId).order('full_name'),
+      supabase.from('employees').select('id, full_name, home_location_id, employment_status').eq('entity_id', activeEntityId).order('full_name'),
       supabase
         .from('schedule_templates')
         .select('*, employees(id, full_name), positions(id, title)')
@@ -161,19 +170,26 @@ function ScheduleAdmin() {
         .from('leave_requests')
         .select('employee_id, start_date, end_date')
         .eq('status', 'approved')
-        .gte('end_date', from.toISOString().slice(0, 10)),
+        .lte('start_date', weekEnd)
+        .gte('end_date', weekStart),
     ])
     const leaveDays = new Set<string>()
     for (const lr of (leaveRes.data ?? []) as { employee_id: string; start_date: string; end_date: string }[]) {
       for (let d = lr.start_date; d <= lr.end_date; d = addDaysIso(d, 1)) leaveDays.add(`${lr.employee_id}|${d}`)
     }
     setOnLeave(leaveDays)
+    const weekShifts = (shiftsRes.data ?? []) as unknown as Shift[]
     if (shiftsRes.error) setError(shiftsRes.error.message)
-    else setShifts((shiftsRes.data ?? []) as unknown as Shift[])
+    else setShifts(weekShifts)
+    const publishedIds = weekShifts.filter((s) => s.is_published).map((s) => s.id)
+    if (publishedIds.length) {
+      const { data: adj } = await supabase.from('shift_adjustments').select('shift_id').in('shift_id', publishedIds)
+      setAdjustedIds(new Set((adj ?? []).map((a: { shift_id: string }) => a.shift_id)))
+    } else setAdjustedIds(new Set())
     setSwaps((swapsRes.data ?? []) as unknown as ShiftSwapRequest[])
     setLocations(locRes.data ?? [])
     setPositions(posRes.data ?? [])
-    setEmployees(empRes.data ?? [])
+    setEmployees((empRes.data ?? []) as AdminEmployee[])
     setTemplates((templatesRes.data ?? []) as unknown as ScheduleTemplate[])
     setLoading(false)
   }
@@ -181,28 +197,35 @@ function ScheduleAdmin() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeEntityId])
+  }, [activeEntityId, weekStart])
 
-  // Arriving from a leave approval's "Reassign" link: show and open that shift once it has loaded.
+  // Arriving from a leave approval's "Reassign" link: jump to that shift's week and open it.
   const [focusHandled, setFocusHandled] = useState<string | null>(null)
+  const [focusWeekSet, setFocusWeekSet] = useState<string | null>(null)
+  useEffect(() => {
+    if (!focusShiftId || focusWeekSet === focusShiftId) return
+    setFocusWeekSet(focusShiftId)
+    supabase
+      .from('shifts')
+      .select('shift_date')
+      .eq('id', focusShiftId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return setError('That shift is no longer in the schedule.')
+        setTab('week')
+        setLocationFilter('all')
+        setWeekStart(mondayOf((data as { shift_date: string }).shift_date))
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusShiftId, focusWeekSet])
   useEffect(() => {
     if (!focusShiftId || loading || focusHandled === focusShiftId) return
-    setFocusHandled(focusShiftId)
     const s = shifts.find((x) => x.id === focusShiftId)
-    if (!s) {
-      setError('That shift is not in this schedule view (it may be in the past or already removed).')
-      return
-    }
-    setLocationFilter('all')
-    if (s.is_published && s.status !== 'cancelled') setAdjustShift(s)
+    if (!s) return
+    setFocusHandled(focusShiftId)
+    setActionShift(s)
     window.setTimeout(() => document.getElementById(`shift-${s.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50)
   }, [focusShiftId, loading, shifts, focusHandled])
-
-  const isOnLeave = (s: Shift) => !!s.employee_id && s.status !== 'cancelled' && onLeave.has(`${s.employee_id}|${s.shift_date}`)
-  const leaveClashCount = useMemo(
-    () => shifts.filter((s) => !!s.employee_id && s.status !== 'cancelled' && onLeave.has(`${s.employee_id}|${s.shift_date}`)).length,
-    [shifts, onLeave]
-  )
 
   const visibleShifts = useMemo(
     () => (locationFilter === 'all' ? shifts : shifts.filter((s) => s.location_id === locationFilter)),
@@ -212,6 +235,22 @@ function ScheduleAdmin() {
     () => (locationFilter === 'all' ? templates : templates.filter((t) => t.location_id === locationFilter)),
     [templates, locationFilter]
   )
+  const liveCount = visibleShifts.filter((s) => s.status !== 'cancelled').length
+  const draftCount = visibleShifts.filter((s) => s.status !== 'cancelled' && !s.is_published).length
+  const cancelledInView = visibleShifts.filter((s) => s.status === 'cancelled')
+  const leaveClashCount = visibleShifts.filter(
+    (s) => !!s.employee_id && s.status !== 'cancelled' && onLeave.has(`${s.employee_id}|${s.shift_date}`)
+  ).length
+
+  const people: BoardPerson[] = useMemo(() => {
+    const withShift = new Set(visibleShifts.map((s) => s.employee_id).filter((x): x is string => !!x))
+    return employees
+      .filter((e) =>
+        withShift.has(e.id) ||
+        (locationFilter !== 'all' && e.home_location_id === locationFilter && e.employment_status === 'active')
+      )
+      .map((e) => ({ id: e.id, name: e.full_name, homeLocationId: e.home_location_id }))
+  }, [employees, visibleShifts, locationFilter])
 
   async function handleCancelDraftShift(shift: Shift) {
     if (!(await confirmDialog('Cancel this draft shift?'))) return
@@ -224,11 +263,8 @@ function ScheduleAdmin() {
   }
 
   function handleCancelShiftClick(shift: Shift) {
-    if (shift.is_published) {
-      setCancelPublishedShift(shift)
-    } else {
-      handleCancelDraftShift(shift)
-    }
+    if (shift.is_published) setCancelPublishedShift(shift)
+    else handleCancelDraftShift(shift)
   }
 
   async function handleDeactivateTemplate(id: string) {
@@ -244,38 +280,80 @@ function ScheduleAdmin() {
   async function handleResolveSwap(id: string, action: 'approve' | 'reject') {
     const { error: rpcError } = await supabase.rpc('approve_shift_swap', { p_swap_id: id, p_action: action })
     if (rpcError) {
-      setError(rpcError.message)
+      setError(friendlyError(rpcError))
       return
     }
     setNotice(action === 'approve' ? 'Swap approved — the shift has been reassigned.' : 'Swap rejected.')
     load()
   }
 
-  const visibleCancelled = useMemo(() => visibleShifts.filter((s) => s.status === 'cancelled'), [visibleShifts])
-  const selectedList = visibleCancelled.filter((s) => selectedCancelled.has(s.id))
-
-  function toggleCancelled(id: string, on: boolean) {
-    setSelectedCancelled((cur) => {
-      const n = new Set(cur)
-      if (on) n.add(id)
-      else n.delete(id)
-      return n
+  async function publishWeek() {
+    if (locationFilter === 'all') return
+    const branch = locationNames.get(locationFilter) ?? 'this branch'
+    if (!(await confirmDialog(`Publish ${draftCount} draft shift${draftCount === 1 ? '' : 's'} at ${branch} for ${weekLabel(weekStart)}? Staff will see them.`))) return
+    setPublishing(true)
+    const { data, error: rpcError } = await supabase.rpc('publish_schedule_period', {
+      p_location_id: locationFilter,
+      p_period_start: weekStart,
+      p_period_end: weekEnd,
     })
+    setPublishing(false)
+    if (rpcError) return setError(friendlyError(rpcError))
+    const res = data as { published: number; skipped_leave: { shift_date: string; employee: string }[] } | null
+    const published = res?.published ?? 0
+    const skipped = res?.skipped_leave ?? []
+    setNotice(
+      `Published ${published} shift${published === 1 ? '' : 's'} — now visible to staff.` +
+        (skipped.length
+          ? ` ${skipped.length} left as draft because the person is on approved leave: ${skipped
+              .map((x) => `${x.employee} (${fmtDate(x.shift_date)})`)
+              .join(', ')}.`
+          : '')
+    )
+    load()
+  }
+
+  async function openBranchSetup() {
+    if (!activeEntityId) return
+    const { data, error: rpcError } = await supabase.rpc('get_scheduling_setup', { p_entity_id: activeEntityId })
+    if (rpcError) return setError(friendlyError(rpcError))
+    setBranchSetup((data ?? []) as SetupBranch[])
+    setBranchSetupOpen(true)
   }
 
   function asDeletable(s: Shift): DeletableShift {
     const who = s.employees?.full_name ?? employeesById.get(s.employee_id ?? '')?.full_name ?? 'Open shift'
+    return { id: s.id, shift_date: s.shift_date, start_time: s.start_time, end_time: s.end_time, label: `${who} · ${s.locations?.name ?? 'Branch'}` }
+  }
+
+  function asCover(s: Shift): CoverShift {
     return {
       id: s.id,
       shift_date: s.shift_date,
       start_time: s.start_time,
       end_time: s.end_time,
-      label: `${who} · ${s.locations?.name ?? 'Branch'}`,
+      break_minutes: s.break_minutes,
+      location_id: s.location_id,
+      employee_id: s.employee_id,
+      is_published: s.is_published,
+      currentName: s.employee_id ? (employeesById.get(s.employee_id)?.full_name ?? null) : null,
     }
   }
 
   const pendingSwaps = swaps.filter((s) => s.status === 'claimed')
-  const otherSwaps = swaps.filter((s) => s.status !== 'claimed')
+  const otherSwaps = swaps.filter((s) => s.status !== 'claimed').slice(0, 30)
+  const tabs: { id: AdminTab; label: string }[] = [
+    { id: 'week', label: 'Week' },
+    ...(isAdmin ? [{ id: 'auto' as AdminTab, label: 'Auto-schedule' }] : []),
+    { id: 'setup', label: 'Setup' },
+  ]
+  const actionKind = actionShift ? shiftKind(actionShift, adjustedIds) : null
+  const actionOnLeave =
+    !!actionShift?.employee_id && actionShift.status !== 'cancelled' && onLeave.has(`${actionShift.employee_id}|${actionShift.shift_date}`)
+  const then = (fn: () => void) => () => {
+    setActionShift(null)
+    fn()
+  }
 
   return (
     <div className="space-y-5">
@@ -283,28 +361,47 @@ function ScheduleAdmin() {
         <div>
           <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Schedules</h1>
-          <p className="text-xs text-muted">{loading ? 'Loading…' : `${visibleShifts.length} shifts`}</p>
-        </div>
-        {mode === 'manual' && (
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="press rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
-          >
-            New shift
-          </button>
-        )}
-      </div>
-
-      {isAdmin && (
-        <div className="flex flex-wrap items-center gap-3">
-          <ModeSwitch mode={mode} onChange={setMode} />
-          <p className="text-[13px] text-muted">
-            {mode === 'manual'
-              ? 'Create and edit shifts yourself, or generate them from recurring templates.'
-              : 'Let the scheduler draft shifts from opening hours and staffing needs — you review and publish.'}
+          <p className="text-xs text-muted">
+            {loading
+              ? 'Loading…'
+              : `${weekLabel(weekStart)} · ${liveCount} shift${liveCount === 1 ? '' : 's'}${draftCount ? ` · ${draftCount} draft` : ''}`}
           </p>
         </div>
-      )}
+        <div className="flex flex-wrap gap-2">
+          <Link to="/attendance" className="btn-ghost press">
+            Attendance
+          </Link>
+          {tab === 'week' && (
+            <button
+              onClick={() => setCreateOpen(true)}
+              className="press rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark"
+            >
+              New shift
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <SegmentedTabs options={tabs} value={tab} onChange={setTab} />
+        {tab !== 'auto' && (
+          <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted w-full sm:w-56">
+            Branch
+            <select
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
+              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+            >
+              <option value="all">All branches</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
 
       {error && (
         <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
@@ -323,13 +420,6 @@ function ScheduleAdmin() {
         </p>
       )}
 
-      {leaveClashCount > 0 && (
-        <p role="status" className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">
-          {leaveClashCount} shift{leaveClashCount === 1 ? ' is' : 's are'} held by someone on approved leave — marked “On leave” below.
-          Reassign or cancel {leaveClashCount === 1 ? 'it' : 'them'}; drafts on leave days won't be published.
-        </p>
-      )}
-
       {pendingSwaps.length > 0 && (
         <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
           <h2 className="mb-3 text-sm font-semibold text-ink">Swap requests awaiting your decision</h2>
@@ -342,10 +432,10 @@ function ScheduleAdmin() {
                   {employeesById.get(s.requested_by)?.full_name ?? 'Unknown'} → {employeesById.get(s.claimed_by ?? '')?.full_name ?? 'Unknown'}
                 </span>
                 <span className="flex gap-1">
-                  <button onClick={() => handleResolveSwap(s.id, 'approve')} className="rounded-full bg-brand-action-soft px-2 py-1 font-medium text-brand-action-text">
+                  <button onClick={() => handleResolveSwap(s.id, 'approve')} className="press rounded-full bg-brand-action-soft px-2 py-1 font-medium text-brand-action-text">
                     Approve
                   </button>
-                  <button onClick={() => handleResolveSwap(s.id, 'reject')} className="rounded-full bg-brand-risk-soft px-2 py-1 font-medium text-brand-risk-text">
+                  <button onClick={() => handleResolveSwap(s.id, 'reject')} className="press rounded-full bg-brand-risk-soft px-2 py-1 font-medium text-brand-risk-text">
                     Reject
                   </button>
                 </span>
@@ -355,226 +445,150 @@ function ScheduleAdmin() {
         </div>
       )}
 
-      {mode === 'auto' && activeEntityId ? (
+      {tab === 'week' && (
+        <div key="week" className="rise space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-1">
+              <button aria-label="Previous week" onClick={() => setWeekStart(isoAddDays(weekStart, -7))} className="press btn-secondary px-3">
+                ‹
+              </button>
+              <button onClick={() => setWeekStart(thisMonday())} disabled={weekStart === thisMonday()} className="press btn-secondary">
+                This week
+              </button>
+              <button aria-label="Next week" onClick={() => setWeekStart(isoAddDays(weekStart, 7))} className="press btn-secondary px-3">
+                ›
+              </button>
+              <span className="ml-2 text-sm font-medium text-ink">{weekLabel(weekStart)}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {isAdmin && cancelledInView.length > 0 && (
+                <button onClick={() => setToDelete(cancelledInView)} className="press rounded-full bg-brand-risk-soft px-3 py-1.5 text-xs font-medium text-brand-risk-text">
+                  Delete {cancelledInView.length} cancelled
+                </button>
+              )}
+              {draftCount > 0 &&
+                (locationFilter === 'all' ? (
+                  <span className="text-xs text-muted">Choose a branch to publish its {draftCount} draft{draftCount === 1 ? '' : 's'}</span>
+                ) : (
+                  <button onClick={publishWeek} disabled={publishing} className="btn-primary press">
+                    {publishing ? 'Publishing…' : `Publish week (${draftCount} draft${draftCount === 1 ? '' : 's'})`}
+                  </button>
+                ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <StatusLegend />
+            {leaveClashCount > 0 && (
+              <p role="status" className="text-xs font-medium text-brand-risk-text">
+                {leaveClashCount} shift{leaveClashCount === 1 ? '' : 's'} held by someone on approved leave — reassign or cancel.
+              </p>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="h-64 animate-pulse rounded-[14px] bg-surface" />
+          ) : visibleShifts.length === 0 && people.length === 0 ? (
+            <EmptyState title="No shifts this week" description="Create a shift, generate from templates in Setup, or use Auto-schedule." />
+          ) : (
+            <WeekBoard
+              weekStart={weekStart}
+              shifts={visibleShifts}
+              people={people}
+              adjustedIds={adjustedIds}
+              onLeave={onLeave}
+              locationNames={locationNames}
+              showBranch={locationFilter === 'all'}
+              focusId={focusShiftId}
+              onOpen={setActionShift}
+            />
+          )}
+
+          {otherSwaps.length > 0 && (
+            <details className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
+              <summary className="cursor-pointer text-sm font-semibold text-ink">Swap history</summary>
+              <ul className="mt-3 space-y-1.5">
+                {otherSwaps.map((s) => (
+                  <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-xs">
+                    <span className="text-ink">
+                      {s.shifts && `${fmtDate(s.shifts.shift_date)} · ${s.shifts.locations?.name ?? ''}`}
+                      {' · '}
+                      {employeesById.get(s.requested_by)?.full_name ?? 'Unknown'}
+                      {s.claimed_by && ` → ${employeesById.get(s.claimed_by)?.full_name ?? 'Unknown'}`}
+                    </span>
+                    <StatusBadge status={s.status} tone={SWAP_STATUS_TONE[s.status]} />
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+
+      {tab === 'auto' && activeEntityId && (
         <div key="auto" className="rise">
           <AutoSchedulePanel
             entityId={activeEntityId}
             positions={positions}
             onNotice={setNotice}
             onApplied={(created) => {
-              setMode('manual')
+              setTab('week')
               setNotice(
-                `Created ${created} draft shift${created === 1 ? '' : 's'}. They're listed below as drafts — use Publish period when you're ready for staff to see them.`
+                `Created ${created} draft shift${created === 1 ? '' : 's'}. Review them in the week view, then use Publish week when you're ready for staff to see them.`
               )
               load()
             }}
           />
         </div>
-      ) : (
-      <div key="manual" className="rise space-y-5">
-      <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted w-full sm:w-56">
-        Branch
-        <select
-          value={locationFilter}
-          onChange={(e) => setLocationFilter(e.target.value)}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
-        >
-          <option value="all">All branches</option>
-          {locations.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <RecurringTemplatesPanel
-        templates={visibleTemplates}
-        locations={locations}
-        onNewTemplate={() => setTemplateModalOpen(true)}
-        onDeactivate={handleDeactivateTemplate}
-        onGenerated={() => {
-          setNotice('Draft shifts generated from your recurring templates. Review below, then publish when ready.')
-          load()
-        }}
-        onPublished={(msg) => {
-          setNotice(msg)
-          load()
-        }}
-        onError={setError}
-      />
-
-      <Link
-        to="/attendance"
-        className="card flex min-h-11 items-center justify-between gap-3 transition hover:border-brand-blue/40"
-      >
-        <span>
-          <span className="block text-sm font-semibold text-ink">Attendance exceptions & corrections</span>
-          <span className="block text-sm text-muted">Review missing clock-outs, late clock-ins and payable time in Attendance.</span>
-        </span>
-        <span className="btn-secondary">Open Attendance</span>
-      </Link>
-
-      {loading ? (
-        <div className="space-y-2">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-14 animate-pulse rounded-[14px] bg-surface" />
-          ))}
-        </div>
-      ) : visibleShifts.length === 0 ? (
-        <EmptyState title="No shifts in this window" description="Create a shift to start building the roster." />
-      ) : (
-        <>
-        {isAdmin && (
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            {visibleCancelled.length > 0 && (
-              <>
-                <label className="flex items-center gap-1.5 text-muted">
-                  <input
-                    type="checkbox"
-                    checked={selectedList.length > 0 && selectedList.length === visibleCancelled.length}
-                    onChange={(e) =>
-                      setSelectedCancelled(e.target.checked ? new Set(visibleCancelled.map((s) => s.id)) : new Set())
-                    }
-                  />
-                  Select all cancelled ({visibleCancelled.length})
-                </label>
-                {selectedList.length > 0 && (
-                  <button
-                    onClick={() => setToDelete(selectedList)}
-                    className="rounded-full bg-brand-risk-soft px-3 py-1 font-medium text-brand-risk-text"
-                  >
-                    Delete selected ({selectedList.length})
-                  </button>
-                )}
-              </>
-            )}
-            {activeEntityId && <ShiftSwapsToggle entityId={activeEntityId} onChanged={setSwapsEnabled} onError={setError} />}
-            {profile?.role === 'owner' && activeEntityId && <CrossBranchClaimsToggle entityId={activeEntityId} onError={setError} />}
-            {!swapsEnabled && <span className="text-brand-warning-solid">Swaps are off — staff can't request or claim them.</span>}
-            <button onClick={() => setShowDeleted(true)} className="press ml-auto font-medium text-muted hover:text-ink hover:underline">
-              Deleted shifts log
-            </button>
-          </div>
-        )}
-        <div className="overflow-hidden rounded-[14px] border border-border bg-surface shadow-card">
-          <table className="table-stack w-full text-left text-sm">
-            <thead className="border-b border-border bg-surface-alt text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-4 py-3 font-medium">Date</th>
-                <th className="px-4 py-3 font-medium">Time</th>
-                <th className="px-4 py-3 font-medium">Branch</th>
-                <th className="px-4 py-3 font-medium">Role</th>
-                <th className="px-4 py-3 font-medium">Assigned to</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {visibleShifts.map((s) => (
-                <tr
-                  key={s.id}
-                  id={`shift-${s.id}`}
-                  className={`${isOnLeave(s) ? 'bg-brand-risk-soft/40' : ''} ${focusShiftId === s.id ? 'outline outline-2 -outline-offset-2 outline-brand-blue' : ''}`}
-                >
-                  <td data-label="Date" className="px-4 py-3 text-ink">
-                    <span className="flex items-center gap-2">
-                      {isAdmin && s.status === 'cancelled' && (
-                        <input
-                          type="checkbox"
-                          aria-label={`Select cancelled shift on ${fmtDate(s.shift_date)}`}
-                          checked={selectedCancelled.has(s.id)}
-                          onChange={(e) => toggleCancelled(s.id, e.target.checked)}
-                        />
-                      )}
-                      {fmtDate(s.shift_date)}
-                    </span>
-                  </td>
-                  <td data-label="Time" className="px-4 py-3 text-muted">
-                    {fmtTime(s.start_time)}–{fmtTime(s.end_time)}
-                    {s.break_minutes > 0 && <span className="ml-1 text-xs">· {s.break_minutes}m break</span>}
-                  </td>
-                  <td data-label="Branch" className="px-4 py-3 text-muted">{s.locations?.name ?? '—'}</td>
-                  <td data-label="Role" className="px-4 py-3 text-muted">{s.positions?.title ?? '—'}</td>
-                  <td data-label="Assigned to" className="px-4 py-3 text-muted">{s.employees?.full_name ?? employees.find((e) => e.id === s.employee_id)?.full_name ?? (s.employee_id ? 'Unknown employee' : 'Open shift')}</td>
-                  <td data-label="Status" className="px-4 py-3">
-                    <span className="flex items-center gap-1.5">
-                      <StatusBadge status={s.status} tone={SHIFT_STATUS_TONE[s.status]} />
-                      {!s.is_published && <StatusBadge status="draft" />}
-                      {isOnLeave(s) && <StatusBadge status="On leave" tone="risk" />}
-                    </span>
-                  </td>
-                  <td data-label="Actions" className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-3">
-                      {s.status !== 'cancelled' && s.is_published && (
-                        <button onClick={() => setAdjustShift(s)} className="text-xs font-medium text-brand-blue hover:underline">
-                          Adjust
-                        </button>
-                      )}
-                      {s.status !== 'cancelled' && s.shift_date >= todayIso() && (
-                        <button
-                          onClick={() =>
-                            setCoverShift({
-                              id: s.id,
-                              shift_date: s.shift_date,
-                              start_time: s.start_time,
-                              end_time: s.end_time,
-                              break_minutes: s.break_minutes,
-                              location_id: s.location_id,
-                              employee_id: s.employee_id,
-                              is_published: s.is_published,
-                              currentName: s.employee_id ? (employeesById.get(s.employee_id)?.full_name ?? null) : null,
-                            })
-                          }
-                          className="text-xs font-medium text-brand-blue hover:underline"
-                        >
-                          Find cover
-                        </button>
-                      )}
-                      {s.status !== 'cancelled' && (
-                        <button onClick={() => handleCancelShiftClick(s)} className="text-xs font-medium text-brand-risk hover:underline">
-                          Cancel
-                        </button>
-                      )}
-                      {s.is_published && (
-                        <button onClick={() => setHistoryShift(s)} className="text-xs font-medium text-muted hover:underline">
-                          History
-                        </button>
-                      )}
-                      {isAdmin && s.status === 'cancelled' && (
-                        <button onClick={() => setToDelete([s])} className="text-xs font-medium text-brand-risk hover:underline">
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        </>
       )}
 
-      {otherSwaps.length > 0 && (
-        <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
-          <h2 className="mb-3 text-sm font-semibold text-ink">Swap history</h2>
-          <ul className="space-y-1.5">
-            {otherSwaps.map((s) => (
-              <li key={s.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-surface-alt px-3 py-2 text-xs">
-                <span className="text-ink">
-                  {s.shifts && `${fmtDate(s.shifts.shift_date)} · ${s.shifts.locations?.name ?? ''}`}
-                  {' · '}
-                  {employeesById.get(s.requested_by)?.full_name ?? 'Unknown'}
-                  {s.claimed_by && ` → ${employeesById.get(s.claimed_by)?.full_name ?? 'Unknown'}`}
+      {tab === 'setup' && (
+        <div key="setup" className="rise space-y-5">
+          <RecurringTemplatesPanel
+            templates={visibleTemplates}
+            locations={locations}
+            onNewTemplate={() => setTemplateModalOpen(true)}
+            onDeactivate={handleDeactivateTemplate}
+            onGenerated={() => {
+              setNotice('Draft shifts generated from your recurring templates. Review them in the week view, then publish.')
+              load()
+            }}
+            onPublished={(msg) => {
+              setNotice(msg)
+              load()
+            }}
+            onError={setError}
+          />
+          {isAdmin && activeEntityId && (
+            <>
+              <section className="card flex flex-wrap items-center justify-between gap-3">
+                <span>
+                  <span className="block text-sm font-semibold text-ink">Opening hours and staffing needs</span>
+                  <span className="block text-sm text-muted">Used by Auto-schedule. Set them per branch.</span>
                 </span>
-                <StatusBadge status={s.status} tone={SWAP_STATUS_TONE[s.status]} />
-              </li>
-            ))}
-          </ul>
+                <button className="btn-secondary press" onClick={openBranchSetup}>
+                  Branch setup
+                </button>
+              </section>
+              <section className="card space-y-3">
+                <h2 className="text-sm font-semibold text-ink">Staff self-service</h2>
+                <div className="flex flex-col gap-2">
+                  <ShiftSwapsToggle entityId={activeEntityId} onChanged={setSwapsEnabled} onError={setError} />
+                  {profile?.role === 'owner' && <CrossBranchClaimsToggle entityId={activeEntityId} onError={setError} />}
+                  {!swapsEnabled && <p className="text-xs text-brand-warning-solid">Swaps are off — staff can't request or claim them.</p>}
+                </div>
+              </section>
+              <section className="card flex flex-wrap items-center justify-between gap-3">
+                <span>
+                  <span className="block text-sm font-semibold text-ink">Deleted shifts</span>
+                  <span className="block text-sm text-muted">Every deleted shift, who deleted it and why.</span>
+                </span>
+                <button className="btn-secondary press" onClick={() => setShowDeleted(true)}>
+                  Open log
+                </button>
+              </section>
+            </>
+          )}
         </div>
-      )}
-      </div>
       )}
 
       {createOpen && activeEntityId && (
@@ -604,6 +618,27 @@ function ScheduleAdmin() {
         />
       )}
 
+      {actionShift && actionKind && (
+        <ShiftActionsSheet
+          shift={actionShift}
+          kind={actionKind}
+          personName={
+            actionShift.employee_id ? (employeesById.get(actionShift.employee_id)?.full_name ?? 'Unknown employee') : 'Open shift'
+          }
+          branchName={locationNames.get(actionShift.location_id) ?? 'Branch'}
+          onLeave={actionOnLeave}
+          onClose={() => setActionShift(null)}
+          actions={{
+            onEdit: actionKind !== 'cancelled' ? then(() => setAdjustShift(actionShift)) : undefined,
+            onCover:
+              actionKind !== 'cancelled' && actionShift.shift_date >= todayIso() ? then(() => setCoverShift(asCover(actionShift))) : undefined,
+            onHistory: actionShift.is_published ? then(() => setHistoryShift(actionShift)) : undefined,
+            onCancel: actionKind !== 'cancelled' ? then(() => handleCancelShiftClick(actionShift)) : undefined,
+            onDelete: isAdmin && actionKind === 'cancelled' ? then(() => setToDelete([actionShift])) : undefined,
+          }}
+        />
+      )}
+
       {cancelPublishedShift && (
         <CancelShiftModal
           shift={cancelPublishedShift}
@@ -624,17 +659,14 @@ function ScheduleAdmin() {
           onClose={() => setAdjustShift(null)}
           onAdjusted={() => {
             setAdjustShift(null)
-            setNotice('Shift updated and change recorded.')
+            setNotice(adjustShift.is_published ? 'Shift updated and change recorded.' : 'Draft shift updated.')
             load()
           }}
         />
       )}
 
       {historyShift && (
-        <ShiftHistoryDrawer
-          shift={historyShift}
-          onClose={() => setHistoryShift(null)}
-        />
+        <ShiftHistoryDrawer shift={historyShift} employees={employees} locations={locations} onClose={() => setHistoryShift(null)} />
       )}
 
       {toDelete && (
@@ -643,7 +675,6 @@ function ScheduleAdmin() {
           onClose={() => setToDelete(null)}
           onDone={(res) => {
             setToDelete(null)
-            setSelectedCancelled(new Set())
             const skipped = res.skipped.length
               ? ` ${res.skipped.length} skipped: ${res.skipped.map((x) => `${fmtDate(x.shift_date)} (${x.reason})`).join(', ')}.`
               : ''
@@ -665,6 +696,20 @@ function ScheduleAdmin() {
         />
       )}
 
+      {branchSetupOpen && branchSetup && (
+        <BranchSetupSheet
+          setup={branchSetup}
+          initialLocationId={locationFilter !== 'all' ? locationFilter : undefined}
+          positions={positions}
+          onClose={() => setBranchSetupOpen(false)}
+          onSaved={(msg) => {
+            setNotice(msg)
+            if (activeEntityId)
+              supabase.rpc('get_scheduling_setup', { p_entity_id: activeEntityId }).then(({ data }) => setBranchSetup((data ?? []) as SetupBranch[]))
+          }}
+        />
+      )}
+
       {showDeleted && activeEntityId && (
         <DeletedShiftsSheet entityId={activeEntityId} locations={locations} employees={employees} onClose={() => setShowDeleted(false)} />
       )}
@@ -672,42 +717,38 @@ function ScheduleAdmin() {
   )
 }
 
-const MODES = [
-  { id: 'manual', label: 'Manual' },
-  { id: 'auto', label: 'Auto-schedule' },
-] as const
-
-function ModeSwitch({ mode, onChange }: { mode: 'manual' | 'auto'; onChange: (m: 'manual' | 'auto') => void }) {
-  const index = MODES.findIndex((m) => m.id === mode)
+function SegmentedTabs<T extends string>({ options, value, onChange }: { options: { id: T; label: string }[]; value: T; onChange: (v: T) => void }) {
+  const index = Math.max(0, options.findIndex((o) => o.id === value))
   return (
     <div
       className="segmented"
-      role="radiogroup"
-      aria-label="Scheduling mode"
+      role="tablist"
+      aria-label="Schedule views"
       onKeyDown={(e) => {
         if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
         e.preventDefault()
-        const next = MODES[(index + (e.key === 'ArrowRight' ? 1 : MODES.length - 1)) % MODES.length]
+        const next = options[(index + (e.key === 'ArrowRight' ? 1 : options.length - 1)) % options.length]
         onChange(next.id)
-        ;(e.currentTarget.querySelector(`[data-mode="${next.id}"]`) as HTMLElement | null)?.focus()
+        ;(e.currentTarget.querySelector(`[data-tab="${next.id}"]`) as HTMLElement | null)?.focus()
       }}
     >
       <span
         className="segmented__thumb"
         aria-hidden="true"
-        style={{ width: `calc(${100 / MODES.length}% - 3px)`, transform: `translateX(${index * 100}%)` }}
+        style={{ width: `calc(${100 / options.length}% - ${6 / options.length}px)`, transform: `translateX(${index * 100}%)` }}
       />
-      {MODES.map((m) => (
+      {options.map((o) => (
         <button
-          key={m.id}
-          data-mode={m.id}
-          role="radio"
-          aria-checked={mode === m.id}
-          tabIndex={mode === m.id ? 0 : -1}
-          onClick={() => onChange(m.id)}
+          key={o.id}
+          data-tab={o.id}
+          role="tab"
+          aria-selected={value === o.id}
+          aria-checked={value === o.id}
+          tabIndex={value === o.id ? 0 : -1}
+          onClick={() => onChange(o.id)}
           className="segmented__option"
         >
-          {m.label}
+          {o.label}
         </button>
       ))}
     </div>
@@ -814,8 +855,8 @@ function RecurringTemplatesPanel({
                 {t.break_minutes > 0 ? ` · ${t.break_minutes}m break` : ''}
                 {t.positions?.title ? ` · ${t.positions.title}` : ''}
                 {' · from '}
-                {t.effective_start_date}
-                {t.effective_end_date ? ` to ${t.effective_end_date}` : ' (ongoing)'}
+                {fmtDate(t.effective_start_date)}
+                {t.effective_end_date ? ` to ${fmtDate(t.effective_end_date)}` : ' (ongoing)'}
               </span>
               <button onClick={() => onDeactivate(t.id)} className="font-medium text-brand-risk hover:underline">
                 Deactivate
@@ -1684,21 +1725,37 @@ function AdjustShiftModal({
   const [error, setError] = useState<string | null>(null)
   const patternWarnings = useWorkPatternWarnings(employeeId, shiftDate, shift.id)
 
+  const isDraft = !shift.is_published
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!reason.trim()) { setError('A reason is required.'); return }
+    if (!isDraft && !reason.trim()) { setError('A reason is required.'); return }
     setSubmitting(true)
     setError(null)
-    const { error: rpcError } = await supabase.rpc('adjust_published_shift', {
-      p_shift_id: shift.id,
-      p_reason: reason.trim(),
-      p_shift_date: shiftDate,
-      p_start_time: startTime,
-      p_end_time: endTime,
-      p_break_minutes: breakMinutes,
-      p_employee_id: employeeId || null,
-      p_location_id: locationId,
-    })
+    // Drafts aren't visible to staff yet, so they are edited directly; published
+    // shifts need a reason and keep their history (the database enforces this).
+    const { error: rpcError } = isDraft
+      ? await supabase
+          .from('shifts')
+          .update({
+            shift_date: shiftDate,
+            start_time: startTime,
+            end_time: endTime,
+            break_minutes: breakMinutes,
+            employee_id: employeeId || null,
+            location_id: locationId,
+          })
+          .eq('id', shift.id)
+      : await supabase.rpc('adjust_published_shift', {
+          p_shift_id: shift.id,
+          p_reason: reason.trim(),
+          p_shift_date: shiftDate,
+          p_start_time: startTime,
+          p_end_time: endTime,
+          p_break_minutes: breakMinutes,
+          p_employee_id: employeeId || null,
+          p_location_id: locationId,
+        })
     setSubmitting(false)
     if (rpcError) { setError(friendlyError(rpcError)); return }
     onAdjusted()
@@ -1707,7 +1764,7 @@ function AdjustShiftModal({
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-ink/40 px-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card" onClick={(e) => e.stopPropagation()}>
-        <h2 className="mb-4 text-base font-semibold text-ink">Adjust published shift</h2>
+        <h2 className="mb-4 text-base font-semibold text-ink">{isDraft ? 'Edit draft shift' : 'Adjust published shift'}</h2>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label htmlFor="adjust-branch" className="mb-1 block text-sm font-medium text-ink">Branch</label>
@@ -1746,19 +1803,21 @@ function AdjustShiftModal({
                 className="w-full rounded-lg border border-border px-2 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
             </div>
           </div>
-          <div>
-            <label htmlFor="adjust-reason" className="mb-1 block text-sm font-medium text-ink">Reason for change *</label>
-            <textarea id="adjust-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
-              placeholder="e.g. Employee requested time change, branch operational need"
-              className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
-          </div>
+          {!isDraft && (
+            <div>
+              <label htmlFor="adjust-reason" className="mb-1 block text-sm font-medium text-ink">Reason for change *</label>
+              <textarea id="adjust-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+                placeholder="e.g. Employee requested time change, branch operational need"
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20" />
+            </div>
+          )}
           <WorkPatternWarnings warnings={patternWarnings} />
           {error && <p className="rounded-lg bg-brand-risk-soft px-3 py-2 text-sm text-brand-risk-text">{error}</p>}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-border px-4 py-2 text-sm text-ink hover:bg-surface-alt">
               Cancel
             </button>
-            <button type="submit" disabled={submitting || !reason.trim()}
+            <button type="submit" disabled={submitting || (!isDraft && !reason.trim())}
               className="rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white hover:bg-brand-blue-dark disabled:opacity-60">
               {submitting ? 'Saving…' : 'Save changes'}
             </button>
@@ -1773,7 +1832,17 @@ function AdjustShiftModal({
 // Shift change history drawer (reads shift_adjustments)
 // ---------------------------------------------------------------------------
 
-function ShiftHistoryDrawer({ shift, onClose }: { shift: Shift; onClose: () => void }) {
+function ShiftHistoryDrawer({
+  shift,
+  onClose,
+  employees = [],
+  locations = [],
+}: {
+  shift: Shift
+  onClose: () => void
+  employees?: Pick<Employee, 'id' | 'full_name'>[]
+  locations?: Pick<Location, 'id' | 'name'>[]
+}) {
   const [history, setHistory] = useState<ShiftAdjustment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1792,10 +1861,16 @@ function ShiftHistoryDrawer({ shift, onClose }: { shift: Shift; onClose: () => v
 
   useEffect(() => { load() }, [load])
 
-  function fmtTs(ts: string) {
-    const d = new Date(ts)
-    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) +
-      ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const empName = (id: unknown) => (typeof id === 'string' ? employees.find((e) => e.id === id)?.full_name ?? 'someone else' : 'open shift')
+  const locName = (id: unknown) => (typeof id === 'string' ? locations.find((l) => l.id === id)?.name ?? 'another branch' : '—')
+  function describeWas(v: Record<string, unknown>) {
+    const parts: string[] = []
+    if (typeof v.shift_date === 'string') parts.push(fmtDate(v.shift_date))
+    if (typeof v.start_time === 'string' && typeof v.end_time === 'string') parts.push(`${fmtTime(v.start_time)}–${fmtTime(v.end_time)}`)
+    if (typeof v.break_minutes === 'number' && v.break_minutes > 0) parts.push(`${v.break_minutes}m break`)
+    if ('employee_id' in v) parts.push(empName(v.employee_id))
+    if ('location_id' in v) parts.push(locName(v.location_id))
+    return parts.join(' · ')
   }
 
   return (
@@ -1826,13 +1901,11 @@ function ShiftHistoryDrawer({ shift, onClose }: { shift: Shift; onClose: () => v
               <li key={h.id} className="py-3 text-sm">
                 <div className="flex items-start justify-between gap-2">
                   <span className="font-medium text-ink">{CHANGE_TYPE_LABEL[h.change_type]}</span>
-                  <span className="shrink-0 text-xs text-muted">{fmtTs(h.changed_at)}</span>
+                  <span className="shrink-0 text-xs text-muted">{fmtDateTime(h.changed_at)}</span>
                 </div>
                 {h.reason && <p className="mt-0.5 text-xs text-muted">Reason: {h.reason}</p>}
                 {h.old_values && Object.keys(h.old_values).length > 0 && (
-                  <p className="mt-0.5 text-xs text-muted">
-                    Was: {Object.entries(h.old_values).map(([k, v]) => `${k.replace(/_/g, ' ')} ${String(v)}`).join(', ')}
-                  </p>
+                  <p className="mt-0.5 text-xs text-muted">Was: {describeWas(h.old_values)}</p>
                 )}
               </li>
             ))}

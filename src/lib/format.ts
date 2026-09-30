@@ -8,12 +8,25 @@ function parse(value: string): Date {
   return value.length === 10 ? new Date(value + 'T12:00:00Z') : new Date(value)
 }
 
+// Fixed English month names: browsers disagree on en-GB "Sep" vs "Sept", and
+// the app uses one format everywhere.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+function dubaiParts(d: Date) {
+  const p = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: TZ }).format(d)
+  const [y, m, day] = p.split('-').map(Number)
+  const weekday = new Date(Date.UTC(y, m - 1, day)).getUTCDay()
+  return { y, m, day, weekday }
+}
+
 /** "25 Sep 2026" for an ISO date (yyyy-mm-dd) or timestamp. */
 export function fmtDate(value: string | null | undefined): string {
   if (!value) return '—'
   const d = parse(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString(LOCALE, { day: '2-digit', month: 'short', year: 'numeric', timeZone: TZ })
+  const { y, m, day } = dubaiParts(d)
+  return `${String(day).padStart(2, '0')} ${MONTHS[m - 1]} ${y}`
 }
 
 /** "Thu 25 Sep" — short weekday label for schedule/attendance lists. */
@@ -21,7 +34,8 @@ export function fmtDayShort(value: string | null | undefined): string {
   if (!value) return '—'
   const d = parse(value)
   if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleDateString(LOCALE, { weekday: 'short', day: '2-digit', month: 'short', timeZone: TZ })
+  const { m, day, weekday } = dubaiParts(d)
+  return `${WEEKDAYS[weekday]} ${String(day).padStart(2, '0')} ${MONTHS[m - 1]}`
 }
 
 /** "14:05" for a timestamp, or passthrough "HH:MM" for a time-of-day string. */
