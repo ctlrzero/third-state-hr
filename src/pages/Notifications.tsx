@@ -53,7 +53,9 @@ export default function Notifications() {
       if (!res.error) setRows((prev) => prev?.map((r) => (r.id === n.id ? { ...r, read_at: new Date().toISOString() } : r)) ?? prev)
     }
     const route = n.target_type ? NOTIFICATION_TARGET_ROUTE[n.target_type] : undefined
-    if (route) navigate(route)
+    // A shift notice opens that shift (e.g. "can't come in" → Find cover).
+    const target = route && n.target_type === 'shifts' && n.target_id ? `${route}?shift=${n.target_id}` : route
+    if (target) navigate(target)
   }
 
   async function markAll() {

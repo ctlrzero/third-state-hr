@@ -9,7 +9,7 @@ import { fmtDayShort, fmtMinutes, fmtTime } from '../lib/format'
 // Manager "Today" board (P1-3). One read — get_branch_today — scoped on the
 // server exactly like attendance exceptions; it never returns pay data.
 
-type PersonStatus = 'upcoming' | 'not_in' | 'in' | 'in_late' | 'done' | 'no_show'
+type PersonStatus = 'upcoming' | 'not_in' | 'in' | 'in_late' | 'done' | 'no_show' | 'absent_reported'
 
 interface TodayPerson {
   shift_id: string
@@ -23,6 +23,9 @@ interface TodayPerson {
   clock_out_at: string | null
   late_minutes: number
   status: PersonStatus
+  absence_leave_request_id: string | null
+  absence_leave_status: 'pending' | 'approved' | null
+  absence_note: string | null
 }
 
 interface BranchToday {
@@ -84,6 +87,7 @@ export default function Today() {
     return () => window.clearInterval(t)
   }, [load])
 
+  const absent = data ? data.people.filter((p) => p.status === 'absent_reported') : []
   const needsAction = data ? data.people.filter((p) => p.status === 'not_in' || p.status === 'no_show') : []
   const inNow = data ? data.people.filter((p) => p.status === 'in' || p.status === 'in_late') : []
   const later = data ? data.people.filter((p) => p.status === 'upcoming') : []
@@ -129,7 +133,7 @@ export default function Today() {
           <div className="grid grid-cols-4 gap-2 text-center">
             <Stat label="Scheduled" value={data.people.length} />
             <Stat label="In now" value={inNow.length} />
-            <Stat label="Not in" value={needsAction.length} tone={needsAction.length ? 'risk' : 'default'} />
+            <Stat label="Not in" value={needsAction.length + absent.length} tone={needsAction.length + absent.length ? 'risk' : 'default'} />
             <Stat label="Approvals" value={approvalsTotal} tone={approvalsTotal ? 'warning' : 'default'} />
           </div>
 
@@ -140,7 +144,19 @@ export default function Today() {
             </Alert>
           )}
 
-          <Section title="Needs you now" count={needsAction.length + data.missing_clock_outs.length + data.open_gaps.length + data.unscheduled.length}>
+          <Section title="Needs you now" count={absent.length + needsAction.length + data.missing_clock_outs.length + data.open_gaps.length + data.unscheduled.length}>
+            {absent.map((p) => (
+              <Card
+                key={p.shift_id}
+                tone="risk"
+                title={p.name}
+                subtitle={`${fmtTime(p.start_time)}–${fmtTime(p.end_time)}${p.absence_note ? ` · “${p.absence_note}”` : ''}${
+                  p.absence_leave_status === 'pending' ? ' · leave to decide' : ''
+                }`}
+                badge="Can’t come in"
+                action={<ActionLink to={`/schedules?shift=${p.shift_id}`}>Find cover</ActionLink>}
+              />
+            ))}
             {needsAction.map((p) => (
               <Card
                 key={p.shift_id}

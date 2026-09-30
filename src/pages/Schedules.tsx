@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
-import { fmtDateTime, fmtDayShort, fmtTime } from '../lib/format'
+import { fmtDateTime, fmtDayShort, fmtTime, todayDubai } from '../lib/format'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { StatusBadge } from '../components/StatusBadge'
@@ -49,6 +49,7 @@ const CHANGE_TYPE_LABEL: Record<ShiftChangeType, string> = {
   time_changed: 'Time changed',
   break_changed: 'Break changed',
   deleted: 'Deleted',
+  absence_reported: 'Can’t come in (reported)',
 }
 
 function todayIso() {
@@ -183,7 +184,12 @@ function ScheduleAdmin() {
     else setShifts(weekShifts)
     const publishedIds = weekShifts.filter((s) => s.is_published).map((s) => s.id)
     if (publishedIds.length) {
-      const { data: adj } = await supabase.from('shift_adjustments').select('shift_id').in('shift_id', publishedIds)
+      // "Can't come in" reports are shown on the Today board, not as an adjustment to the shift itself.
+      const { data: adj } = await supabase
+        .from('shift_adjustments')
+        .select('shift_id')
+        .in('shift_id', publishedIds)
+        .neq('change_type', 'absence_reported')
       setAdjustedIds(new Set((adj ?? []).map((a: { shift_id: string }) => a.shift_id)))
     } else setAdjustedIds(new Set())
     setSwaps((swapsRes.data ?? []) as unknown as ShiftSwapRequest[])
@@ -1326,6 +1332,9 @@ function MySchedule() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [swapNoteFor, setSwapNoteFor] = useState<string | null>(null)
   const [swapNote, setSwapNote] = useState('')
+  const [absenceFor, setAbsenceFor] = useState<string | null>(null)
+  const [myLeave, setMyLeave] = useState<{ start_date: string; end_date: string; status: string }[]>([])
+  const [absenceTypes, setAbsenceTypes] = useState<{ id: string; name: string }[]>([])
 
   async function load() {
     setLoading(true)
@@ -1349,7 +1358,7 @@ function MySchedule() {
       const { data: on } = await supabase.rpc('shift_swaps_enabled', { p_entity_id: profile.entity_id })
       setSwapsOn(on !== false)
     }
-    const [shiftsRes, openRes, swapsRes] = await Promise.all([
+    const [shiftsRes, openRes, swapsRes, leaveRes, typesRes] = await Promise.all([
       supabase
         .from('shifts')
         .select('*, locations(id, name), positions(id, title)')
@@ -1366,7 +1375,15 @@ function MySchedule() {
         .from('shift_swap_requests')
         .select('*, shifts(id, shift_date, start_time, end_time, location_id, locations(id, name))')
         .order('created_at', { ascending: false }),
+      supabase
+        .from('leave_requests')
+        .select('start_date, end_date, status')
+        .in('status', ['pending', 'approved'])
+        .gte('end_date', today),
+      supabase.from('leave_types').select('id, name').in('name', ['Sick Leave', 'Annual Leave']).order('name', { ascending: false }),
     ])
+    setMyLeave((leaveRes.data ?? []) as { start_date: string; end_date: string; status: string }[])
+    setAbsenceTypes((typesRes.data ?? []) as { id: string; name: string }[])
 
     if (shiftsRes.error) setError(shiftsRes.error.message)
     else setMyShifts((shiftsRes.data ?? []) as unknown as Shift[])
@@ -1398,6 +1415,24 @@ function MySchedule() {
       return
     }
     setNotice('Swap request posted — a colleague can claim it, then a manager approves.')
+    load()
+  }
+
+  async function handleReportAbsence(shiftId: string, leaveTypeId: string, note: string) {
+    setBusyId(shiftId)
+    setError(null)
+    const { error: rpcError } = await supabase.rpc('report_absence', {
+      p_shift_id: shiftId,
+      p_leave_type_id: leaveTypeId,
+      p_note: note.trim() || null,
+    })
+    setBusyId(null)
+    if (rpcError) {
+      setError(rpcError.message)
+      return
+    }
+    setAbsenceFor(null)
+    setNotice('Your manager has been told and a leave request was sent for that day. You don’t need to find cover yourself.')
     load()
   }
 
@@ -1504,6 +1539,9 @@ function MySchedule() {
           <ul className="space-y-2">
             {myShifts.map((s) => {
               const existingSwap = swapByShiftId.get(s.id)
+              const leave = myLeave.find((l) => s.shift_date >= l.start_date && s.shift_date <= l.end_date)
+              // Overnight shifts (end before start) run past midnight, so they haven't ended today.
+              const ended = s.shift_date === todayDubai() && s.end_time > s.start_time && fmtTime(s.end_time) <= fmtTime(new Date().toISOString())
               return (
                 <li key={s.id} className="rounded-lg bg-surface-alt px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1511,17 +1549,45 @@ function MySchedule() {
                       {fmtDate(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)} · {s.locations?.name ?? '—'}
                       {s.positions?.title ? ` · ${s.positions.title}` : ''}
                     </span>
-                    {!swapsOn ? null : existingSwap ? (
-                      <StatusBadge status={existingSwap.status} tone={SWAP_STATUS_TONE[existingSwap.status]} />
-                    ) : (
-                      <button
-                        onClick={() => setSwapNoteFor(swapNoteFor === s.id ? null : s.id)}
-                        className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
-                      >
-                        Request swap
-                      </button>
-                    )}
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      {leave ? (
+                        <StatusBadge status={leave.status === 'approved' ? 'On leave' : 'Leave requested'} tone={leave.status === 'approved' ? 'info' : 'warning'} />
+                      ) : (
+                        !ended && (
+                          <button
+                            onClick={() => {
+                              setAbsenceFor(absenceFor === s.id ? null : s.id)
+                              setSwapNoteFor(null)
+                            }}
+                            className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-brand-risk-text hover:border-brand-risk/30"
+                          >
+                            Can’t come in
+                          </button>
+                        )
+                      )}
+                      {!swapsOn || leave ? null : existingSwap ? (
+                        <StatusBadge status={existingSwap.status} tone={SWAP_STATUS_TONE[existingSwap.status]} />
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setSwapNoteFor(swapNoteFor === s.id ? null : s.id)
+                            setAbsenceFor(null)
+                          }}
+                          className="rounded-full border border-border px-2.5 py-1 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
+                        >
+                          Request swap
+                        </button>
+                      )}
+                    </span>
                   </div>
+                  {absenceFor === s.id && !leave && (
+                    <CantComeInForm
+                      leaveTypes={absenceTypes}
+                      busy={busyId === s.id}
+                      onCancel={() => setAbsenceFor(null)}
+                      onSubmit={(typeId, note) => handleReportAbsence(s.id, typeId, note)}
+                    />
+                  )}
                   {swapsOn && swapNoteFor === s.id && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted flex-1">
@@ -1917,5 +1983,73 @@ function ShiftHistoryDrawer({
         )}
       </div>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// "Can't come in" (P1-4): staff report an absence for one of their shifts.
+// report_absence creates the leave request and alerts the branch manager.
+// ---------------------------------------------------------------------------
+
+function CantComeInForm({
+  leaveTypes,
+  busy,
+  onCancel,
+  onSubmit,
+}: {
+  leaveTypes: { id: string; name: string }[]
+  busy: boolean
+  onCancel: () => void
+  onSubmit: (leaveTypeId: string, note: string) => void
+}) {
+  const [typeId, setTypeId] = useState(leaveTypes[0]?.id ?? '')
+  const [note, setNote] = useState('')
+  if (leaveTypes.length === 0) {
+    return <p className="mt-2 text-xs text-muted">Leave types aren’t set up yet — call your manager.</p>
+  }
+  return (
+    <form
+      className="mt-2 space-y-2 rounded-lg border border-border bg-surface p-3"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (typeId) onSubmit(typeId, note)
+      }}
+    >
+      <p className="text-xs text-muted">Your manager is told straight away and finds cover. A leave request for this day is sent for approval.</p>
+      <div className="flex flex-wrap gap-2">
+        <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+          Reason
+          <select
+            value={typeId}
+            onChange={(e) => setTypeId(e.target.value)}
+            className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-ink"
+          >
+            {leaveTypes.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-medium text-muted">
+          Note for your manager (optional)
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={300}
+            placeholder="e.g. fever since last night"
+            className="rounded-lg border border-border px-2 py-1.5 text-sm text-ink focus:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue/20"
+          />
+        </label>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="rounded-lg px-3 py-1.5 text-xs font-medium text-muted">
+          Back
+        </button>
+        <button type="submit" disabled={busy || !typeId} className="rounded-lg bg-brand-risk px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60">
+          {busy ? 'Sending…' : 'Tell my manager'}
+        </button>
+      </div>
+    </form>
   )
 }

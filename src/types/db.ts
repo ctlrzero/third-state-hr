@@ -187,7 +187,7 @@ export interface Shift {
   employees?: Pick<Employee, 'id' | 'full_name'> | null
 }
 
-export type ShiftChangeType = 'cancelled' | 'unpublished' | 'reassigned' | 'date_changed' | 'location_changed' | 'time_changed' | 'break_changed' | 'deleted'
+export type ShiftChangeType = 'cancelled' | 'unpublished' | 'reassigned' | 'date_changed' | 'location_changed' | 'time_changed' | 'break_changed' | 'deleted' | 'absence_reported'
 
 export interface ShiftAdjustment {
   id: string
