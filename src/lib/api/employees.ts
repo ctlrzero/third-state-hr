@@ -72,7 +72,7 @@ export const EDITABLE_FIELDS: EditableField[] = [
   { key: 'phone', label: 'Phone', type: 'text', manager: true },
   { key: 'email', label: 'Email', type: 'text', manager: true },
   { key: 'position_id', label: 'Position', type: 'lookup', manager: true },
-  { key: 'home_location_id', label: 'Home branch', type: 'lookup' },
+  // Home branch is not edited here: every branch change goes through Transfer (transfer_employee).
   { key: 'gender', label: 'Gender', type: 'select', options: ['female', 'male'] },
   { key: 'nationality', label: 'Nationality', type: 'text' },
   { key: 'dob', label: 'Date of birth', type: 'date' },

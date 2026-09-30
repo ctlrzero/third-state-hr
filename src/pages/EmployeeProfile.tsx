@@ -982,15 +982,16 @@ function EditDrawer({
   const record = employee as unknown as Record<string, unknown>
   const [lookups, setLookups] = useState<Record<string, { value: string; label: string }[]>>({})
   useEffect(() => {
-    Promise.all([
-      supabase.from('positions').select('id, title').eq('entity_id', employee.entity_id).order('title'),
-      supabase.from('locations').select('id, name').eq('entity_id', employee.entity_id).order('name'),
-    ]).then(([pos, loc]) =>
-      setLookups({
-        position_id: ((pos.data ?? []) as { id: string; title: string }[]).map((p) => ({ value: p.id, label: p.title })),
-        home_location_id: ((loc.data ?? []) as { id: string; name: string }[]).map((l) => ({ value: l.id, label: l.name })),
-      })
-    )
+    supabase
+      .from('positions')
+      .select('id, title')
+      .eq('entity_id', employee.entity_id)
+      .order('title')
+      .then((pos) =>
+        setLookups({
+          position_id: ((pos.data ?? []) as { id: string; title: string }[]).map((p) => ({ value: p.id, label: p.title })),
+        })
+      )
   }, [employee.entity_id])
   const [draft, setDraft] = useState<Record<string, string>>(() =>
     Object.fromEntries(EDITABLE_FIELDS.map((f) => [f.key, record[f.key] == null ? '' : String(record[f.key])]))
@@ -1050,6 +1051,7 @@ function EditDrawer({
         </>
       }
     >
+      <p className="mb-3 text-sm text-muted">To change the home branch, close this and use Transfer — it lists the shifts and templates to move.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         {EDITABLE_FIELDS.map((f, i) => (
           <Field key={f.key} label={f.label} error={fieldError[f.key]} required={f.key === 'full_name'}>
