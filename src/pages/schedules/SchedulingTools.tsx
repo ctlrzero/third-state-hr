@@ -896,7 +896,7 @@ export function AutoSchedulePanel({
                 You changed the period or branches — update the preview to see the new plan.
               </p>
             )}
-            <PlanView key={planKey ?? ''} plan={plan} />
+            <PlanView key={planKey ?? ''} plan={plan} explain={stale ? null : args()} />
           </div>
         )}
       </section>
@@ -965,7 +965,7 @@ function Stat({ label, value, tone, i }: { label: string; value: string | number
 
 // Day-by-day timeline: one row per branch, bars on a shared hour axis so the
 // same time lines up across every day.
-function PlanView({ plan }: { plan: Plan }) {
+function PlanView({ plan, explain }: { plan: Plan; explain: RosterArgs | null }) {
   const [onlyGaps, setOnlyGaps] = useState(false)
 
   const span = (s: { start_time: string; end_time: string }) => {
@@ -1019,6 +1019,8 @@ function PlanView({ plan }: { plan: Plan }) {
         </ul>
       )}
 
+      {plan.shifts.length > 0 && <WhyThisRoster plan={plan} explain={explain} />}
+
       {days.length === 0 ? (
         <p className="py-8 text-center text-sm text-muted">Nothing to plan for this period — check opening hours in Branch setup.</p>
       ) : (
@@ -1063,6 +1065,101 @@ function Legend({ className, label }: { className: string; label: string }) {
       <span className={`inline-block h-2.5 w-5 rounded-[4px] ${className}`} />
       {label}
     </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// "Why this roster" (P2-4): hours per person and who moves branch, worked out
+// from the preview; plus an optional plain-English summary from roster-assistant.
+// ---------------------------------------------------------------------------
+
+interface RosterArgs {
+  p_entity_id: string
+  p_period_start: string
+  p_period_end: string
+  p_location_ids: string[] | null
+}
+
+function WhyThisRoster({ plan, explain }: { plan: Plan; explain: RosterArgs | null }) {
+  const [summary, setSummary] = useState<{ ai: boolean; headline: string; points: string[] } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const people = useMemo(() => {
+    const m = new Map<string, { name: string; shifts: number; minutes: number; days: Set<string>; away: Set<string> }>()
+    for (const sh of plan.shifts) {
+      const p = m.get(sh.employee_id) ?? { name: sh.employee, shifts: 0, minutes: 0, days: new Set(), away: new Set() }
+      let mins = toMin(sh.end_time) - toMin(sh.start_time)
+      if (mins <= 0) mins += 1440
+      p.shifts += 1
+      p.minutes += Math.max(0, mins - (sh.break_minutes ?? 0))
+      p.days.add(sh.shift_date)
+      if (sh.cross_branch) p.away.add(sh.location)
+      m.set(sh.employee_id, p)
+    }
+    return [...m.values()].sort((a, b) => b.minutes - a.minutes)
+  }, [plan])
+  const max = Math.max(1, ...people.map((p) => p.minutes))
+
+  async function explainIt() {
+    if (!explain) return
+    setBusy(true)
+    setError(null)
+    const { data, error: e } = await supabase.functions.invoke<{ ai: boolean; headline: string; points: string[] }>('roster-assistant', {
+      body: {
+        entity_id: explain.p_entity_id,
+        period_start: explain.p_period_start,
+        period_end: explain.p_period_end,
+        location_ids: explain.p_location_ids,
+      },
+    })
+    setBusy(false)
+    if (e || !data) return setError('The summary isn’t available right now. The hours below are still accurate.')
+    setSummary(data)
+  }
+
+  return (
+    <section className="space-y-3 rounded-2xl border border-border p-4" aria-label="Why this roster">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-ink">Why this roster</h3>
+        {explain && !summary && (
+          <button className="btn-secondary press text-sm" onClick={explainIt} disabled={busy}>
+            {busy ? 'Summarising…' : 'Explain in plain words'}
+          </button>
+        )}
+      </div>
+      <ErrorBox msg={error} />
+      {summary && (
+        <div className="rise rounded-xl bg-brand-blue-soft/50 px-3.5 py-3 text-sm">
+          <p className="font-medium text-ink">{summary.headline}</p>
+          {summary.points.length > 0 && (
+            <ul className="mt-1.5 list-disc space-y-1 pl-5 text-ink">
+              {summary.points.map((p, i) => (
+                <li key={i}>{p}</li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-[11px] text-muted">{summary.ai ? 'Written by the assistant from this preview.' : 'Worked out from this preview.'} Check it before you publish.</p>
+        </div>
+      )}
+      <div>
+        <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted">Hours per person</p>
+        <ul className="space-y-1.5">
+          {people.map((p) => (
+            <li key={p.name} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-2 text-xs">
+              <span className="truncate text-ink">{p.name}</span>
+              <span className="h-2 overflow-hidden rounded-full bg-surface-alt" aria-hidden="true">
+                <span className="block h-full rounded-full bg-brand-blue/60" style={{ width: `${(p.minutes / max) * 100}%` }} />
+              </span>
+              <span className="tabular-nums text-muted">
+                {Math.round((p.minutes / 60) * 10) / 10} h · {p.days.size} day{p.days.size === 1 ? '' : 's'}
+                {p.away.size > 0 && <span className="text-brand-info-text"> · at {[...p.away].join(', ')}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
   )
 }
 
