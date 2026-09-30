@@ -195,7 +195,7 @@ describe('nav mapping', () => {
   it('gives staff the 4+More bottom nav', () => {
     const { primary, more } = mobileNavForRole('staff')
     expect(primary.map((i) => i.label)).toEqual(['Home', 'Schedule', 'Clock', 'Leave'])
-    expect(more.map((i) => i.label)).toEqual(['Documents', 'Payslips', 'Profile', 'Notifications'])
+    expect(more.map((i) => i.label)).toEqual(['Documents', 'Payslips', 'Offboarding', 'Profile', 'Notifications'])
   })
   it('only shows My Interviews when assigned', () => {
     expect(navForRole('staff').some((i) => i.to === '/my-interviews')).toBe(false)
@@ -207,8 +207,10 @@ describe('nav mapping', () => {
     const { primary } = mobileNavForRole('staff', { hasOnboarding: true })
     expect(primary.map((i) => i.label)).toEqual(['Home', 'Onboarding', 'Schedule', 'Leave'])
     expect(canAccessRoute('staff', '/onboarding')).toBe(true)
-    expect(mobileNavForRole('location_manager').primary.map((i) => i.to)).toEqual(['/', '/employees', '/schedules', '/attendance'])
-    expect(canAccessRoute('staff', '/offboarding')).toBe(false)
+    expect(mobileNavForRole('location_manager').primary.map((i) => i.to)).toEqual(['/', '/today', '/schedules', '/employees'])
+    // Staff reach Offboarding only for a payroll-admin preset; the page checks payroll_can.
+    expect(canAccessRoute('staff', '/offboarding')).toBe(true)
+    expect(canAccessRoute('staff', '/today')).toBe(false)
   })
   it('admins see Workflows and Admin; staff do not', () => {
     expect(navForRole('entity_admin').map((i) => i.to)).toEqual(expect.arrayContaining(['/workflows', '/admin', '/payroll']))

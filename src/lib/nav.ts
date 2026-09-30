@@ -24,6 +24,7 @@ export type NavIcon =
   | 'workflows'
   | 'admin'
   | 'notifications'
+  | 'today'
 
 export interface NavItem {
   label: string
@@ -39,6 +40,7 @@ const MANAGERS: UserRole[] = ['owner', 'entity_admin', 'location_manager']
 
 export const ROUTE_ROLES: Record<string, UserRole[]> = {
   '/': ALL,
+  '/today': MANAGERS,
   '/employees': MANAGERS,
   '/employees/:id': MANAGERS,
   // Managers see the dashboard; staff see their own onboarding (or pay/bank
@@ -91,6 +93,7 @@ const STAFF_NAV: NavItem[] = [
 
 const MANAGEMENT_NAV: NavItem[] = [
   { label: 'Home', to: '/', icon: 'home', roles: MANAGERS },
+  { label: 'Today', to: '/today', icon: 'today', roles: MANAGERS },
   { label: 'People', to: '/employees', icon: 'people', roles: MANAGERS },
   { label: 'Onboarding', to: '/onboarding', icon: 'onboarding', roles: MANAGERS },
   { label: 'Offboarding', to: '/offboarding', icon: 'offboarding', roles: MANAGERS },
@@ -145,9 +148,9 @@ export function mobileNavForRole(
       more: items.filter((i) => !primaryPaths.includes(i.to)),
     }
   }
-  // Managers keep Home, People, Schedules, Attendance in the bar; Onboarding
-  // and Offboarding live in More on phones.
-  const managerPrimary = ['/', '/employees', '/schedules', '/attendance']
+  // Managers keep Home, Today, Schedules, People in the bar; Attendance,
+  // Onboarding and Offboarding live in More on phones (Today links to them).
+  const managerPrimary = ['/', '/today', '/schedules', '/employees']
   const primary = managerPrimary.map((p) => items.find((i) => i.to === p)).filter((i): i is NavItem => Boolean(i))
   return { primary, more: items.filter((i) => !primary.includes(i)) }
 }

@@ -30,6 +30,7 @@ Legend for changes in this pass (W3): **[new]**, **[fixed]** (body only, same si
 | `clock_out` | – | own open record | `{id, clock_out_at, already_clocked_out}` |
 | `get_location_attendance_overview` | `p_location_id, p_period_start date, p_period_end date` | O, EA scoped, LM own location | `TABLE(shift_id, employee_id, shift_date, planned_minutes, default_payable_minutes, final_payable_minutes, payable_status, pending_adjustment bool)` |
 | `get_attendance_exceptions` **[fixed]** | `p_location_id, p_period_start, p_period_end` | O, EA scoped, LM own | `TABLE(exception_type, employee_id, employee_name, shift_date, record_id, shift_id, clock_in_at, clock_out_at)` |
+| `get_branch_today` **[new, P1-3]** | `p_location_id uuid` | O, EA scoped, LM own location | `jsonb {location_id, location_name, date, generated_at, people[{shift_id, employee_id, name, phone, position, start_time, end_time, planned_start, planned_end, attendance_id, clock_in_at, clock_out_at, late_minutes, status}], unscheduled[], missing_clock_outs[], open_gaps[], on_leave[], draft_shifts, approvals{leave, swaps, documents}}` |
 | `correct_attendance_record` **[fixed]** | `p_record_id, p_new_clock_in_at tz, p_new_clock_out_at tz, p_reason text` | O, EA scoped, LM own location; never own record | `void` |
 | `seed_payable_shift_records` | `p_location_id, p_period_start, p_period_end` | O, EA, LM own | `{ok, request_id, seeded_count}` or `{ok:false, code, message}` |
 | `propose_attendance_adjustment` | `p_payable_shift_record_id, p_proposed_minutes int, p_reason` | O, EA, LM own | `{ok, ...}` |
@@ -54,6 +55,7 @@ Notes
   (previously NULL clock-in raised 23502 and NULL clock-out silently erased the clock-out). Validation on the
   effective values: out > in, not in the future, must change something. First originals are preserved in
   `original_clock_in_at/out_at`; audited `attendance_corrected`.
+- `get_branch_today.people[].status`: `upcoming | not_in | in | in_late | done | no_show` (published shifts only; late = clock-in more than 59 s after planned start). `missing_clock_outs` covers the previous 14 Dubai days; `approvals.documents` counts only documents this caller may review (`can_review_document`). No pay data. Errors: `42501` not authorized, `P0002` branch not found.
 - `get_attendance_exceptions.exception_type`: `missing_clock_out` (open record from a previous Dubai day),
   **`late_clock_in` [additive value]** (clock-in > planned start; informational, no deduction),
   `unmatched_shift` (published past shift without attendance), `no_shift_match` (attendance without shift).

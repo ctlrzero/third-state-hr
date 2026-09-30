@@ -15,6 +15,7 @@ import SetPassword from './pages/SetPassword'
 // the shell, auth and router.
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const StaffHome = lazy(() => import('./pages/StaffHome'))
+const Today = lazy(() => import('./pages/Today'))
 const EmployeeDirectory = lazy(() => import('./pages/EmployeeDirectory'))
 const EmployeeProfile = lazy(() => import('./pages/EmployeeProfile'))
 const Onboarding = lazy(() => import('./pages/Onboarding'))
@@ -64,6 +65,7 @@ function Shell({ route, children }: { route: string; children: ReactNode }) {
 
 const ROUTES: { path: string; element: ReactNode }[] = [
   { path: '/', element: <Home /> },
+  { path: '/today', element: <Today /> },
   { path: '/employees', element: <EmployeeDirectory /> },
   { path: '/employees/:id', element: <EmployeeProfile /> },
   { path: '/onboarding', element: <Onboarding /> },
