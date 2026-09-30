@@ -8,6 +8,7 @@ import {
   cancelEmployeeRequest,
   createEmployeeRequest,
   getEmployeeRequests,
+  requestAllMissing,
   type EmployeeRequestKind,
   type EmployeeRequestRow,
   type ProfileRequestField,
@@ -85,6 +86,24 @@ export function EmployeeRequestsCard({
     }
   }
 
+  // One tap: documents, bank details and personal details that are missing — each becomes a request.
+  async function askAllMissing() {
+    setBusyId('all')
+    setError(null)
+    const res = await requestAllMissing(employeeId)
+    setBusyId(null)
+    if (res.error || !res.data) return setError(res.error ?? 'Couldn’t send the requests.')
+    const { created, skipped } = res.data
+    const notAllowed = skipped.filter((x) => !/already an open request|already filled/i.test(x.reason))
+    setNotice(
+      (created.length
+        ? `Asked ${employeeName} for: ${created.join(', ')}. They’ll see it on their Home screen.`
+        : `Nothing new to ask — ${employeeName} has nothing missing, or it’s already been asked.`) +
+        (notAllowed.length ? ` Not sent: ${notAllowed.map((x) => `${x.item} (${x.reason})`).join('; ')}.` : '')
+    )
+    load()
+  }
+
   const open = (rows ?? []).filter((r) => r.status === 'open')
   const closed = (rows ?? []).filter((r) => r.status !== 'open')
 
@@ -94,9 +113,14 @@ export function EmployeeRequestsCard({
         <h2 id="emp-req-h" className="text-sm font-semibold text-ink">
           Requests to {employeeName}
         </h2>
-        <button type="button" className="btn-primary min-h-11" onClick={() => setAsking(true)}>
-          Ask for something
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary min-h-11" disabled={busyId === 'all'} onClick={askAllMissing}>
+            {busyId === 'all' ? 'Asking…' : 'Ask for everything missing'}
+          </button>
+          <button type="button" className="btn-primary min-h-11" onClick={() => setAsking(true)}>
+            Ask for something
+          </button>
+        </div>
       </div>
       {error && <Alert tone="error" onDismiss={() => setError(null)}>{error}</Alert>}
       {notice && <Alert tone="success" onDismiss={() => setNotice(null)}>{notice}</Alert>}

@@ -118,3 +118,20 @@ export function requestActionLabel(r: { kind: EmployeeRequestKind }): string {
   if (r.kind === 'payment_details') return 'Add bank details'
   return 'Fill in details'
 }
+
+/** Ask one employee for everything that's missing (documents, bank details, personal details). */
+export const requestAllMissing = (employeeId: string, note?: string | null, dueDate?: string | null) =>
+  callRpc<{ ok: boolean; employee: string; created: string[]; skipped: { item: string; reason: string }[] }>('request_all_missing', {
+    p_employee_id: employeeId,
+    p_note: note?.trim() || null,
+    p_due_date: dueDate || null,
+  })
+
+/** Same for everyone in a company (or one branch). Branch managers are limited to their own branch by the server. */
+export const requestAllMissingForMany = (entityId: string, locationId?: string | null, note?: string | null, dueDate?: string | null) =>
+  callRpc<{ ok: boolean; people: number; requests: number; skipped: number; names: string[] }>('request_all_missing_for_many', {
+    p_entity_id: entityId,
+    p_location_id: locationId ?? null,
+    p_note: note?.trim() || null,
+    p_due_date: dueDate || null,
+  })
