@@ -23,6 +23,7 @@ import {
   WorkPatternWarnings,
   FindCoverSheet,
   CrossBranchClaimsToggle,
+  ShiftSwapsToggle,
   type DeletableShift,
   type CoverShift,
 } from './schedules/SchedulingTools'
@@ -116,6 +117,7 @@ function ScheduleAdmin() {
   const [showDeleted, setShowDeleted] = useState(false)
   const [onLeave, setOnLeave] = useState<Set<string>>(new Set())
   const [coverShift, setCoverShift] = useState<CoverShift | null>(null)
+  const [swapsEnabled, setSwapsEnabled] = useState(true)
   const [params, setParams] = useSearchParams()
   const focusShiftId = params.get('shift')
   const mode: 'manual' | 'auto' = isAdmin && params.get('mode') === 'auto' ? 'auto' : 'manual'
@@ -447,7 +449,9 @@ function ScheduleAdmin() {
                 )}
               </>
             )}
+            {activeEntityId && <ShiftSwapsToggle entityId={activeEntityId} onChanged={setSwapsEnabled} onError={setError} />}
             {profile?.role === 'owner' && activeEntityId && <CrossBranchClaimsToggle entityId={activeEntityId} onError={setError} />}
+            {!swapsEnabled && <span className="text-brand-warning-solid">Swaps are off — staff can't request or claim them.</span>}
             <button onClick={() => setShowDeleted(true)} className="press ml-auto font-medium text-muted hover:text-ink hover:underline">
               Deleted shifts log
             </button>
@@ -1265,6 +1269,8 @@ function NewShiftModal({
 // ---------------------------------------------------------------------------
 
 function MySchedule() {
+  const { profile } = useAuth()
+  const [swapsOn, setSwapsOn] = useState(true)
   const [myShifts, setMyShifts] = useState<Shift[]>([])
   const [openShifts, setOpenShifts] = useState<Shift[]>([])
   const [mySwaps, setMySwaps] = useState<ShiftSwapRequest[]>([])
@@ -1294,6 +1300,10 @@ function MySchedule() {
     // location, and swap requests they're party to or that are open at
     // their own home location) — the .gte()/.order() calls are just
     // presentation, not the security boundary.
+    if (profile?.entity_id) {
+      const { data: on } = await supabase.rpc('shift_swaps_enabled', { p_entity_id: profile.entity_id })
+      setSwapsOn(on !== false)
+    }
     const [shiftsRes, openRes, swapsRes] = await Promise.all([
       supabase
         .from('shifts')
@@ -1325,7 +1335,8 @@ function MySchedule() {
 
   useEffect(() => {
     load()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.entity_id])
 
   async function handleRequestSwap(shiftId: string) {
     setBusyId(shiftId)
@@ -1455,7 +1466,7 @@ function MySchedule() {
                       {fmtDate(s.shift_date)} · {fmtTime(s.start_time)}–{fmtTime(s.end_time)} · {s.locations?.name ?? '—'}
                       {s.positions?.title ? ` · ${s.positions.title}` : ''}
                     </span>
-                    {existingSwap ? (
+                    {!swapsOn ? null : existingSwap ? (
                       <StatusBadge status={existingSwap.status} tone={SWAP_STATUS_TONE[existingSwap.status]} />
                     ) : (
                       <button
@@ -1466,7 +1477,7 @@ function MySchedule() {
                       </button>
                     )}
                   </div>
-                  {swapNoteFor === s.id && (
+                  {swapsOn && swapNoteFor === s.id && (
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <label className="flex min-w-0 flex-col gap-1 text-xs font-medium text-muted flex-1">
                         Note for whoever picks this up (optional)
@@ -1520,6 +1531,7 @@ function MySchedule() {
         )}
       </div>
 
+      {swapsOn && (
       <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
         <h2 className="mb-1 text-sm font-semibold text-ink">Open swap board</h2>
         <p className="mb-3 text-xs text-muted">Shifts colleagues want covered. If you can't take one, the app tells you why.</p>
@@ -1546,8 +1558,9 @@ function MySchedule() {
           </ul>
         )}
       </div>
+      )}
 
-      {myOwnSwapHistory.length > 0 && (
+      {swapsOn && myOwnSwapHistory.length > 0 && (
         <div className="rounded-[14px] border border-border bg-surface p-4 shadow-card">
           <h2 className="mb-3 text-sm font-semibold text-ink">Your swap requests</h2>
           <ul className="space-y-2">

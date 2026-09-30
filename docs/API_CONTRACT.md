@@ -242,6 +242,14 @@ A non-cancelled shift cannot be created or moved onto a day its employee has app
 ≤ their weekly days (work pattern, default 6) in the Mon–Sun week. `claim_open_shift` also needs a published shift.
 Staff may claim only at their home branch unless the owner turns on cross-branch claims for the company:
 `set_cross_outlet_claims(p_entity_id, p_enabled) → void` (owner only; `app_settings` key `cross_outlet_claims:<entity_id>`).
+(P0-6) A published shift can only be changed through `adjust_published_shift` / `cancel_published_shift` (reason required):
+trigger `trg_guard_published_shift_update` refuses (`22023`) any signed-in change to its date, times, break, person, branch,
+role, status or published flag without `app.shift_adjust_reason`. Notes and drafts are not guarded; internal calls with no JWT
+are not guarded. `approve_shift_swap` and `claim_open_shift` record the reasons "Shift swap approved" / "Picked up open shift".
+Shift swaps per company: `shift_swaps_enabled(p_entity_id) → boolean` (default true) and
+`set_shift_swaps_enabled(p_entity_id, p_enabled) → void` (owner, or entity admin of that company). When off,
+`request_shift_swap` / `claim_shift_swap` refuse (`22023`), staff stop seeing the open swap board, and the staff screen hides
+all swap controls; managers and admins still see and can decide swaps that were already waiting.
 `suggest_shift_cover(p_shift_id) → jsonb {shift, candidates[], not_eligible[]}` (O, EA scoped, LM own branch): candidates are
 eligible people ranked home branch first, then fewest hours this week (`employee_id, name, home_location, position,
 home_branch, hours_this_week, days_this_week`); `not_eligible` gives each other person's reason.

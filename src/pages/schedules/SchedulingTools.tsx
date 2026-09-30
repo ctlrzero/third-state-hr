@@ -1223,9 +1223,9 @@ export function FindCoverSheet({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // A published shift that already has someone is a reassignment: it goes through
-  // adjust_published_shift so the change and its reason are kept in the history.
-  const needsReason = shift.is_published && !!shift.employee_id
+  // Every change to a published shift goes through adjust_published_shift with a
+  // reason (the database refuses direct edits, P0-6); drafts are assigned directly.
+  const needsReason = shift.is_published
 
   useEffect(() => {
     supabase.rpc('suggest_shift_cover', { p_shift_id: shift.id }).then(({ data: d, error: e }) => {
@@ -1400,6 +1400,50 @@ export function CrossBranchClaimsToggle({ entityId, onError }: { entityId: strin
     <label className="flex items-center gap-2 text-xs text-muted">
       <input type="checkbox" checked={enabled} disabled={busy} onChange={toggle} className="h-4 w-4 accent-[var(--color-brand-blue)]" />
       Staff can pick up open shifts and swaps at other branches
+    </label>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Admin switch: shift swaps on/off for the company (hides swaps from staff)
+// ---------------------------------------------------------------------------
+
+export function ShiftSwapsToggle({
+  entityId,
+  onChanged,
+  onError,
+}: {
+  entityId: string
+  onChanged?: (enabled: boolean) => void
+  onError: (msg: string) => void
+}) {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    supabase.rpc('shift_swaps_enabled', { p_entity_id: entityId }).then(({ data, error }) => {
+      const v = error ? true : data !== false
+      setEnabled(v)
+      onChanged?.(v)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityId])
+
+  async function toggle() {
+    const next = !enabled
+    setBusy(true)
+    const { error } = await supabase.rpc('set_shift_swaps_enabled', { p_entity_id: entityId, p_enabled: next })
+    setBusy(false)
+    if (error) return onError(errText(error))
+    setEnabled(next)
+    onChanged?.(next)
+  }
+
+  if (enabled === null) return null
+  return (
+    <label className="flex items-center gap-2 text-xs text-muted">
+      <input type="checkbox" checked={enabled} disabled={busy} onChange={toggle} className="h-4 w-4 accent-[var(--color-brand-blue)]" />
+      Shift swaps for staff
     </label>
   )
 }

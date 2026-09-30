@@ -490,6 +490,37 @@ exception when others then
   insert into e2e_results values ('J8 P0-4: HR renews for an employee; uploader cannot approve', false, sqlstate || ' ' || sqlerrm);
 end $j$;
 
+-- ------------------------------------------------------------ J9 P0-6 reason required; swap switch (entityadmin.a, employee.a)
+do $j$
+declare v_shift uuid; v_code text; r record;
+begin
+  reset role;
+  insert into public.shifts (entity_id, location_id, employee_id, shift_date, start_time, end_time, status, created_by, is_published)
+  values ('a0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000011', 'a0000000-0000-4000-8000-000000000031',
+          current_date + 47, '09:00', '17:00', 'assigned', '81b68580-a490-4115-be98-70285a51ba99', true) returning id into v_shift;
+
+  perform pg_temp.login('81b68580-a490-4115-be98-70285a51ba99');
+  v_code := pg_temp.expect_error(format($$update public.shifts set start_time = '10:00' where id = %L$$, v_shift), 'direct edit of published shift');
+  perform pg_temp.ok(v_code = '22023', 'direct edit of a published shift refused (got ' || coalesce(v_code, 'none') || ')');
+  perform public.adjust_published_shift(v_shift, 'e2e: later start', current_date + 47, '10:00', '17:00', 0,
+                                        'a0000000-0000-4000-8000-000000000031', 'a0000000-0000-4000-8000-000000000011');
+  reset role;
+  select * into r from public.shift_adjustments where shift_id = v_shift order by changed_at desc limit 1;
+  perform pg_temp.ok(r.reason = 'e2e: later start' and r.old_values ->> 'start_time' = '09:00:00', 'adjust keeps reason and original time');
+
+  perform pg_temp.login('81b68580-a490-4115-be98-70285a51ba99');
+  perform public.set_shift_swaps_enabled('a0000000-0000-4000-8000-000000000001', false);
+  perform pg_temp.login('5f353b67-2e93-4cea-bd44-9ad2d6b4bfd9');
+  v_code := pg_temp.expect_error(format($$select public.request_shift_swap(%L, null)$$, v_shift), 'swap request while swaps are off');
+  perform pg_temp.ok(v_code = '22023', 'swap request refused while swaps are off (got ' || coalesce(v_code, 'none') || ')');
+
+  reset role;
+  insert into e2e_results values ('J9 P0-6: published edits need a reason; admin can switch swaps off', true, 'ok');
+exception when others then
+  reset role;
+  insert into e2e_results values ('J9 P0-6: published edits need a reason; admin can switch swaps off', false, sqlstate || ' ' || sqlerrm);
+end $j$;
+
 reset role;
 select journey, pass, detail from e2e_results order by journey;
 rollback;
