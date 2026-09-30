@@ -135,3 +135,57 @@ export const requestAllMissingForMany = (entityId: string, locationId?: string |
     p_note: note?.trim() || null,
     p_due_date: dueDate || null,
   })
+
+/** One missing item for an employee, as shown in the "Ask for missing details" list. */
+export interface MissingItem {
+  key: string
+  group: 'Documents' | 'Bank details' | 'Personal details'
+  label: string
+  already_asked: boolean
+  can_request: boolean
+}
+
+/** What this employee is missing, item by item (server decides; branch managers can't ask for restricted documents). */
+export const getMissingItems = (employeeId: string) =>
+  callRpc<{ employee_id: string; employee: string; items: MissingItem[] }>('get_missing_items', { p_employee_id: employeeId })
+
+export interface SelectedResult {
+  ok: boolean
+  employee: string
+  created: string[]
+  skipped: { item: string; reason: string }[]
+  not_missing: string[]
+}
+
+/** Ask one employee only for the ticked items (keys like doc:passport, payment, field:phone). */
+export const requestSelectedMissing = (employeeId: string, keys: string[], note?: string | null, dueDate?: string | null) =>
+  callRpc<SelectedResult>('request_selected_missing', {
+    p_employee_id: employeeId,
+    p_keys: keys,
+    p_note: note?.trim() || null,
+    p_due_date: dueDate || null,
+  })
+
+/** The same choice for everyone in a company or branch — each person is asked only for what they're actually missing. */
+export const requestSelectedMissingForMany = (entityId: string, locationId: string | null, keys: string[], note?: string | null, dueDate?: string | null) =>
+  callRpc<{ ok: boolean; people: number; requests: number; skipped: number; names: string[] }>('request_selected_missing_for_many', {
+    p_entity_id: entityId,
+    p_location_id: locationId,
+    p_keys: keys,
+    p_note: note?.trim() || null,
+    p_due_date: dueDate || null,
+  })
+
+/** Everything that can be asked for in bulk (People list). Restricted documents are owner / Company Admin only. */
+export const BULK_MISSING_ITEMS: { key: string; group: MissingItem['group']; label: string; restricted?: boolean }[] = [
+  { key: 'doc:passport', group: 'Documents', label: 'Passport', restricted: true },
+  { key: 'doc:visa', group: 'Documents', label: 'Visa', restricted: true },
+  { key: 'doc:emirates_id', group: 'Documents', label: 'Emirates ID', restricted: true },
+  { key: 'doc:contract', group: 'Documents', label: 'Contract', restricted: true },
+  { key: 'payment', group: 'Bank details', label: 'Bank details' },
+  { key: 'field:phone', group: 'Personal details', label: 'Phone number' },
+  { key: 'field:emergency_contact', group: 'Personal details', label: 'Emergency contact' },
+  { key: 'field:dob', group: 'Personal details', label: 'Date of birth' },
+  { key: 'field:nationality', group: 'Personal details', label: 'Nationality' },
+  { key: 'field:residential_address', group: 'Personal details', label: 'Home address' },
+]

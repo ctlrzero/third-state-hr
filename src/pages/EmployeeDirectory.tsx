@@ -8,8 +8,7 @@ import { ChangeRequestQueue } from '../components/ChangeRequestQueue'
 import type { Employee, EmployeeStatus, Location } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { Alert } from '../components/ui'
-import { confirmDialog } from '../lib/confirm'
-import { requestAllMissingForMany } from '../lib/api/employeeRequests'
+import { AskManyModal } from '../components/AskMissingModals'
 
 const STATUS_FILTERS: { value: EmployeeStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All statuses' },
@@ -41,29 +40,9 @@ export default function EmployeeDirectory() {
   const [askError, setAskError] = useState<string | null>(null)
   const canAsk = isAdmin || profile?.role === 'location_manager'
 
-  // Ask everyone (in the chosen branch, or the whole company) for whatever they're missing.
-  async function askEveryone() {
-    if (!activeEntityId) return
-    const branch = locationFilter !== 'all' ? locations.find((l) => l.id === locationFilter)?.name : null
-    const scope = profile?.role === 'location_manager' ? 'everyone in your branch' : branch ? `everyone at ${branch}` : 'everyone in this company'
-    if (
-      !(await confirmDialog(
-        `Ask ${scope} for anything missing — key documents, bank details and personal details? Each person sees it on their Home screen. Nothing already asked is sent twice.`
-      ))
-    )
-      return
-    setAsking(true)
-    setAskError(null)
-    const res = await requestAllMissingForMany(activeEntityId, locationFilter !== 'all' ? locationFilter : null)
-    setAsking(false)
-    if (res.error || !res.data) return setAskError(res.error ?? 'Couldn’t send the requests.')
-    const d = res.data
-    setAskNotice(
-      d.requests
-        ? `Sent ${d.requests} request${d.requests === 1 ? '' : 's'} to ${d.people} ${d.people === 1 ? 'person' : 'people'}: ${d.names.join(', ')}.`
-        : 'Nothing new to ask — everyone has what’s needed, or it has already been asked.'
-    )
-  }
+  // Ask everyone (in the chosen branch, or the whole company) for the ticked missing items.
+  const askBranch = locationFilter !== 'all' ? locations.find((l) => l.id === locationFilter)?.name : null
+  const askScope = profile?.role === 'location_manager' ? 'everyone in your branch' : askBranch ? `everyone at ${askBranch}` : 'everyone in this company'
 
   useEffect(() => {
     if (!activeEntityId) return
@@ -124,8 +103,8 @@ export default function EmployeeDirectory() {
         </div>
         <div className="flex flex-wrap gap-2">
           {canAsk && (
-            <button type="button" className="btn-secondary min-h-11" disabled={asking || loading} onClick={askEveryone}>
-              {asking ? 'Asking…' : 'Ask everyone for missing details'}
+            <button type="button" className="btn-secondary min-h-11" disabled={loading} onClick={() => setAsking(true)}>
+              Ask for missing details
             </button>
           )}
           {isAdmin && (
@@ -135,6 +114,19 @@ export default function EmployeeDirectory() {
           )}
         </div>
       </div>
+      {asking && activeEntityId && (
+        <AskManyModal
+          entityId={activeEntityId}
+          locationId={locationFilter !== 'all' ? locationFilter : null}
+          scopeLabel={askScope}
+          canAskRestricted={isAdmin}
+          onClose={() => setAsking(false)}
+          onDone={(m) => {
+            setAsking(false)
+            setAskNotice(m)
+          }}
+        />
+      )}
       {askError && (
         <Alert tone="error" onDismiss={() => setAskError(null)}>
           {askError}
