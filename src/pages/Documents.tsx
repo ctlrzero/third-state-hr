@@ -54,6 +54,7 @@ export default function Documents() {
   const [uploadKind, setUploadKind] = useState<'self' | 'assisted'>('self')
   const [reviewDoc, setReviewDoc] = useState<EmployeeDocument | null>(null)
   const [renewalDoc, setRenewalDoc] = useState<EmployeeDocument | null>(null)
+  const [renewalAssisted, setRenewalAssisted] = useState(false)
   const [myRequirements, setMyRequirements] = useState<DocumentRequirement[]>([])
 
   async function load() {
@@ -288,6 +289,17 @@ export default function Documents() {
             onReview={setReviewDoc}
             onArchive={handleArchive}
             onDiscardPending={handleDiscardPending}
+            onRenew={(doc) => {
+              setRenewalAssisted(true)
+              setRenewalDoc(doc)
+            }}
+            pendingRenewalFor={
+              new Set(
+                documents
+                  .filter((d) => d.review_status === 'pending_review' && d.upload_confirmed && d.supersedes_document_id)
+                  .map((d) => d.supersedes_document_id as string)
+              )
+            }
           />
         ) : (
           <ChecklistTab
@@ -310,7 +322,10 @@ export default function Documents() {
           documents={documents}
           loading={loading}
           onView={handleView}
-          onUploadRenewal={setRenewalDoc}
+          onUploadRenewal={(doc) => {
+            setRenewalAssisted(false)
+            setRenewalDoc(doc)
+          }}
           onUploadRequirement={(employeeId, docType) => {
             setUploadKind('self')
             setUploadPreEmployee(employeeId)
@@ -363,9 +378,11 @@ export default function Documents() {
       {renewalDoc && (
         <RenewalModal
           currentDoc={renewalDoc}
+          assisted={renewalAssisted}
           onClose={() => setRenewalDoc(null)}
-          onSubmitted={() => {
+          onSubmitted={(message) => {
             setRenewalDoc(null)
+            setNotice(message)
             load()
           }}
         />
@@ -495,6 +512,8 @@ function ManagerRegister({
   onReview,
   onArchive,
   onDiscardPending,
+  onRenew,
+  pendingRenewalFor,
 }: {
   rows: EmployeeDocument[]
   totalCount: number
@@ -512,6 +531,8 @@ function ManagerRegister({
   onReview: (doc: EmployeeDocument) => void
   onArchive: (doc: EmployeeDocument) => void
   onDiscardPending: (doc: EmployeeDocument) => void
+  onRenew: (doc: EmployeeDocument) => void
+  pendingRenewalFor: Set<string>
 }) {
   return (
     <div className="space-y-4">
@@ -642,6 +663,14 @@ function ManagerRegister({
                             >
                               View
                             </button>
+                            {doc.review_status === 'approved' && doc.is_current && !pendingRenewalFor.has(doc.id) && (
+                              <button
+                                onClick={() => onRenew(doc)}
+                                className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue/30"
+                              >
+                                Renew
+                              </button>
+                            )}
                             {doc.review_status === 'approved' && (
                               <button
                                 onClick={() => onArchive(doc)}
@@ -703,6 +732,14 @@ function ManagerRegister({
                       >
                         View
                       </button>
+                      {doc.review_status === 'approved' && doc.is_current && !pendingRenewalFor.has(doc.id) && (
+                        <button
+                          onClick={() => onRenew(doc)}
+                          className="flex-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-brand-blue"
+                        >
+                          Renew
+                        </button>
+                      )}
                       {doc.review_status === 'approved' && (
                         <button
                           onClick={() => onArchive(doc)}
@@ -1394,12 +1431,14 @@ function ChecklistTab({
 
 function RenewalModal({
   currentDoc,
+  assisted,
   onClose,
   onSubmitted,
 }: {
   currentDoc: EmployeeDocument
+  assisted: boolean
   onClose: () => void
-  onSubmitted: () => void
+  onSubmitted: (message: string) => void
 }) {
   const [expiryDate, setExpiryDate] = useState(currentDoc.expiry_date ?? '')
   const [notes, setNotes] = useState('')
@@ -1451,12 +1490,18 @@ function RenewalModal({
       setError(confirmError.message)
       return
     }
-    const result = confirmData as { ok: boolean; code?: string }
+    const result = confirmData as { ok: boolean; code?: string; review_status?: string }
     if (!result.ok) {
       setError(result.code === 'UPLOAD_NOT_FOUND' ? 'The upload did not complete — please try again.' : 'Could not confirm the upload.')
       return
     }
-    onSubmitted()
+    onSubmitted(
+      result.review_status === 'approved'
+        ? 'Renewal uploaded and approved — it is now the current version.'
+        : assisted
+          ? 'Renewal uploaded — someone else must review it. The current version stays active until then.'
+          : 'Renewal uploaded — pending review.'
+    )
   }
 
   return (
@@ -1465,9 +1510,15 @@ function RenewalModal({
         className="w-full max-w-md rounded-[14px] border border-border bg-surface p-6 shadow-card"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="mb-1 text-base font-semibold text-ink">Upload renewal — {docTypeLabel(currentDoc.doc_type)}</h2>
+        <h2 className="mb-1 text-base font-semibold text-ink">
+          {assisted
+            ? `Renew ${docTypeLabel(currentDoc.doc_type)} for ${currentDoc.employees?.full_name ?? 'this employee'}`
+            : `Upload renewal — ${docTypeLabel(currentDoc.doc_type)}`}
+        </h2>
         <p className="mb-4 text-xs text-muted">
-          Your current version stays active until an admin or manager approves this renewal.
+          {assisted
+            ? 'The current version stays active until someone else approves this renewal. It is recorded as uploaded on their behalf.'
+            : 'Your current version stays active until an admin or manager approves this renewal.'}
         </p>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>

@@ -132,6 +132,10 @@ insert into results select * from pg_temp.chk('staff A: other-branch open shifts
 insert into results select * from pg_temp.chk('ea_a: run_daily_hr_reminders (system only)', (select sub::text from personas where k='ea_a'), 'deny', $$public.run_daily_hr_reminders(true)$$);
 insert into results select * from pg_temp.chk('lm_a: system_job_runs', (select sub::text from personas where k='lm_a'), 'zero', 'select * from public.system_job_runs');
 
+-- ---------------------------------------------------------------- P0-4 assisted renewal
+insert into results select * from pg_temp.chk('staff A: renew employee B''s document', (select sub::text from personas where k='st_a'), 'deny', $$public.stage_document_renewal((select d.id from public.employee_documents d where d.employee_id = 'a0000000-0000-4000-8000-000000000032' and d.is_current and d.review_status = 'approved' limit 1), 'pdf', null, null, null)$$);
+insert into results select * from pg_temp.chk('ea_b: renew Entity A document', (select sub::text from personas where k='ea_b'), 'deny', $$public.stage_document_renewal((select d.id from public.employee_documents d where d.employee_id = 'a0000000-0000-4000-8000-000000000031' and d.is_current and d.review_status = 'approved' limit 1), 'pdf', null, null, null)$$);
+
 -- ---------------------------------------------------------------- revoked profile (rolled back)
 insert into results select * from pg_temp.chk('setup: revoke employee B', (select sub::text from personas where k='ea_a'), 'deny', $$public.admin_revoke_access('99a456ae-bdf5-40ca-b0fb-fc741a525cd5', null, 'access test (rolled back)')$$);
 insert into results

@@ -218,7 +218,12 @@ entity; LM rows for restricted types are redacted (`storage_path/notes` NULL, `r
 `approve_document(p_document_id)`, `reject_document(p_document_id, p_reason)`, `archive_document(p_document_id)` –
 O, EA scoped, LM for non-restricted types; never own document. Upload flow:
 `stage_document_upload(p_employee_id, p_doc_type, p_file_extension, p_expiry_date, p_notes) → jsonb`,
-upload to bucket, `confirm_document_upload(p_document_id)`; renewals `stage_document_renewal(...)`.
+upload to bucket, `confirm_document_upload(p_document_id)`; renewals
+`stage_document_renewal(p_current_document_id, p_file_extension, p_expiry_date=null, p_notes=null, p_upload_method=null) → jsonb {id, storage_path, upload_method}`
+(P0-4: same authorisation as `stage_document_upload` — the employee; owner; entity admin in their company; location manager at
+their branch for non-restricted types. `upload_method` is derived server-side: `self` for the employee, otherwise `assisted`.
+Only the current approved version can be renewed, and only one confirmed renewal may wait for review at a time (`22023`).
+The uploader can never reject or archive it; approval follows `can_review_document`).
 `delete_pending_document`, `log_document_access(p_document_id, p_action 'preview'|'download')`,
 `cleanup_incomplete_document_uploads(p_older_than_hours=24) → int`.
 

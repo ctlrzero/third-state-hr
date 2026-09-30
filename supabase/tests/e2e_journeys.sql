@@ -460,6 +460,36 @@ exception when others then
   insert into e2e_results values ('J7 P0-2: claims respect eligibility; manager finds cover', false, sqlstate || ' ' || sqlerrm);
 end $j$;
 
+-- ------------------------------------------------------------ J8 P0-4 assisted renewal (entityadmin.a)
+do $j$
+declare v_cur uuid; r jsonb; v_code text; rec record;
+begin
+  reset role;
+  select d.id into v_cur from public.employee_documents d
+   where d.employee_id = 'a0000000-0000-4000-8000-000000000031' and d.is_current and d.review_status = 'approved'
+     and not exists (select 1 from public.employee_documents p where p.supersedes_document_id = d.id and p.review_status = 'pending_review')
+   limit 1;
+  perform pg_temp.ok(v_cur is not null, 'fixture: employee A has a current approved document with no pending renewal');
+
+  perform pg_temp.login('81b68580-a490-4115-be98-70285a51ba99');
+  r := public.stage_document_renewal(v_cur, 'pdf', current_date + 365, 'e2e assisted renewal', 'self');
+  perform pg_temp.ok(r ->> 'upload_method' = 'assisted', 'HR renewal recorded as assisted even when the client says self');
+  reset role;
+  update public.employee_documents set upload_confirmed = true, upload_confirmed_at = now() where id = (r ->> 'id')::uuid;
+  select review_status, uploaded_by into rec from public.employee_documents where id = (r ->> 'id')::uuid;
+  perform pg_temp.ok(rec.review_status = 'pending_review', 'renewal is pending review');
+
+  perform pg_temp.login('81b68580-a490-4115-be98-70285a51ba99');
+  v_code := pg_temp.expect_error(format($$select public.approve_document(%L)$$, r ->> 'id'), 'uploader approves own renewal');
+  perform pg_temp.ok(v_code = '42501', 'HR cannot approve the renewal it uploaded (got ' || coalesce(v_code, 'none') || ')');
+
+  reset role;
+  insert into e2e_results values ('J8 P0-4: HR renews for an employee; uploader cannot approve', true, 'ok');
+exception when others then
+  reset role;
+  insert into e2e_results values ('J8 P0-4: HR renews for an employee; uploader cannot approve', false, sqlstate || ' ' || sqlerrm);
+end $j$;
+
 reset role;
 select journey, pass, detail from e2e_results order by journey;
 rollback;
