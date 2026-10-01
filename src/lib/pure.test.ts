@@ -195,7 +195,7 @@ describe('nav mapping', () => {
   it('gives staff the 4+More bottom nav', () => {
     const { primary, more } = mobileNavForRole('staff')
     expect(primary.map((i) => i.label)).toEqual(['Home', 'Schedule', 'Clock', 'Leave'])
-    expect(more.map((i) => i.label)).toEqual(['Documents', 'Payslips', 'Profile', 'Notifications'])
+    expect(more.map((i) => i.label)).toEqual(['Documents', 'Payslips', 'Profile', 'Notifications', 'Help & Guides'])
   })
   it('only shows staff Offboarding with payroll access', () => {
     expect(navForRole('staff').some((i) => i.to === '/offboarding')).toBe(false)

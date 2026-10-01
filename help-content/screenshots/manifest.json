@@ -1,0 +1,1790 @@
+{
+ "set-password-form": {
+  "alt": "Set your password form, both fields filled with dots. Numbered red markers: 1 New password; 2 Confirm password; 3 Save password.",
+  "article": "quick-start-for-new-staff",
+  "role": "any new invited user (open invite link)",
+  "route": "/set-password",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "New password"
+   },
+   {
+    "n": 2,
+    "label": "Confirm password"
+   },
+   {
+    "n": 3,
+    "label": "Save password"
+   }
+  ]
+ },
+ "staff-home": {
+  "alt": "Staff Home with \"Your manager needs something\" card, Next shifts, Leave balance. Numbered red markers: 1 Manager request button; 2 Next shifts; 3 Leave balance; 4 Menu / bottom bar.",
+  "article": "quick-start-for-new-staff",
+  "role": "staff",
+  "route": "/",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Manager request button"
+   },
+   {
+    "n": 2,
+    "label": "Next shifts"
+   },
+   {
+    "n": 3,
+    "label": "Leave balance"
+   },
+   {
+    "n": 4,
+    "label": "Menu / bottom bar"
+   }
+  ]
+ },
+ "sign-in-form": {
+  "alt": "Sign in form with email and password filled. Numbered red markers: 1 Work email; 2 Password / Show; 3 Sign in.",
+  "article": "how-to-sign-in-and-reset-your-password",
+  "role": "signed out",
+  "route": "/sign-in",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Work email"
+   },
+   {
+    "n": 2,
+    "label": "Password / Show"
+   },
+   {
+    "n": 3,
+    "label": "Sign in"
+   }
+  ]
+ },
+ "sign-in-forgot-link": {
+  "alt": "Forgot password screen (after tapping the link), email filled. Numbered red markers: 1 Forgot password? link (on sign-in page).",
+  "article": "how-to-sign-in-and-reset-your-password",
+  "role": "signed out",
+  "route": "/sign-in",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Forgot password? link (on sign-in page)"
+   }
+  ]
+ },
+ "my-profile-contact": {
+  "alt": "Contact details card with Request change buttons. Numbered red markers: 1 Profile menu; 2 Contact details; 3 Request change.",
+  "article": "update-your-profile-and-contact-details",
+  "role": "staff",
+  "route": "/me",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Profile menu"
+   },
+   {
+    "n": 2,
+    "label": "Contact details"
+   },
+   {
+    "n": 3,
+    "label": "Request change"
+   }
+  ]
+ },
+ "my-profile-request-change": {
+  "alt": "Request a change modal open. Numbered red markers: 1 New value; 2 Reason; 3 Submit request.",
+  "article": "update-your-profile-and-contact-details",
+  "role": "staff",
+  "route": "/me",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "New value"
+   },
+   {
+    "n": 2,
+    "label": "Reason"
+   },
+   {
+    "n": 3,
+    "label": "Submit request"
+   }
+  ]
+ },
+ "my-profile-missing-details": {
+  "alt": "Please fill in your missing details form. Numbered red markers: 1 Fields; 2 Save my details.",
+  "article": "update-your-profile-and-contact-details",
+  "role": "staff with an open profile request",
+  "route": "/me#missing-details",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Fields"
+   },
+   {
+    "n": 2,
+    "label": "Save my details"
+   }
+  ]
+ },
+ "my-profile-bank-details": {
+  "alt": "Your bank / payment details form. Numbered red markers: 1 How do you want to be paid?; 2 IBAN; 3 Send bank details.",
+  "article": "update-your-profile-and-contact-details",
+  "role": "staff with an open bank request",
+  "route": "/me#payment-details",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "How do you want to be paid?"
+   },
+   {
+    "n": 2,
+    "label": "IBAN"
+   },
+   {
+    "n": 3,
+    "label": "Send bank details"
+   }
+  ]
+ },
+ "clock-before": {
+  "alt": "Clock in / out screen with Today's shift and blue Clock in button. Numbered red markers: 1 Clock menu; 2 Today's shift; 3 Clock in.",
+  "article": "how-to-clock-in-and-out",
+  "role": "staff with a shift today, not clocked in",
+  "route": "/clock",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Clock menu"
+   },
+   {
+    "n": 2,
+    "label": "Today's shift"
+   },
+   {
+    "n": 3,
+    "label": "Clock in"
+   }
+  ]
+ },
+ "clock-in-progress": {
+  "alt": "Red Clock out button, Clocked in time shown. Numbered red markers: 1 Clocked in time; 2 Clock out.",
+  "article": "how-to-clock-in-and-out",
+  "role": "staff, clocked in",
+  "route": "/clock",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Clocked in time"
+   },
+   {
+    "n": 2,
+    "label": "Clock out"
+   }
+  ]
+ },
+ "clock-history": {
+  "alt": "My last 30 days list incl. one Corrected row. Numbered red markers: 1 Planned/Actual; 2 Status badge; 3 Corrected note.",
+  "article": "how-to-clock-in-and-out",
+  "role": "staff with history",
+  "route": "/clock",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Planned/Actual"
+   },
+   {
+    "n": 2,
+    "label": "Status badge"
+   },
+   {
+    "n": 3,
+    "label": "Corrected note"
+   }
+  ]
+ },
+ "my-schedule-upcoming": {
+  "alt": "My schedule: Open Clock card, Upcoming shifts, Open shifts. Numbered red markers: 1 Schedule menu; 2 Upcoming shifts row; 3 Open shifts; 4 Take this shift.",
+  "article": "how-to-view-your-schedule-and-shifts",
+  "role": "staff with shifts",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Schedule menu"
+   },
+   {
+    "n": 2,
+    "label": "Upcoming shifts row"
+   },
+   {
+    "n": 3,
+    "label": "Open shifts"
+   },
+   {
+    "n": 4,
+    "label": "Take this shift"
+   }
+  ]
+ },
+ "my-schedule-cant-come-in": {
+  "alt": "Can't come in form open under a shift. Numbered red markers: 1 Can’t come in; 2 Reason; 3 Tell my manager.",
+  "article": "how-to-view-your-schedule-and-shifts",
+  "role": "staff with a future shift",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Can’t come in"
+   },
+   {
+    "n": 2,
+    "label": "Reason"
+   },
+   {
+    "n": 3,
+    "label": "Tell my manager"
+   }
+  ]
+ },
+ "cover-ask": {
+  "alt": "Ask for cover note field open. Numbered red markers: 1 Ask for cover; 2 Note field; 3 Send request.",
+  "article": "how-to-ask-for-cover-or-take-a-colleagues-shift",
+  "role": "staff, shift handovers on",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Ask for cover"
+   },
+   {
+    "n": 2,
+    "label": "Note field"
+   },
+   {
+    "n": 3,
+    "label": "Send request"
+   }
+  ]
+ },
+ "cover-colleagues": {
+  "alt": "Colleagues need cover list. Numbered red markers: 1 Shift row; 2 I’ll cover it.",
+  "article": "how-to-ask-for-cover-or-take-a-colleagues-shift",
+  "role": "staff, colleague has an open cover request",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Shift row"
+   },
+   {
+    "n": 2,
+    "label": "I’ll cover it"
+   }
+  ]
+ },
+ "cover-offers": {
+  "alt": "Can you cover? box with Decline / Accept shift. Numbered red markers: 1 Offer details; 2 Decline; 3 Accept shift.",
+  "article": "how-to-ask-for-cover-or-take-a-colleagues-shift",
+  "role": "staff with a manager offer",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Offer details"
+   },
+   {
+    "n": 2,
+    "label": "Decline"
+   },
+   {
+    "n": 3,
+    "label": "Accept shift"
+   }
+  ]
+ },
+ "leave-my-leave": {
+  "alt": "My leave page with Balances, Request leave button, Your requests (one Pending). Numbered red markers: 1 Leave menu; 2 Balances; 3 Request leave; 4 Your requests.",
+  "article": "how-to-request-leave",
+  "role": "staff",
+  "route": "/leave",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Leave menu"
+   },
+   {
+    "n": 2,
+    "label": "Balances"
+   },
+   {
+    "n": 3,
+    "label": "Request leave"
+   },
+   {
+    "n": 4,
+    "label": "Your requests"
+   }
+  ]
+ },
+ "leave-request-form": {
+  "alt": "Request leave modal, type and dates filled, balance line visible. Numbered red markers: 1 Leave type; 2 Start date; 3 End date; 4 Balance line; 5 Submit request.",
+  "article": "how-to-request-leave",
+  "role": "staff",
+  "route": "/leave",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Leave type"
+   },
+   {
+    "n": 2,
+    "label": "Start date"
+   },
+   {
+    "n": 3,
+    "label": "End date"
+   },
+   {
+    "n": 4,
+    "label": "Balance line"
+   },
+   {
+    "n": 5,
+    "label": "Submit request"
+   }
+  ]
+ },
+ "notifications-bell": {
+  "alt": "Bell dropdown open. Numbered red markers: 1 Bell; 2 A notification; 3 Mark all read.",
+  "article": "how-to-use-notifications",
+  "role": "staff with unread",
+  "route": "any page",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Bell"
+   },
+   {
+    "n": 2,
+    "label": "A notification"
+   },
+   {
+    "n": 3,
+    "label": "Mark all read"
+   }
+  ]
+ },
+ "notifications-page": {
+  "alt": "Notifications page with Show unread only. Numbered red markers: 1 Show unread only; 2 Mark all as read.",
+  "article": "how-to-use-notifications",
+  "role": "staff",
+  "route": "/notifications",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Show unread only"
+   },
+   {
+    "n": 2,
+    "label": "Mark all as read"
+   }
+  ]
+ },
+ "docs-home-request": {
+  "alt": "Home card Your manager needs something with Upload document button. Numbered red markers: 1 Request card; 2 Upload document.",
+  "article": "how-to-upload-or-renew-a-document",
+  "role": "staff with an open document request",
+  "route": "/",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Request card"
+   },
+   {
+    "n": 2,
+    "label": "Upload document"
+   }
+  ]
+ },
+ "docs-upload-form": {
+  "alt": "Upload document modal, file chosen. Numbered red markers: 1 Document type; 2 Expiry date; 3 File; 4 Upload.",
+  "article": "how-to-upload-or-renew-a-document",
+  "role": "staff",
+  "route": "/documents?upload=passport",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Document type"
+   },
+   {
+    "n": 2,
+    "label": "Expiry date"
+   },
+   {
+    "n": 3,
+    "label": "File"
+   },
+   {
+    "n": 4,
+    "label": "Upload"
+   }
+  ]
+ },
+ "docs-my-documents": {
+  "alt": "My documents with Expiring badge and Upload new copy button. Numbered red markers: 1 Documents menu; 2 Expiring badge; 3 Upload new copy.",
+  "article": "how-to-upload-or-renew-a-document",
+  "role": "staff with an expiring document",
+  "route": "/documents",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Documents menu"
+   },
+   {
+    "n": 2,
+    "label": "Expiring badge"
+   },
+   {
+    "n": 3,
+    "label": "Upload new copy"
+   }
+  ]
+ },
+ "payslips-list": {
+  "alt": "My payslips list. Numbered red markers: 1 Payslips menu; 2 A month row; 3 Net pay.",
+  "article": "how-to-view-and-download-payslips",
+  "role": "staff with a published payslip",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Payslips menu"
+   },
+   {
+    "n": 2,
+    "label": "A month row"
+   },
+   {
+    "n": 3,
+    "label": "Net pay"
+   }
+  ]
+ },
+ "payslips-detail": {
+  "alt": "Payslip drawer open. Numbered red markers: 1 Earnings; 2 Deductions; 3 Net pay; 4 Download; 5 Open to print.",
+  "article": "how-to-view-and-download-payslips",
+  "role": "staff",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Earnings"
+   },
+   {
+    "n": 2,
+    "label": "Deductions"
+   },
+   {
+    "n": 3,
+    "label": "Net pay"
+   },
+   {
+    "n": 4,
+    "label": "Download"
+   },
+   {
+    "n": 5,
+    "label": "Open to print"
+   }
+  ]
+ },
+ "people-list": {
+  "alt": "People list with search and filters. Numbered red markers: 1 People menu; 2 Search; 3 Filter by status; 4 Filter by branch; 5 A name.",
+  "article": "how-to-view-and-manage-your-team",
+  "role": "location_manager",
+  "route": "/employees",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "People menu"
+   },
+   {
+    "n": 2,
+    "label": "Search"
+   },
+   {
+    "n": 3,
+    "label": "Filter by status"
+   },
+   {
+    "n": 4,
+    "label": "Filter by branch"
+   },
+   {
+    "n": 5,
+    "label": "A name"
+   }
+  ]
+ },
+ "people-employee-tabs": {
+  "alt": "Employee record with Edit details, tabs, Pending change requests. Numbered red markers: 1 Edit details; 2 Tabs; 3 Pending change requests; 4 Approve / Reject.",
+  "article": "how-to-view-and-manage-your-team",
+  "role": "location_manager",
+  "route": "/employees/:id",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Edit details"
+   },
+   {
+    "n": 2,
+    "label": "Tabs"
+   },
+   {
+    "n": 3,
+    "label": "Pending change requests"
+   },
+   {
+    "n": 4,
+    "label": "Approve / Reject"
+   }
+  ]
+ },
+ "ask-requests-card": {
+  "alt": "Requests to <name> card with both buttons. Numbered red markers: 1 Ask for missing details; 2 Ask for something.",
+  "article": "how-to-ask-an-employee-for-missing-details",
+  "role": "location_manager",
+  "route": "/employees/:id",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Ask for missing details"
+   },
+   {
+    "n": 2,
+    "label": "Ask for something"
+   }
+  ]
+ },
+ "ask-missing-ticklist": {
+  "alt": "Ask <name> for… modal with groups, one Already asked item. Numbered red markers: 1 Groups; 2 Select all; 3 Note; 4 Due date; 5 Ask for button.",
+  "article": "how-to-ask-an-employee-for-missing-details",
+  "role": "location_manager",
+  "route": "/employees/:id",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Groups"
+   },
+   {
+    "n": 2,
+    "label": "Select all"
+   },
+   {
+    "n": 3,
+    "label": "Note"
+   },
+   {
+    "n": 4,
+    "label": "Due date"
+   },
+   {
+    "n": 5,
+    "label": "Ask for button"
+   }
+  ]
+ },
+ "ask-many-ticklist": {
+  "alt": "Ask everyone in your branch for… modal. Numbered red markers: 2 Ticks; 3 Ask for button.",
+  "article": "how-to-ask-an-employee-for-missing-details",
+  "role": "location_manager",
+  "route": "/employees",
+  "annotations": [
+   {
+    "n": 2,
+    "label": "Ticks"
+   },
+   {
+    "n": 3,
+    "label": "Ask for button"
+   }
+  ]
+ },
+ "schedules-week-board": {
+  "alt": "Week board with a Not shared and a Shared shift, status key visible. Numbered red markers: 1 Branch; 2 Week arrows / This week; 3 New shift; 4 Not shared shift; 5 Share week with staff.",
+  "article": "how-to-build-and-share-a-weekly-schedule",
+  "role": "location_manager",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Branch"
+   },
+   {
+    "n": 2,
+    "label": "Week arrows / This week"
+   },
+   {
+    "n": 3,
+    "label": "New shift"
+   },
+   {
+    "n": 4,
+    "label": "Not shared shift"
+   },
+   {
+    "n": 5,
+    "label": "Share week with staff"
+   }
+  ]
+ },
+ "schedules-new-shift": {
+  "alt": "New shift modal filled. Numbered red markers: 1 Branch/Date; 2 Start/End; 3 Assign to; 4 Create shift.",
+  "article": "how-to-build-and-share-a-weekly-schedule",
+  "role": "location_manager",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Branch/Date"
+   },
+   {
+    "n": 2,
+    "label": "Start/End"
+   },
+   {
+    "n": 3,
+    "label": "Assign to"
+   },
+   {
+    "n": 4,
+    "label": "Create shift"
+   }
+  ]
+ },
+ "schedules-share-week": {
+  "alt": "Share week with staff (n) button and confirmation. Numbered red markers: 1 Share week with staff (n); 2 Confirm.",
+  "article": "how-to-build-and-share-a-weekly-schedule",
+  "role": "location_manager, one branch chosen, drafts exist",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Share week with staff (n)"
+   },
+   {
+    "n": 2,
+    "label": "Confirm"
+   }
+  ]
+ },
+ "schedules-shift-actions": {
+  "alt": "Shift actions panel for a shared shift. Numbered red markers: 1 Status note; 2 Edit (with a reason); 3 Reassign / find cover; 4 Change history; 5 Cancel shift.",
+  "article": "how-to-change-or-cancel-a-shared-shift",
+  "role": "location_manager",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Status note"
+   },
+   {
+    "n": 2,
+    "label": "Edit (with a reason)"
+   },
+   {
+    "n": 3,
+    "label": "Reassign / find cover"
+   },
+   {
+    "n": 4,
+    "label": "Change history"
+   },
+   {
+    "n": 5,
+    "label": "Cancel shift"
+   }
+  ]
+ },
+ "schedules-change-shift": {
+  "alt": "Change shift (shared with staff) form with Reason. Numbered red markers: 1 Fields; 2 Reason for change; 3 Save changes.",
+  "article": "how-to-change-or-cancel-a-shared-shift",
+  "role": "location_manager",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Fields"
+   },
+   {
+    "n": 2,
+    "label": "Reason for change"
+   },
+   {
+    "n": 3,
+    "label": "Save changes"
+   }
+  ]
+ },
+ "cover-find-sheet": {
+  "alt": "Find cover panel, Pick someone tab, candidate selected. Numbered red markers: 1 Pick someone / Ask a few people tabs; 2 Candidate; 3 Assign.",
+  "article": "how-to-find-cover-and-handle-swap-requests",
+  "role": "location_manager",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Pick someone / Ask a few people tabs"
+   },
+   {
+    "n": 2,
+    "label": "Candidate"
+   },
+   {
+    "n": 3,
+    "label": "Assign"
+   }
+  ]
+ },
+ "cover-offer-panel": {
+  "alt": "Ask a few people tab with two ticked. Numbered red markers: 1 People ticks; 2 Message; 3 Send offer.",
+  "article": "how-to-find-cover-and-handle-swap-requests",
+  "role": "location_manager",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "People ticks"
+   },
+   {
+    "n": 2,
+    "label": "Message"
+   },
+   {
+    "n": 3,
+    "label": "Send offer"
+   }
+  ]
+ },
+ "cover-swap-requests": {
+  "alt": "Swap requests awaiting your decision card. Numbered red markers: 1 Swap row; 2 Reject; 3 Approve.",
+  "article": "how-to-find-cover-and-handle-swap-requests",
+  "role": "location_manager, a claimed swap exists",
+  "route": "/schedules",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Swap row"
+   },
+   {
+    "n": 2,
+    "label": "Reject"
+   },
+   {
+    "n": 3,
+    "label": "Approve"
+   }
+  ]
+ },
+ "schedules-repeating-form": {
+  "alt": "New recurring template modal. Numbered red markers: 1 Branch/Employee; 2 Day of week; 3 Start/End; 4 Effective from.",
+  "article": "how-to-set-up-repeating-shifts-and-auto-schedule",
+  "role": "location_manager",
+  "route": "/schedules?tab=setup",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Branch/Employee"
+   },
+   {
+    "n": 2,
+    "label": "Day of week"
+   },
+   {
+    "n": 3,
+    "label": "Start/End"
+   },
+   {
+    "n": 4,
+    "label": "Effective from"
+   }
+  ]
+ },
+ "auto-schedule-preview": {
+  "alt": "Auto-schedule with period chosen, branches ticked, plan previewed. Numbered red markers: 1 Period; 2 Branches; 3 Preview plan; 4 Create button.",
+  "article": "how-to-set-up-repeating-shifts-and-auto-schedule",
+  "role": "entity_admin",
+  "route": "/schedules?tab=auto",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Period"
+   },
+   {
+    "n": 2,
+    "label": "Branches"
+   },
+   {
+    "n": 3,
+    "label": "Preview plan"
+   },
+   {
+    "n": 4,
+    "label": "Create button"
+   }
+  ]
+ },
+ "today-board": {
+  "alt": "Today board with counts, Needs you now with Find cover, Waiting for your approval. Numbered red markers: 2 Counts; 3 Find cover; 4 Fix/Review; 5 Waiting for your approval.",
+  "article": "how-to-use-the-today-board",
+  "role": "location_manager",
+  "route": "/today",
+  "annotations": [
+   {
+    "n": 2,
+    "label": "Counts"
+   },
+   {
+    "n": 3,
+    "label": "Find cover"
+   },
+   {
+    "n": 4,
+    "label": "Fix/Review"
+   },
+   {
+    "n": 5,
+    "label": "Waiting for your approval"
+   }
+  ]
+ },
+ "attendance-exceptions": {
+  "alt": "Exceptions tab with a suggested clock-out row and a Correct row. Numbered red markers: 1 Branch/From/To; 2 Exceptions tab; 3 Confirm / Change… / Dismiss; 4 Correct.",
+  "article": "how-to-review-attendance",
+  "role": "location_manager",
+  "route": "/attendance?tab=exceptions",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Branch/From/To"
+   },
+   {
+    "n": 2,
+    "label": "Exceptions tab"
+   },
+   {
+    "n": 3,
+    "label": "Confirm / Change… / Dismiss"
+   },
+   {
+    "n": 4,
+    "label": "Correct"
+   }
+  ]
+ },
+ "attendance-correct-form": {
+  "alt": "Correct attendance panel with reason filled. Numbered red markers: 1 New clock-in; 2 New clock-out; 3 Reason; 4 Review changes.",
+  "article": "how-to-review-attendance",
+  "role": "location_manager",
+  "route": "/attendance",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "New clock-in"
+   },
+   {
+    "n": 2,
+    "label": "New clock-out"
+   },
+   {
+    "n": 3,
+    "label": "Reason"
+   },
+   {
+    "n": 4,
+    "label": "Review changes"
+   }
+  ]
+ },
+ "leave-awaiting-decision": {
+  "alt": "Awaiting your decision card with a pending request. Numbered red markers: 1 Request details; 2 Reject; 3 Approve; 4 Recent decisions.",
+  "article": "how-to-approve-or-decline-leave",
+  "role": "location_manager",
+  "route": "/leave",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Request details"
+   },
+   {
+    "n": 2,
+    "label": "Reject"
+   },
+   {
+    "n": 3,
+    "label": "Approve"
+   },
+   {
+    "n": 4,
+    "label": "Recent decisions"
+   }
+  ]
+ },
+ "leave-balances-adjust": {
+  "alt": "Leave tab with Balances and Adjust links. Numbered red markers: 1 Leave tab; 2 Balances; 3 Adjust.",
+  "article": "how-to-manage-leave-balances",
+  "role": "entity_admin",
+  "route": "/employees/:id?tab=leave",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Leave tab"
+   },
+   {
+    "n": 2,
+    "label": "Balances"
+   },
+   {
+    "n": 3,
+    "label": "Adjust"
+   }
+  ]
+ },
+ "leave-accrual-policies": {
+  "alt": "Leave accrual policies card with one policy. Numbered red markers: 1 Configure policy; 2 Approve; 3 Period to run; 4 Run accrual.",
+  "article": "how-to-manage-leave-balances",
+  "role": "owner",
+  "route": "/leave",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Configure policy"
+   },
+   {
+    "n": 2,
+    "label": "Approve"
+   },
+   {
+    "n": 3,
+    "label": "Period to run"
+   },
+   {
+    "n": 4,
+    "label": "Run accrual"
+   }
+  ]
+ },
+ "docs-register": {
+  "alt": "Document register with Review status = Pending review and a Review button. Numbered red markers: 1 Document register tab; 2 Review status / Document type filters; 3 Review.",
+  "article": "how-to-review-and-approve-employee-documents",
+  "role": "location_manager",
+  "route": "/documents",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Document register tab"
+   },
+   {
+    "n": 2,
+    "label": "Review status / Document type filters"
+   },
+   {
+    "n": 3,
+    "label": "Review"
+   }
+  ]
+ },
+ "docs-review-drawer": {
+  "alt": "Review panel for a pending document. Numbered red markers: 1 View file; 2 Version history; 3 Reject; 4 Approve.",
+  "article": "how-to-review-and-approve-employee-documents",
+  "role": "location_manager",
+  "route": "/documents",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "View file"
+   },
+   {
+    "n": 2,
+    "label": "Version history"
+   },
+   {
+    "n": 3,
+    "label": "Reject"
+   },
+   {
+    "n": 4,
+    "label": "Approve"
+   }
+  ]
+ },
+ "docs-checklist": {
+  "alt": "Employee checklist tab with an employee chosen. Numbered red markers: 1 Employee checklist tab; 2 Employee picker; 3 Status badges; 4 Upload on behalf / Waive.",
+  "article": "how-to-collect-and-track-employee-documents",
+  "role": "entity_admin",
+  "route": "/documents",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Employee checklist tab"
+   },
+   {
+    "n": 2,
+    "label": "Employee picker"
+   },
+   {
+    "n": 3,
+    "label": "Status badges"
+   },
+   {
+    "n": 4,
+    "label": "Upload on behalf / Waive"
+   }
+  ]
+ },
+ "onboarding-my-steps": {
+  "alt": "Welcome page with Your joining steps progress and steps 1-5. Numbered red markers: 1 Progress bar; 2 Your details; 3 Documents; 4 Salary payment; 5 Contract.",
+  "article": "how-to-complete-your-joining-steps",
+  "role": "staff in pre-activation onboarding",
+  "route": "/onboarding",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Progress bar"
+   },
+   {
+    "n": 2,
+    "label": "Your details"
+   },
+   {
+    "n": 3,
+    "label": "Documents"
+   },
+   {
+    "n": 4,
+    "label": "Salary payment"
+   },
+   {
+    "n": 5,
+    "label": "Contract"
+   }
+  ]
+ },
+ "onboarding-availability": {
+  "alt": "When you can work card with days ticked. Numbered red markers: 1 Day ticks; 2 Times; 3 Confirm availability.",
+  "article": "how-to-complete-your-joining-steps",
+  "role": "staff in onboarding",
+  "route": "/onboarding",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Day ticks"
+   },
+   {
+    "n": 2,
+    "label": "Times"
+   },
+   {
+    "n": 3,
+    "label": "Confirm availability"
+   }
+  ]
+ },
+ "onboarding-dashboard": {
+  "alt": "Onboarding dashboard with Start onboarding, KPI cards, New starters list. Numbered red markers: 1 Start onboarding; 2 KPI cards; 3 List tabs.",
+  "article": "how-to-onboard-a-new-employee",
+  "role": "entity_admin",
+  "route": "/onboarding",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Start onboarding"
+   },
+   {
+    "n": 2,
+    "label": "KPI cards"
+   },
+   {
+    "n": 3,
+    "label": "List tabs"
+   }
+  ]
+ },
+ "onboarding-start-form": {
+  "alt": "Start onboarding modal, Direct hire selected. Numbered red markers: 1 Direct hire; 2 Name/Email; 3 Branch/Job/Start date; 4 Start onboarding.",
+  "article": "how-to-onboard-a-new-employee",
+  "role": "entity_admin",
+  "route": "/onboarding",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Direct hire"
+   },
+   {
+    "n": 2,
+    "label": "Name/Email"
+   },
+   {
+    "n": 3,
+    "label": "Branch/Job/Start date"
+   },
+   {
+    "n": 4,
+    "label": "Start onboarding"
+   }
+  ]
+ },
+ "onboarding-workspace": {
+  "alt": "Case workspace with Portal access, review, buttons. Numbered red markers: 1 Invite to portal; 2 Waiting for your review; 3 Starting pay; 4 Approve and activate.",
+  "article": "how-to-onboard-a-new-employee",
+  "role": "entity_admin",
+  "route": "/onboarding",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Invite to portal"
+   },
+   {
+    "n": 2,
+    "label": "Waiting for your review"
+   },
+   {
+    "n": 3,
+    "label": "Starting pay"
+   },
+   {
+    "n": 4,
+    "label": "Approve and activate"
+   }
+  ]
+ },
+ "work-pattern-card": {
+  "alt": "Schedule tab with Work pattern card and Availability grid. Numbered red markers: 1 Schedule tab; 2 Work pattern; 3 Set pattern / Edit; 4 Availability.",
+  "article": "how-to-set-work-pattern-and-availability",
+  "role": "entity_admin",
+  "route": "/employees/:id?tab=schedule",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Schedule tab"
+   },
+   {
+    "n": 2,
+    "label": "Work pattern"
+   },
+   {
+    "n": 3,
+    "label": "Set pattern / Edit"
+   },
+   {
+    "n": 4,
+    "label": "Availability"
+   }
+  ]
+ },
+ "work-pattern-editor": {
+  "alt": "Work pattern editor open. Numbered red markers: 1 Working days per week; 2 Days off; 3 Shift type; 4 Save pattern.",
+  "article": "how-to-set-work-pattern-and-availability",
+  "role": "entity_admin",
+  "route": "/employees/:id?tab=schedule",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Working days per week"
+   },
+   {
+    "n": 2,
+    "label": "Days off"
+   },
+   {
+    "n": 3,
+    "label": "Shift type"
+   },
+   {
+    "n": 4,
+    "label": "Save pattern"
+   }
+  ]
+ },
+ "schedules-setup-tab": {
+  "alt": "Setup tab with Branch setup, Staff self-service, Deleted shifts. Numbered red markers: 1 Setup tab; 2 Branch setup; 3 Staff self-service tick box.",
+  "article": "how-to-set-opening-hours-and-staffing-needs",
+  "role": "entity_admin",
+  "route": "/schedules?tab=setup",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Setup tab"
+   },
+   {
+    "n": 2,
+    "label": "Branch setup"
+   },
+   {
+    "n": 3,
+    "label": "Staff self-service tick box"
+   }
+  ]
+ },
+ "branch-setup-sheet": {
+  "alt": "Branch setup panel with opening hours and a staffing need. Numbered red markers: 1 Branch tabs; 2 Opening hours; 3 + Add staffing need; 4 Save.",
+  "article": "how-to-set-opening-hours-and-staffing-needs",
+  "role": "entity_admin",
+  "route": "/schedules?tab=setup",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Branch tabs"
+   },
+   {
+    "n": 2,
+    "label": "Opening hours"
+   },
+   {
+    "n": 3,
+    "label": "+ Add staffing need"
+   },
+   {
+    "n": 4,
+    "label": "Save"
+   }
+  ]
+ },
+ "payroll-month-prepare": {
+  "alt": "Payroll page top: month picker, Start another month, Prepare payroll, readiness checklist. Numbered red markers: 1 Payroll menu; 2 Payroll month; 3 Start another month; 4 Prepare payroll; 5 Readiness checklist.",
+  "article": "how-to-run-payroll",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Payroll menu"
+   },
+   {
+    "n": 2,
+    "label": "Payroll month"
+   },
+   {
+    "n": 3,
+    "label": "Start another month"
+   },
+   {
+    "n": 4,
+    "label": "Prepare payroll"
+   },
+   {
+    "n": 5,
+    "label": "Readiness checklist"
+   }
+  ]
+ },
+ "payroll-record-drawer": {
+  "alt": "One employee's record open. Numbered red markers: 1 Net pay; 2 Hours this month; 3 Earnings / Deductions; 4 Recalculate; 5 Approve.",
+  "article": "how-to-run-payroll",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Net pay"
+   },
+   {
+    "n": 2,
+    "label": "Hours this month"
+   },
+   {
+    "n": 3,
+    "label": "Earnings / Deductions"
+   },
+   {
+    "n": 4,
+    "label": "Recalculate"
+   },
+   {
+    "n": 5,
+    "label": "Approve"
+   }
+  ]
+ },
+ "payroll-bulk-bar": {
+  "alt": "Table with people ticked and the bulk bar showing the main action. Numbered red markers: 1 Select all; 2 Status column; 3 Bulk bar main button.",
+  "article": "how-to-run-payroll",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Select all"
+   },
+   {
+    "n": 2,
+    "label": "Status column"
+   },
+   {
+    "n": 3,
+    "label": "Bulk bar main button"
+   }
+  ]
+ },
+ "payroll-pay-bulk": {
+  "alt": "Approved people ticked, bulk bar with Export payment list and Record payment. Numbered red markers: 1 Tick people; 2 Export payment list; 3 Record payment.",
+  "article": "how-to-record-payroll-payments",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Tick people"
+   },
+   {
+    "n": 2,
+    "label": "Export payment list"
+   },
+   {
+    "n": 3,
+    "label": "Record payment"
+   }
+  ]
+ },
+ "payroll-record-payment": {
+  "alt": "Record payment dialog. Numbered red markers: 1 Result; 2 Date paid; 3 Method; 4 Reference; 5 Preview; 6 Record for n employees.",
+  "article": "how-to-record-payroll-payments",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Result"
+   },
+   {
+    "n": 2,
+    "label": "Date paid"
+   },
+   {
+    "n": 3,
+    "label": "Method"
+   },
+   {
+    "n": 4,
+    "label": "Reference"
+   },
+   {
+    "n": 5,
+    "label": "Preview"
+   },
+   {
+    "n": 6,
+    "label": "Record for n employees"
+   }
+  ]
+ },
+ "payroll-pay-date-panel": {
+  "alt": "Pay date and payslips panel (not editing). Numbered red markers: 1 Pay date; 2 Payslips plan; 3 Change dates.",
+  "article": "how-to-set-pay-date-and-schedule-payslips",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Pay date"
+   },
+   {
+    "n": 2,
+    "label": "Payslips plan"
+   },
+   {
+    "n": 3,
+    "label": "Change dates"
+   }
+  ]
+ },
+ "payroll-change-dates": {
+  "alt": "Change dates form open. Numbered red markers: 1 Pay date; 2 Publish payslips on; 3 Only publish ... tick; 4 Save dates.",
+  "article": "how-to-set-pay-date-and-schedule-payslips",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Pay date"
+   },
+   {
+    "n": 2,
+    "label": "Publish payslips on"
+   },
+   {
+    "n": 3,
+    "label": "Only publish ... tick"
+   },
+   {
+    "n": 4,
+    "label": "Save dates"
+   }
+  ]
+ },
+ "payroll-return-draft": {
+  "alt": "Reason dialog for Return to draft. Numbered red markers: 1 Return to draft; 2 Reason; 3 Confirm.",
+  "article": "how-to-correct-payroll-after-approval",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Return to draft"
+   },
+   {
+    "n": 2,
+    "label": "Reason"
+   },
+   {
+    "n": 3,
+    "label": "Confirm"
+   }
+  ]
+ },
+ "payroll-offcycle-button": {
+  "alt": "Month picker row with Off-cycle / final settlement button. Numbered red markers: 1 Off-cycle / final settlement.",
+  "article": "how-to-run-an-off-cycle-or-final-settlement-payroll",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Off-cycle / final settlement"
+   }
+  ]
+ },
+ "payroll-offcycle-form": {
+  "alt": "Off-cycle payroll modal filled. Numbered red markers: 1 Label; 2 Pay date; 3 Salary month; 4 Create.",
+  "article": "how-to-run-an-off-cycle-or-final-settlement-payroll",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Label"
+   },
+   {
+    "n": 2,
+    "label": "Pay date"
+   },
+   {
+    "n": 3,
+    "label": "Salary month"
+   },
+   {
+    "n": 4,
+    "label": "Create"
+   }
+  ]
+ },
+ "payroll-reports-drawer": {
+  "alt": "Payroll reports panel with report picker. Numbered red markers: 1 Report picker; 2 Table; 3 Download.",
+  "article": "how-to-use-payroll-reports-and-earlier-runs",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Report picker"
+   },
+   {
+    "n": 2,
+    "label": "Table"
+   },
+   {
+    "n": 3,
+    "label": "Download"
+   }
+  ]
+ },
+ "payroll-earlier-runs": {
+  "alt": "Earlier payroll runs section expanded. Numbered red markers: 1 Section title; 2 A run; 3 A payslip.",
+  "article": "how-to-use-payroll-reports-and-earlier-runs",
+  "role": "entity_admin (company with legacy runs)",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Section title"
+   },
+   {
+    "n": 2,
+    "label": "A run"
+   },
+   {
+    "n": 3,
+    "label": "A payslip"
+   }
+  ]
+ },
+ "payroll-tips-drawer": {
+  "alt": "Distribute tips panel with preview. Numbered red markers: 1 Branch and period; 2 Split method; 3 Preview; 4 Confirm distribution.",
+  "article": "how-to-add-tips-advances-and-extra-pay",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Branch and period"
+   },
+   {
+    "n": 2,
+    "label": "Split method"
+   },
+   {
+    "n": 3,
+    "label": "Preview"
+   },
+   {
+    "n": 4,
+    "label": "Confirm distribution"
+   }
+  ]
+ },
+ "payroll-advances-drawer": {
+  "alt": "Salary advances panel, New advance filled. Numbered red markers: 1 Employee; 2 Amount; 3 Instalments; 4 Save advance.",
+  "article": "how-to-add-tips-advances-and-extra-pay",
+  "role": "entity_admin",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Employee"
+   },
+   {
+    "n": 2,
+    "label": "Amount"
+   },
+   {
+    "n": 3,
+    "label": "Instalments"
+   },
+   {
+    "n": 4,
+    "label": "Save advance"
+   }
+  ]
+ },
+ "payroll-hours-sheet": {
+  "alt": "Payroll inputs page with rows. Numbered red markers: 1 Month; 2 Load from attendance; 3 Row Save and confirm; 4 Confirm all pending.",
+  "article": "how-to-enter-hours-and-tips-for-payroll",
+  "role": "location_manager",
+  "route": "/payroll",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Month"
+   },
+   {
+    "n": 2,
+    "label": "Load from attendance"
+   },
+   {
+    "n": 3,
+    "label": "Row Save and confirm"
+   },
+   {
+    "n": 4,
+    "label": "Confirm all pending"
+   }
+  ]
+ },
+ "offboarding-list": {
+  "alt": "Offboarding page, Leaving tab, Start offboarding button. Numbered red markers: 1 Offboarding menu; 2 Start offboarding; 3 Tabs Leaving / Left / Cancelled.",
+  "article": "how-to-offboard-an-employee",
+  "role": "entity_admin",
+  "route": "/offboarding",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Offboarding menu"
+   },
+   {
+    "n": 2,
+    "label": "Start offboarding"
+   },
+   {
+    "n": 3,
+    "label": "Tabs Leaving / Left / Cancelled"
+   }
+  ]
+ },
+ "offboarding-start-form": {
+  "alt": "Start offboarding modal filled. Numbered red markers: 1 Employee; 2 Type; 3 Notice given on / Last working day; 4 Reason; 5 Start offboarding.",
+  "article": "how-to-offboard-an-employee",
+  "role": "entity_admin",
+  "route": "/offboarding",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Employee"
+   },
+   {
+    "n": 2,
+    "label": "Type"
+   },
+   {
+    "n": 3,
+    "label": "Notice given on / Last working day"
+   },
+   {
+    "n": 4,
+    "label": "Reason"
+   },
+   {
+    "n": 5,
+    "label": "Start offboarding"
+   }
+  ]
+ },
+ "offboarding-case": {
+  "alt": "Case panel with Checklist and Final settlement. Numbered red markers: 1 Checklist Done; 2 Start settlement in Payroll; 3 Finish offboarding.",
+  "article": "how-to-offboard-an-employee",
+  "role": "entity_admin",
+  "route": "/offboarding?open=<case>",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Checklist Done"
+   },
+   {
+    "n": 2,
+    "label": "Start settlement in Payroll"
+   },
+   {
+    "n": 3,
+    "label": "Finish offboarding"
+   }
+  ]
+ },
+ "reports-metrics": {
+  "alt": "Reports & audit with metric cards. Numbered red markers: 1 Reports menu; 2 Metric cards.",
+  "article": "how-to-use-reports-and-the-audit-log",
+  "role": "entity_admin",
+  "route": "/reports",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Reports menu"
+   },
+   {
+    "n": 2,
+    "label": "Metric cards"
+   }
+  ]
+ },
+ "reports-audit-log": {
+  "alt": "Audit log filters and rows. Numbered red markers: 1 Module; 2 Record type; 3 From / To; 4 Export CSV.",
+  "article": "how-to-use-reports-and-the-audit-log",
+  "role": "entity_admin",
+  "route": "/reports",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Module"
+   },
+   {
+    "n": 2,
+    "label": "Record type"
+   },
+   {
+    "n": 3,
+    "label": "From / To"
+   },
+   {
+    "n": 4,
+    "label": "Export CSV"
+   }
+  ]
+ },
+ "admin-users-tab": {
+  "alt": "Users & access list with Grant access and Send invite. Numbered red markers: 1 Users & access tab; 2 Grant access; 3 Send invite / Resend invite; 4 Revoke access.",
+  "article": "how-to-give-someone-access-and-send-an-invite",
+  "role": "entity_admin",
+  "route": "/admin?tab=users",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Users & access tab"
+   },
+   {
+    "n": 2,
+    "label": "Grant access"
+   },
+   {
+    "n": 3,
+    "label": "Send invite / Resend invite"
+   },
+   {
+    "n": 4,
+    "label": "Revoke access"
+   }
+  ]
+ },
+ "admin-grant-access": {
+  "alt": "Grant access modal filled. Numbered red markers: 1 Email; 2 Role; 3 Linked employee; 4 Grant access.",
+  "article": "how-to-give-someone-access-and-send-an-invite",
+  "role": "entity_admin",
+  "route": "/admin?tab=users",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Email"
+   },
+   {
+    "n": 2,
+    "label": "Role"
+   },
+   {
+    "n": 3,
+    "label": "Linked employee"
+   },
+   {
+    "n": 4,
+    "label": "Grant access"
+   }
+  ]
+ },
+ "manager-home": {
+  "alt": "Manager Home with KPI cards, Action centre list, Operational coverage. Numbered red markers: 1 Home menu; 2 KPI cards; 3 Action centre row + Open; 4 Operational coverage.",
+  "article": "how-to-use-the-home-action-centre",
+  "role": "location_manager",
+  "route": "/",
+  "annotations": [
+   {
+    "n": 1,
+    "label": "Home menu"
+   },
+   {
+    "n": 2,
+    "label": "KPI cards"
+   },
+   {
+    "n": 3,
+    "label": "Action centre row + Open"
+   },
+   {
+    "n": 4,
+    "label": "Operational coverage"
+   }
+  ]
+ },
+ "sign-in-reset-screen": {
+  "alt": "Reset-password screen after choosing Forgot password?, work email filled in. Numbered red marker: 2 Work email on reset screen.",
+  "article": "sign-in-forgot-link",
+  "role": "signed out",
+  "route": "/sign-in",
+  "annotations": [
+   {
+    "n": 2,
+    "label": "Work email on reset screen"
+   }
+  ]
+ }
+}

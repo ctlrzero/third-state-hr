@@ -8,6 +8,7 @@ import { downloadBytes } from '../lib/pdf'
 import { fmtDate } from '../lib/format'
 import { getMyPayslipV2, getMyPayslipsV2 } from '../lib/api/payroll'
 import { myV2ToPdfData } from '../lib/payroll'
+import { HelpLink } from '../components/HelpLink'
 
 // Staff "Payslips": own published payslips only (get_my_payslips /
 // get_my_payslip resolve the employee from auth.uid()). PDFs are generated
@@ -68,6 +69,7 @@ export default function MyPayslips() {
   return (
     <div className="mx-auto max-w-2xl space-y-5">
       <PageHeader title="My payslips" description="Published payslips. Download any of them as a PDF." />
+      <HelpLink slug="how-to-view-and-download-payslips" />
       {error && <Alert tone="error">{error}</Alert>}
       {rows === null ? (
         <Skeleton rows={3} className="h-20" />

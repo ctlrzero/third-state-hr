@@ -15,6 +15,7 @@ import ProbationTab from './ProbationTab'
 import ReportsTab from './ReportsTab'
 import SetupTab from './SetupTab'
 import VisasTab from './VisasTab'
+import { HelpLink } from '../../components/HelpLink'
 
 type Top = 'pipeline' | 'probation' | 'visas' | 'reports' | 'setup'
 
@@ -148,6 +149,7 @@ export default function OnboardingDashboard({ payrollOnly = false }: { payrollOn
           )
         }
       />
+      <HelpLink slug="how-to-onboard-a-new-employee" />
       {error && (
         <Alert tone="error" onDismiss={() => setError(null)}>
           {error}

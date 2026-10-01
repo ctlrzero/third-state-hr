@@ -50,6 +50,7 @@ import {
   todayDubai,
   toDubaiLocalInput,
 } from '../lib/format'
+import { HelpLink } from '../components/HelpLink'
 
 const EXCEPTION_LABEL: Record<string, string> = {
   missing_clock_out: 'Missing clock-out',
@@ -369,6 +370,7 @@ export default function Attendance() {
           ) : undefined
         }
       />
+      <HelpLink slug="how-to-review-attendance-and-correct-a-record" />
 
       <form
         className="card grid gap-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-end"

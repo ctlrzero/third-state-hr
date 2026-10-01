@@ -383,6 +383,28 @@ Shift Supervisors and Employees cannot send. One open request per employee + kin
 
 ---
 
+## 13. Help centre **[new]**
+
+Articles live in `help_articles` / `help_article_versions` (RLS on, no direct grants). Screenshots live in the
+private Storage bucket `help-media` (`<key>.png`; read via signed URL by any active login, write by O / EA only).
+Readers get **published** articles only; Owner and Company Admin (EA) see all, everyone else only articles whose
+`audience` contains their role. Drafts never reach non-admins. All RPCs refuse a login with no active role (`42501`).
+
+| RPC | Args | Roles | Returns |
+|---|---|---|---|
+| `help_list_articles` | – | any active login | `TABLE(slug, title, category, audience, summary, related, route, last_reviewed, updated_at)` (no body) |
+| `help_get_article` | `p_slug` | any active login (audience-filtered) | `TABLE(… , body_md, …)`, 0 rows if not visible |
+| `help_search` | `p_query` (min 2 chars) | any active login (audience-filtered) | `TABLE(slug, title, category, summary, snippet, rank)`; full-text plus ILIKE fallback; snippet marks matches as `[[word]]` |
+| `help_admin_list` | – | O, EA | `TABLE(slug, title, category, status, audience, last_reviewed, current_version, has_draft, updated_at)` |
+| `help_admin_get` | `p_slug` | O, EA | `jsonb {slug, status, last_reviewed, current_version, updated_at, live{…}, draft{…}|null}` |
+| `help_admin_save_draft` | `p_slug, p_title, p_category, p_audience, p_summary, p_body_md, p_related, p_route` | O, EA | `{ok, slug}`. Creates the article (status `draft`) or stores unpublished edits in `draft`; live content unchanged |
+| `help_admin_publish` | `p_slug, p_change_note, p_last_reviewed date default null` | O, EA | `{ok, version}`. Copies the draft live, creates the next version, sets `last_reviewed` (today unless given). `22023` when nothing to publish |
+| `help_admin_mark_reviewed` | `p_slug` | O, EA | `{ok, last_reviewed}` |
+| `help_admin_versions` | `p_slug` | O, EA | `TABLE(version, change_note, created_at, created_by_name, snapshot)` newest first |
+| `help_admin_restore_version` | `p_slug, p_version` | O, EA | `{ok, restored_version}`. Puts that version into the draft; publish to make it live |
+
+Seeding: `node scripts/seed-help.mjs` builds `supabase/seed/help_articles_seed.sql` (upsert by slug, new version only when content changed).
+
 ## UAT support (postgres only, not callable from the API)
 
 - `select public.uat_fixtures_refresh();` — rebuilds date-relative fixtures in UAT Entity A/B only.

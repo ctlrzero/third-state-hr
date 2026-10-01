@@ -33,6 +33,7 @@ import { ShiftActionsSheet, StatusLegend, WeekBoard, type BoardPerson } from './
 import { isoAddDays, mondayOf, shiftKind, thisMonday, weekLabel } from './schedules/week'
 import { useWorkPatternWarnings } from './schedules/useWorkPatternWarnings'
 import { isSelfServiceRole } from '../types/db'
+import { HelpLink } from '../components/HelpLink'
 
 const DOW_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -386,6 +387,7 @@ function ScheduleAdmin() {
         <div>
           <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Schedules</h1>
+          <HelpLink slug="how-to-build-and-share-a-weekly-schedule" />
           <p className="text-xs text-muted">
             {loading
               ? 'Loading…'
@@ -1557,6 +1559,7 @@ function MySchedule() {
       <div>
         <EntityEyebrow />
         <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My schedule</h1>
+        <HelpLink slug="how-to-view-your-schedule-and-shifts" />
       </div>
 
       {error && (

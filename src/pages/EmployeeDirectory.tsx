@@ -9,6 +9,7 @@ import type { Employee, EmployeeStatus, Location } from '../types/db'
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { Alert } from '../components/ui'
 import { AskManyModal } from '../components/AskMissingModals'
+import { HelpLink } from '../components/HelpLink'
 
 const STATUS_FILTERS: { value: EmployeeStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'All statuses' },
@@ -97,6 +98,7 @@ export default function EmployeeDirectory() {
         <div>
           <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">People</h1>
+          <HelpLink slug="how-to-view-and-manage-your-team" />
           <p className="text-xs text-muted">
             {loading ? 'Loading…' : `${filtered.length} of ${employees.length} employees`}
           </p>

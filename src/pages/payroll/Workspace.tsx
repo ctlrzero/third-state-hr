@@ -38,6 +38,7 @@ import LegacyRuns from './LegacyRuns'
 import ReadinessPanel from './ReadinessPanel'
 import ChangesPanel from './ChangesPanel'
 import SchedulePanel from './SchedulePanel'
+import { HelpLink } from '../../components/HelpLink'
 
 const thisMonth = () => new Date().toISOString().slice(0, 7)
 
@@ -173,6 +174,7 @@ export default function PayrollWorkspace({ entityId }: { entityId: string }) {
           </>
         }
       />
+      <HelpLink slug="how-to-prepare-and-approve-payroll" />
 
       {error && (
         <Alert tone="error" onDismiss={() => setError(null)}>

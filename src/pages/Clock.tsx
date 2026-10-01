@@ -12,6 +12,7 @@ import {
 } from '../lib/api/attendance'
 import { CLOCK_STATE_LABEL, clockButtonModel } from '../lib/clockState'
 import { addDays, fmtClockRange, fmtDayShort, fmtMinutes, fmtTime, todayDubai } from '../lib/format'
+import { HelpLink } from '../components/HelpLink'
 
 // Staff "Clock" screen (mobile-first). The big button's state is always
 // derived from what the server says (get_my_clock_status), never from an
@@ -140,6 +141,7 @@ export default function Clock() {
   return (
     <div className="mx-auto max-w-lg space-y-5">
       <PageHeader title="Clock in / out" description={fmtDayShort(todayDubai())} />
+      <HelpLink slug="how-to-clock-in-and-out" />
 
       {notLinked ? (
         <EmptyState

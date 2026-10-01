@@ -11,6 +11,7 @@ import { confirmDialog } from '../lib/confirm'
 import { isSelfServiceRole } from '../types/db'
 import { friendlyError } from '../lib/api/client'
 import { FindCoverSheet, type CoverShift } from './schedules/SchedulingTools'
+import { HelpLink } from '../components/HelpLink'
 
 const LEAVE_STATUS_TONE: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'risk'> = {
   pending: 'warning',
@@ -148,6 +149,7 @@ function LeaveAdmin() {
       <div>
         <EntityEyebrow />
         <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">Leave</h1>
+        <HelpLink slug="how-to-approve-or-decline-leave" />
         <p className="text-xs text-muted">{loading ? 'Loading…' : `${pending.length} pending`}</p>
       </div>
 
@@ -439,6 +441,7 @@ function MyLeave() {
         <div>
           <EntityEyebrow />
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">My leave</h1>
+          <HelpLink slug="how-to-request-leave" />
         </div>
         <button
           onClick={() => setFormOpen(true)}

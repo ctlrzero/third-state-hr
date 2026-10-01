@@ -13,6 +13,7 @@ import type { DocumentReviewStatus, Employee, EmployeeDocument } from '../types/
 import { EntityEyebrow } from '../components/EntityEyebrow'
 import { confirmDialog } from '../lib/confirm'
 import { fmtDate } from '../lib/format'
+import { HelpLink } from '../components/HelpLink'
 
 const BUCKET = 'employee-documents'
 
@@ -244,6 +245,7 @@ export default function Documents() {
           <h1 className="text-[34px] font-normal leading-[51px] tracking-[-1.19px] text-ink">
             {canManage ? 'Documents' : 'My documents'}
           </h1>
+          <HelpLink slug="how-to-upload-or-renew-a-document" />
           <p className="text-xs text-muted">
             {loading ? 'Loading…' : canManage ? `${managerRows.length} of ${documents.length} document versions` : ''}
           </p>

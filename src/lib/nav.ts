@@ -25,6 +25,7 @@ export type NavIcon =
   | 'admin'
   | 'notifications'
   | 'today'
+  | 'help'
 
 export interface NavItem {
   label: string
@@ -70,6 +71,10 @@ export const ROUTE_ROLES: Record<string, UserRole[]> = {
   '/workflows': ADMINS,
   '/admin': ADMINS,
   '/notifications': ALL,
+  // Help & Guides: every signed-in role. The server filters articles by audience; the editor is admin-only.
+  '/help': ALL,
+  '/help/:slug': ALL,
+  '/help/admin': ADMINS,
 }
 
 export function canAccessRoute(role: UserRole | null | undefined, route: string): boolean {
@@ -94,6 +99,7 @@ const STAFF_NAV: NavItem[] = [
   { label: 'Profile', to: '/me', icon: 'profile', roles: SELF },
   { label: 'My Interviews', to: '/my-interviews', icon: 'interviews', roles: SELF, requires: 'interviewAssignment' },
   { label: 'Notifications', to: '/notifications', icon: 'notifications', roles: SELF },
+  { label: 'Help & Guides', to: '/help', icon: 'help', roles: SELF },
 ]
 
 const MANAGEMENT_NAV: NavItem[] = [
@@ -116,6 +122,7 @@ const MANAGEMENT_NAV: NavItem[] = [
   { label: 'My clock', to: '/clock', icon: 'clock', roles: ['entity_admin', 'location_manager'] },
   { label: 'My Interviews', to: '/my-interviews', icon: 'interviews', roles: MANAGERS, requires: 'interviewAssignment' },
   { label: 'Notifications', to: '/notifications', icon: 'notifications', roles: MANAGERS },
+  { label: 'Help & Guides', to: '/help', icon: 'help', roles: MANAGERS },
 ]
 
 export interface NavContext {

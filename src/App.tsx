@@ -34,6 +34,9 @@ const Attendance = lazy(() => import('./pages/Attendance'))
 const Workflows = lazy(() => import('./pages/Workflows'))
 const Admin = lazy(() => import('./pages/Admin'))
 const Notifications = lazy(() => import('./pages/Notifications'))
+const Help = lazy(() => import('./pages/Help'))
+const HelpArticle = lazy(() => import('./pages/HelpArticle'))
+const HelpAdmin = lazy(() => import('./pages/HelpAdmin'))
 
 /**
  * Role gate for deep links. The page component (and therefore its data
@@ -86,6 +89,9 @@ const ROUTES: { path: string; element: ReactNode }[] = [
   { path: '/workflows', element: <Workflows /> },
   { path: '/admin', element: <Admin /> },
   { path: '/notifications', element: <Notifications /> },
+  { path: '/help', element: <Help /> },
+  { path: '/help/admin', element: <HelpAdmin /> },
+  { path: '/help/:slug', element: <HelpArticle /> },
 ]
 
 function App() {

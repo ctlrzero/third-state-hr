@@ -33,6 +33,7 @@ import { fmtDate, todayDubai } from '../../lib/format'
 import { ProgressBar, TaskStatusBadge } from './shared'
 import AvailabilityStep from './AvailabilityStep'
 import { getMyImmigration, type ImmigrationStepStatus } from '../../lib/api/onboarding'
+import { HelpLink } from '../../components/HelpLink'
 
 // The new starter's own portal. Everything resolves from the login on the
 // server (get_my_onboarding); nothing here sends an employee id. Details
@@ -87,6 +88,7 @@ export default function MyOnboarding() {
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-muted">{data.company}</p>
         <h1 className="text-2xl font-semibold text-ink">Welcome, {firstName}</h1>
+        <HelpLink slug="how-to-complete-your-joining-steps" />
         <p className="mt-1 text-sm text-muted">
           {[data.position?.title, data.branch?.name].filter(Boolean).join(' · ')}
           {start && ` · ${startsInLabel(start, todayDubai())} (${fmtDate(start)})`}
